@@ -1,0 +1,5 @@
+coinbase-advanced-py
+python-dotenv
+pandas
+requests
+numpy
