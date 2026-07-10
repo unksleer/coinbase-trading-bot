@@ -79,7 +79,7 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
 
 def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spread: float, stop_loss: float, take_profit: float,
                  rsi_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
-                 ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 1000.0, gran_seconds: int = 3600,
+                 ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 100.0, gran_seconds: int = 3600,
                  trade_amount_usd: float = 10.0) -> dict:
     """
     Simulates trading over the historical DataFrame.

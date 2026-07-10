@@ -26,7 +26,7 @@ class StateManager:
             "dry_run": self.dry_run,
             "position": "NONE",  # "NONE" (no active trade) or "LONG" (holding the asset)
             "entry_price": 0.0,
-            "cash_usd": 1000.0 if self.dry_run else 0.0,  # Starting cash for dry run
+            "cash_usd": 100.0 if self.dry_run else 0.0,  # Starting cash for dry run
             "holdings_base": 0.0,
             "trades": []
         }

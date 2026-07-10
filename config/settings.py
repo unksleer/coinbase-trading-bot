@@ -4,76 +4,94 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Determine the active profile (e.g. CONSERVATIVE, AGGRESSIVE)
+ACTIVE_PROFILE = os.getenv("ACTIVE_PROFILE", "CONSERVATIVE").strip().upper()
+
+def get_env_with_profile(key: str, default: str) -> str:
+    """
+    Returns environment variable value. If ACTIVE_PROFILE is set,
+    first looks for f"{ACTIVE_PROFILE}_{key}". If not found, falls back
+    to the base key, and finally to the default.
+    """
+    if ACTIVE_PROFILE:
+        profile_key = f"{ACTIVE_PROFILE}_{key}"
+        if profile_key in os.environ:
+            return os.environ[profile_key]
+    return os.getenv(key, default)
+
 class Settings:
     # Coinbase Developer Platform (CDP) API Credentials
     COINBASE_API_KEY = os.getenv("COINBASE_API_KEY", "")
     # Handle newline escaping in secret key
     COINBASE_API_SECRET = os.getenv("COINBASE_API_SECRET", "").replace("\\n", "\n")
 
+    # Active Profile Name
+    PROFILE = ACTIVE_PROFILE
+
     # Trading Settings
     # Default to True if the setting is missing, empty, or set to True/1/t/yes
-    _dry_run_val = os.getenv("DRY_RUN", "True").strip().lower()
+    _dry_run_val = get_env_with_profile("DRY_RUN", "True").strip().lower()
     DRY_RUN = _dry_run_val in ("", "true", "1", "t", "yes")
-    TRADING_PAIR = os.getenv("TRADING_PAIR", "BTC-USD")
-    GRANULARITY = os.getenv("GRANULARITY", "ONE_MINUTE")
+    TRADING_PAIR = get_env_with_profile("TRADING_PAIR", "BTC-USD")
+    GRANULARITY = get_env_with_profile("GRANULARITY", "ONE_MINUTE")
     
     try:
-        TRADE_AMOUNT_USD = float(os.getenv("TRADE_AMOUNT_USD", "10.0"))
+        TRADE_AMOUNT_USD = float(get_env_with_profile("TRADE_AMOUNT_USD", "10.0"))
     except ValueError:
         TRADE_AMOUNT_USD = 10.0
 
 
     try:
-        LOOP_INTERVAL_SECONDS = int(os.getenv("LOOP_INTERVAL_SECONDS", "60"))
+        LOOP_INTERVAL_SECONDS = int(get_env_with_profile("LOOP_INTERVAL_SECONDS", "60"))
     except ValueError:
         LOOP_INTERVAL_SECONDS = 60
 
     try:
-        SMA_SHORT_WINDOW = int(os.getenv("SMA_SHORT_WINDOW", "10"))
+        SMA_SHORT_WINDOW = int(get_env_with_profile("SMA_SHORT_WINDOW", "10"))
     except ValueError:
         SMA_SHORT_WINDOW = 10
 
     try:
-        SMA_LONG_WINDOW = int(os.getenv("SMA_LONG_WINDOW", "30"))
+        SMA_LONG_WINDOW = int(get_env_with_profile("SMA_LONG_WINDOW", "30"))
     except ValueError:
         SMA_LONG_WINDOW = 30
 
     try:
-        SMA_MIN_SPREAD_PERCENT = float(os.getenv("SMA_MIN_SPREAD_PERCENT", "0.0"))
+        SMA_MIN_SPREAD_PERCENT = float(get_env_with_profile("SMA_MIN_SPREAD_PERCENT", "0.0"))
     except ValueError:
         SMA_MIN_SPREAD_PERCENT = 0.0
 
     try:
-        STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", "0.0"))
+        STOP_LOSS_PERCENT = float(get_env_with_profile("STOP_LOSS_PERCENT", "0.0"))
     except ValueError:
         STOP_LOSS_PERCENT = 0.0
 
     try:
-        TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", "0.0"))
+        TAKE_PROFIT_PERCENT = float(get_env_with_profile("TAKE_PROFIT_PERCENT", "0.0"))
     except ValueError:
         TAKE_PROFIT_PERCENT = 0.0
 
-    RSI_FILTER_ENABLED = os.getenv("RSI_FILTER_ENABLED", "False").lower() in ("true", "1", "t", "yes")
+    RSI_FILTER_ENABLED = get_env_with_profile("RSI_FILTER_ENABLED", "False").lower() in ("true", "1", "t", "yes")
     
     try:
-        RSI_PERIOD = int(os.getenv("RSI_PERIOD", "14"))
+        RSI_PERIOD = int(get_env_with_profile("RSI_PERIOD", "14"))
     except ValueError:
         RSI_PERIOD = 14
 
     try:
-        RSI_BUY_MAX = float(os.getenv("RSI_BUY_MAX", "60.0"))
+        RSI_BUY_MAX = float(get_env_with_profile("RSI_BUY_MAX", "60.0"))
     except ValueError:
         RSI_BUY_MAX = 60.0
 
     try:
-        RSI_SELL_MIN = float(os.getenv("RSI_SELL_MIN", "40.0"))
+        RSI_SELL_MIN = float(get_env_with_profile("RSI_SELL_MIN", "40.0"))
     except ValueError:
         RSI_SELL_MIN = 40.0
 
-    EMA_TREND_FILTER_ENABLED = os.getenv("EMA_TREND_FILTER_ENABLED", "False").lower() in ("true", "1", "t", "yes")
+    EMA_TREND_FILTER_ENABLED = get_env_with_profile("EMA_TREND_FILTER_ENABLED", "False").lower() in ("true", "1", "t", "yes")
 
     try:
-        EMA_TREND_PERIOD = int(os.getenv("EMA_TREND_PERIOD", "200"))
+        EMA_TREND_PERIOD = int(get_env_with_profile("EMA_TREND_PERIOD", "200"))
     except ValueError:
         EMA_TREND_PERIOD = 200
 
@@ -131,4 +149,3 @@ class Settings:
             errors.append(f"GRANULARITY must be one of: {', '.join(sorted(valid_granularities))}")
             
         return errors
-

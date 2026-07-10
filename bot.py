@@ -9,6 +9,7 @@ from datetime import datetime
 from config.settings import Settings
 from utils.logger import setup_logger
 from utils.state import StateManager
+from utils.notifications import send_trade_notification
 from strategies.simple_moving_average import SMACrossoverStrategy
 
 # Initialize logger
@@ -301,6 +302,15 @@ def main():
                                 fee_usd=mock_fee
                             )
                             logger.info(f"Simulated BUY executed: Acquired {acquired_base:.8f} {base_asset} for ${Settings.TRADE_AMOUNT_USD:.2f} USD (Fee: ${mock_fee:.4f})")
+                            send_trade_notification(
+                                trade_type="BUY",
+                                pair=Settings.TRADING_PAIR,
+                                price=latest_price,
+                                amount_usd=net_spend,
+                                amount_base=acquired_base,
+                                fee_usd=mock_fee,
+                                is_dry_run=True
+                            )
                             
                             # Print simulated order details
                             print("\n" + "*"*40)
@@ -328,7 +338,10 @@ def main():
                             
                             # Note: Detailed fill price and actual fees may need to be fetched via get_order,
                             # but we can record the trade with the best estimation or query the filled order.
-                            order_id = order.get('order_id') or order.get('id')
+                            # Safely extract order ID from CreateOrderResponse
+                            order_dict = order.to_dict() if hasattr(order, 'to_dict') else (order if isinstance(order, dict) else {})
+                            success_resp = order_dict.get('success_response') or {}
+                            order_id = order_dict.get('order_id') or success_resp.get('order_id') or order_dict.get('id')
                             logger.info(f"Market BUY order placed. Order ID: {order_id}. Fetching fill details...")
                             
                             # Pause briefly to allow order to fill
@@ -358,6 +371,15 @@ def main():
                                     fee_usd=fee_usd
                                 )
                                 logger.info(f"Live BUY filled: {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Total cost: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f})")
+                                send_trade_notification(
+                                    trade_type="BUY",
+                                    pair=Settings.TRADING_PAIR,
+                                    price=avg_price,
+                                    amount_usd=filled_val_usd,
+                                    amount_base=filled_size_base,
+                                    fee_usd=fee_usd,
+                                    is_dry_run=False
+                                )
                             else:
                                 logger.error("Live order filled size was 0. Order might still be pending or rejected.")
                         except Exception as e:
@@ -391,6 +413,16 @@ def main():
                                 fee_usd=mock_fee
                             )
                             logger.info(f"Simulated SELL executed: Sold {holdings:.8f} {base_asset} for ${net_usd:.2f} USD (Fee: ${mock_fee:.4f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
+                            send_trade_notification(
+                                trade_type="SELL",
+                                pair=Settings.TRADING_PAIR,
+                                price=latest_price,
+                                amount_usd=gross_usd,
+                                amount_base=holdings,
+                                fee_usd=mock_fee,
+                                is_dry_run=True,
+                                realized_pnl=trade.get('realized_pnl_usd', 0.0)
+                            )
                             
                             # Print simulated order details
                             print("\n" + "*"*40)
@@ -427,7 +459,10 @@ def main():
                                     base_size=str(holdings)
                                 )
                                 
-                                order_id = order.get('order_id') or order.get('id')
+                                # Safely extract order ID from CreateOrderResponse
+                                order_dict = order.to_dict() if hasattr(order, 'to_dict') else (order if isinstance(order, dict) else {})
+                                success_resp = order_dict.get('success_response') or {}
+                                order_id = order_dict.get('order_id') or success_resp.get('order_id') or order_dict.get('id')
                                 logger.info(f"Market SELL order placed. Order ID: {order_id}. Fetching fill details...")
                                 
                                 # Pause briefly to allow order to fill
@@ -456,6 +491,16 @@ def main():
                                         fee_usd=fee_usd
                                     )
                                     logger.info(f"Live SELL filled: Sold {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Realized: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
+                                    send_trade_notification(
+                                        trade_type="SELL",
+                                        pair=Settings.TRADING_PAIR,
+                                        price=avg_price,
+                                        amount_usd=filled_val_usd,
+                                        amount_base=filled_size_base,
+                                        fee_usd=fee_usd,
+                                        is_dry_run=False,
+                                        realized_pnl=trade.get('realized_pnl_usd', 0.0)
+                                    )
                                 else:
                                     logger.error("Live order filled size was 0. Order might still be pending or rejected.")
                         except Exception as e:
