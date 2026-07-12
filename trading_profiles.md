@@ -10,17 +10,17 @@ The configuration values for both profiles are detailed below:
 
 | Parameter Key | Conservative Profile | Aggressive Profile | Parameter Purpose & Behavior |
 | :--- | :---: | :---: | :--- |
-| **`SMA_SHORT_WINDOW`** | `5` | `12` | Short-term Simple Moving Average period length (in candles). |
-| **`SMA_LONG_WINDOW`** | `20` | `35` | Long-term Simple Moving Average period length (in candles). |
-| **`SMA_MIN_SPREAD_PERCENT`** | `0.10%` (`0.1`) | `0.03%` (`0.03`) | The minimum percentage difference required between the Short SMA and Long SMA on a crossover to trigger a BUY signal. |
+| **`SMA_SHORT_WINDOW`** | `5` | `8` | Short-term Simple Moving Average period length (in candles). |
+| **`SMA_LONG_WINDOW`** | `50` | `35` | Long-term Simple Moving Average period length (in candles). |
+| **`SMA_MIN_SPREAD_PERCENT`** | `0.0%` (`0.0`) | `0.0%` (`0.0`) | The minimum percentage difference required between the Short SMA and Long SMA on a crossover to trigger a BUY signal. |
 | **`RSI_FILTER_ENABLED`** | `True` | `True` | Activates the Relative Strength Index filter to prevent buying when the asset is overbought. |
 | **`RSI_PERIOD`** | `14` | `14` | The window length used to calculate the RSI. |
 | **`RSI_BUY_MAX`** | `60` | `70` | Prevents a BUY signal if the RSI exceeds this value. (Aggressive allows higher-momentum entries up to `70`). |
 | **`RSI_SELL_MIN`** | `40` | `40` | Prevents a SELL signal if the RSI falls below this value (stops selling if already oversold). |
-| **`EMA_TREND_FILTER_ENABLED`**| `True` | `False` | When `True`, restricts the bot from buying unless the current price is above the long-term EMA. (Disabled for aggressive to increase trading frequency). |
+| **`EMA_TREND_FILTER_ENABLED`**| `True` | `True` | When `True`, restricts the bot from buying unless the current price is above the long-term EMA. (Enabled for both to filter out whipsaws in choppy markets). |
 | **`EMA_TREND_PERIOD`** | `200` | `200` | The window length for the Exponential Moving Average trend filter. |
-| **`STOP_LOSS_PERCENT`** | `1.0%` (`1.0`) | `2.5%` (`2.5`) | Risk management threshold. Automatically triggers a market SELL if the price falls below this percentage of the entry price. |
-| **`TAKE_PROFIT_PERCENT`** | `5.0%` (`5.0`) | `4.0%` (`4.0`) | Profit target threshold. Automatically triggers a market SELL if the price rises above this percentage of the entry price. |
+| **`STOP_LOSS_PERCENT`** | `3.0%` (`3.0`) | `5.0%` (`5.0`) | Risk management threshold. Automatically triggers a market SELL if the price falls below this percentage of the entry price. |
+| **`TAKE_PROFIT_PERCENT`** | `6.0%` (`6.0`) | `15.0%` (`15.0`) | Profit target threshold. Automatically triggers a market SELL if the price rises above this percentage of the entry price. |
 
 ---
 

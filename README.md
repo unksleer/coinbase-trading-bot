@@ -92,8 +92,8 @@ Edit [`.env`](file:///home/leeunks/coinbase-trading-bot/.env) to configure setti
 
 * **Moving Average Crossover**:
   * `SMA_SHORT_WINDOW=5` (Fast line: average price of the last 5 hours)
-  * `SMA_LONG_WINDOW=20` (Slow line: average price of the last 20 hours)
-  * `SMA_MIN_SPREAD_PERCENT=0.1` (Required crossover spread percentage to buy)
+  * `SMA_LONG_WINDOW=50` (Slow line: average price of the last 50 hours)
+  * `SMA_MIN_SPREAD_PERCENT=0.0` (Required crossover spread percentage to buy)
 * **Uptrend Filter**:
   * `EMA_TREND_FILTER_ENABLED=True`
   * `EMA_TREND_PERIOD=200` (Filters buys to only execute when price is above the 200-hour EMA)
@@ -101,5 +101,5 @@ Edit [`.env`](file:///home/leeunks/coinbase-trading-bot/.env) to configure setti
   * `RSI_FILTER_ENABLED=True`
   * `RSI_BUY_MAX=60` (Filters buys to only execute when the 14-period RSI is below 60)
 * **Risk Controls**:
-  * `TAKE_PROFIT_PERCENT=5.0` (Sells position immediately at a 5% gain)
-  * `STOP_LOSS_PERCENT=1.0` (Sells position immediately at a 1% loss)
+  * `TAKE_PROFIT_PERCENT=6.0` (Sells position immediately at a 6% gain)
+  * `STOP_LOSS_PERCENT=3.0` (Sells position immediately at a 3% loss)

@@ -94,4 +94,49 @@ class StateManager:
         
         self.state["trades"].append(trade_record)
         self.save_state()
+
+        # Real-time append to trades.csv
+        try:
+            csv_path = "/home/leeunks/coinbase-trading-bot/trades.csv"
+            file_exists = os.path.exists(csv_path)
+            
+            # Extract pair name from state_file
+            basename = os.path.basename(self.state_file)
+            pair_name = "UNKNOWN"
+            if basename.startswith("state_") and basename.endswith(".json"):
+                pair_name = basename.replace("state_", "").replace(".json", "").upper()
+            
+            headers = [
+                "timestamp", 
+                "pair", 
+                "type", 
+                "price", 
+                "amount_usd", 
+                "amount_base", 
+                "fee_usd", 
+                "realized_pnl_usd", 
+                "portfolio_value_usd",
+                "dry_run"
+            ]
+            
+            import csv
+            with open(csv_path, 'a', newline='') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=headers)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow({
+                    "timestamp": timestamp,
+                    "pair": pair_name,
+                    "type": trade_type,
+                    "price": price,
+                    "amount_usd": amount_usd,
+                    "amount_base": amount_base,
+                    "fee_usd": fee_usd,
+                    "realized_pnl_usd": pnl_usd,
+                    "portfolio_value_usd": trade_record["portfolio_value_usd"],
+                    "dry_run": self.dry_run
+                })
+        except Exception as e:
+            pass
+
         return trade_record

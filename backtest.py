@@ -80,7 +80,7 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
 def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spread: float, stop_loss: float, take_profit: float,
                  rsi_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
                  ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 100.0, gran_seconds: int = 3600,
-                 trade_amount_usd: float = 10.0) -> dict:
+                 trade_amount_usd: float = 10.0, fee_rate: float = 0.006) -> dict:
     """
     Simulates trading over the historical DataFrame.
     """
@@ -129,7 +129,7 @@ def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spre
             # BUY using trade_amount_usd (or total cash if total cash is less, or 100% of cash if trade_amount_usd <= 0)
             trade_amount = cash if trade_amount_usd <= 0.0 else min(trade_amount_usd, cash)
             if trade_amount > 0:
-                fee = trade_amount * 0.002
+                fee = trade_amount * fee_rate
                 net_spend = trade_amount - fee
                 acquired = net_spend / price
                 cash -= trade_amount
@@ -142,7 +142,7 @@ def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spre
         elif signal == "SELL" and position == "LONG":
             if holdings > 0:
                 gross_usd = holdings * price
-                fee = gross_usd * 0.002
+                fee = gross_usd * fee_rate
                 net_usd = gross_usd - fee
                 pnl = (price - entry_price) * holdings - fee
                 cash += net_usd
@@ -220,6 +220,7 @@ def main():
     parser.add_argument("--candles", type=int, default=1000, help="Total candles to backtest (default: 1000)")
     parser.add_argument("--optimize", action="store_true", help="Run grid search optimizer to find best parameters")
     parser.add_argument("--trade-amount", type=float, default=10.0, help="USD trade size (default: 10.0, set to 0 to use all available cash)")
+    parser.add_argument("--fee-rate", type=float, default=0.006, help="Fee rate per trade, e.g. 0.006 for 0.6% (default: 0.006)")
     args = parser.parse_args()
     
     df = fetch_historical_data(args.pair, args.granularity, args.candles)
@@ -264,7 +265,8 @@ def main():
                                 ema_enabled=Settings.EMA_TREND_FILTER_ENABLED,
                                 ema_period=Settings.EMA_TREND_PERIOD,
                                 gran_seconds=gran_seconds,
-                                trade_amount_usd=args.trade_amount
+                                trade_amount_usd=args.trade_amount,
+                                fee_rate=args.fee_rate
                             )
                             results.append({
                                 "short": s,
@@ -300,7 +302,8 @@ def main():
             ema_enabled=Settings.EMA_TREND_FILTER_ENABLED,
             ema_period=Settings.EMA_TREND_PERIOD,
             gran_seconds=gran_seconds,
-            trade_amount_usd=args.trade_amount
+            trade_amount_usd=args.trade_amount,
+            fee_rate=args.fee_rate
         )
         
         print("\n" + "="*50)
@@ -311,6 +314,7 @@ def main():
         print(f"Min Spread %:        {Settings.SMA_MIN_SPREAD_PERCENT}%")
         print(f"Stop Loss %:         {Settings.STOP_LOSS_PERCENT}%")
         print(f"Take Profit %:       {Settings.TAKE_PROFIT_PERCENT}%")
+        print(f"Simulated Fee Rate:  {args.fee_rate * 100:.2f}% per trade")
         print(f"Trade Size:          ${args.trade_amount:.2f} USD" if args.trade_amount > 0.0 else "Trade Size:          100% of Cash")
         print(f"RSI Filter:          {Settings.RSI_FILTER_ENABLED} (Period: {Settings.RSI_PERIOD}, Buy Max: {Settings.RSI_BUY_MAX}, Sell Min: {Settings.RSI_SELL_MIN})")
         print(f"EMA Trend Filter:    {Settings.EMA_TREND_FILTER_ENABLED} (Period: {Settings.EMA_TREND_PERIOD})")

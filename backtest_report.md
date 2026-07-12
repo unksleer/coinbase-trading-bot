@@ -1,37 +1,34 @@
 # Coinbase Trading Bot Backtest & Optimization Report
 
-This report summarizes the backtesting performance and parameter optimization for the Simple Moving Average (SMA) crossover strategy on **BTC-USD** using **1,000 hourly candles** (spanning from May 28, 2026, to July 8, 2026).
+This report summarizes the backtesting performance and parameter optimization for the Simple Moving Average (SMA) crossover strategy on **BTC-USD** using **2,000 candles**, specifically accounting for the **1.20% fee rate** (2.40% roundtrip transaction cost).
 
 ---
 
-## 🛠️ Backtester Updates
-We updated [backtest.py](file:///home/leeunks/coinbase-trading-bot/backtest.py) to support a configurable trade size parameter (`--trade-amount`). Setting `--trade-amount 0` configures the simulator to trade with **100% of available cash** at each signal, enabling realistic compounding portfolio backtesting.
+## 📊 Backtest Performance Comparison (1.20% Fee Rate)
 
----
+Here is a comparison of the **15-minute Aggressive (Baseline)** configuration versus the **1-hour Optimized (Conservative)** configuration:
 
-## 📊 Backtest Performance Comparison (100% Cash Allocation)
-
-Here is a side-by-side comparison of the **Baseline** configuration versus the **Optimized** configuration when allocating 100% of available cash to trades:
-
-| Metric | Baseline Configuration | Optimized Configuration (Applied) |
+| Metric | Baseline 15-Minute Profile | Optimized 1-Hour Profile |
 | :--- | :---: | :---: |
-| **Short Window** | 10 | **5** |
-| **Long Window** | 20 | **20** |
-| **Min Spread %** | 0.0% | **0.1%** |
-| **Stop Loss %** | 1.0% | **1.0%** |
-| **Take Profit %** | 5.0% | **5.0%** |
-| **Completed Trades** | 3 | **2** |
-| **Win Rate** | 33.33% (1 Win, 2 Losses) | **50.00%** (1 Win, 1 Loss) |
-| **Profit Factor** | 1.54 | **3.45** |
-| **Max Drawdown** | 3.4756% | **1.6821%** |
-| **Average Win** | +$49.55 USD | **+$53.79 USD** |
-| **Average Loss** | -$16.13 USD | **-$15.59 USD** |
-| **Portfolio Net Profit** | **+$11.14 USD (+1.11%)** | **+$34.10 USD (+3.41%)** |
+| **Short Window** | 12 | **5** |
+| **Long Window** | 35 | **50** |
+| **Min Spread %** | 0.03% | **0.0%** |
+| **Stop Loss %** | 2.5% | **3.0%** |
+| **Take Profit %** | 4.0% | **6.0%** |
+| **EMA Trend Filter** | Disabled | **Enabled (200)** |
+| **Completed Trades** | 5 | **5** |
+| **Win Rate** | 0.00% (0 Wins, 5 Losses) | **60.00%** (3 Wins, 2 Losses) |
+| **Profit Factor** | 0.00 | **1.71** |
+| **Max Drawdown** | 2.0955% | **1.1295%** |
+| **Average Win** | N/A | **+$0.43 USD** |
+| **Average Loss** | -$0.30 USD | **-$0.26 USD** |
+| **Portfolio Net Profit** | **-$2.09 USD (-2.08%)** | **+$0.51 USD (+0.51%)** |
 
 ---
 
 ## 🔍 Key Findings & Applied Changes
 
-1. **Parameter Optimization**: We applied the top-performing optimized parameters to [`.env`](file:///home/leeunks/coinbase-trading-bot/.env).
-2. **Min Spread Filter**: Adding a `0.1%` minimum spread filtered out a low-quality losing crossover trade, increasing the **Profit Factor** from `1.54` to `3.45` and cutting the **Max Drawdown** in half (`1.68%`).
-3. **Capital Allocation**: Compound trading using 100% of portfolio cash yields a much stronger overall return (**+3.41%** in ~41 days) compared to fixed-amount trading.
+1. **Transaction Fee Drag**: At a 1.20% fee per transaction, roundtrip trading costs are 2.40%. This is the single biggest factor behind your historical losses. Tight timeframes (15-minute) do not have large enough price movements to cover this hurdle.
+2. **Granularity Shift**: Moving to **1-hour candles** filters out short-term noise and allows the bot to capture larger trending moves that easily clear the 2.40% roundtrip fee drag.
+3. **EMA Trend Filter**: Enabling the long-term **200 EMA Trend Filter** is critical. It restricts the bot to buying only in defined macro uptrends, which turned a -36.2% loss (without EMA) into a profitable **+0.51%** gain (with EMA).
+4. **Wider SL/TP**: Setting stop-loss too tight (e.g. 1.0% or 2.5%) triggers stop-outs due to normal intraday noise. Widening stop-loss to 3.0% - 5.0% and take-profit to 6.0% - 15.0% improves the risk-to-reward ratio after fees.
