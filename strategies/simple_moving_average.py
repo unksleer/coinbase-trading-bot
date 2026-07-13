@@ -9,7 +9,7 @@ class SMACrossoverStrategy(BaseStrategy):
     Triggers a SELL signal when the short-term SMA crosses below the long-term SMA.
     """
     def __init__(self, short_window: int = 10, long_window: int = 30, min_spread_percent: float = 0.0,
-                 rsi_filter_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
+                 rsi_filter_enabled: bool = False, rsi_period: int = 14, rsi_buy_min: float = 0.0, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
                  ema_filter_enabled: bool = False, ema_period: int = 200):
         super().__init__(name=f"SMA_Crossover_{short_window}_{long_window}")
         self.short_window = short_window
@@ -17,6 +17,7 @@ class SMACrossoverStrategy(BaseStrategy):
         self.min_spread_percent = min_spread_percent
         self.rsi_filter_enabled = rsi_filter_enabled
         self.rsi_period = rsi_period
+        self.rsi_buy_min = rsi_buy_min
         self.rsi_buy_max = rsi_buy_max
         self.rsi_sell_min = rsi_sell_min
         self.ema_filter_enabled = ema_filter_enabled
@@ -91,10 +92,10 @@ class SMACrossoverStrategy(BaseStrategy):
         # Initial Crossover check:
         signal = "HOLD"
         # BUY signal: short-term crosses ABOVE long-term
-        if prev_short <= prev_long and curr_short > curr_long:
+        if prev_short < prev_long and curr_short > curr_long:
             signal = "BUY"
         # SELL signal: short-term crosses BELOW long-term
-        elif prev_short >= prev_long and curr_short < curr_long:
+        elif prev_short > prev_long and curr_short < curr_long:
             signal = "SELL"
 
         # Apply filters to signal
@@ -105,7 +106,7 @@ class SMACrossoverStrategy(BaseStrategy):
                     return "HOLD"
             # 2. RSI filter
             if self.rsi_filter_enabled and curr_rsi is not None:
-                if curr_rsi > self.rsi_buy_max:
+                if curr_rsi > self.rsi_buy_max or curr_rsi < self.rsi_buy_min:
                     return "HOLD"
             # 3. EMA trend filter
             if self.ema_filter_enabled and curr_ema is not None:

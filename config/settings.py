@@ -84,6 +84,11 @@ class Settings:
         RSI_BUY_MAX = 60.0
 
     try:
+        RSI_BUY_MIN = float(get_env_with_profile("RSI_BUY_MIN", "0.0"))
+    except ValueError:
+        RSI_BUY_MIN = 0.0
+
+    try:
         RSI_SELL_MIN = float(get_env_with_profile("RSI_SELL_MIN", "40.0"))
     except ValueError:
         RSI_SELL_MIN = 40.0
@@ -94,6 +99,16 @@ class Settings:
         EMA_TREND_PERIOD = int(get_env_with_profile("EMA_TREND_PERIOD", "200"))
     except ValueError:
         EMA_TREND_PERIOD = 200
+
+    try:
+        BREAK_EVEN_TRIGGER_PERCENT = float(get_env_with_profile("BREAK_EVEN_TRIGGER_PERCENT", "0.0"))
+    except ValueError:
+        BREAK_EVEN_TRIGGER_PERCENT = 0.0
+
+    try:
+        FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "1.20"))
+    except ValueError:
+        FEE_RATE_PERCENT = 1.20
 
     @classmethod
     def validate(cls):
@@ -129,11 +144,21 @@ class Settings:
         if cls.TAKE_PROFIT_PERCENT < 0:
             errors.append("TAKE_PROFIT_PERCENT must be greater than or equal to 0.")
 
+        if cls.BREAK_EVEN_TRIGGER_PERCENT < 0:
+            errors.append("BREAK_EVEN_TRIGGER_PERCENT must be greater than or equal to 0.")
+
+        if cls.FEE_RATE_PERCENT < 0:
+            errors.append("FEE_RATE_PERCENT must be greater than or equal to 0.")
+
         if cls.RSI_FILTER_ENABLED:
             if cls.RSI_PERIOD <= 0:
                 errors.append("RSI_PERIOD must be greater than 0 when RSI filter is enabled.")
             if not (0 <= cls.RSI_BUY_MAX <= 100):
                 errors.append("RSI_BUY_MAX must be between 0 and 100.")
+            if not (0 <= cls.RSI_BUY_MIN <= 100):
+                errors.append("RSI_BUY_MIN must be between 0 and 100.")
+            if cls.RSI_BUY_MIN > cls.RSI_BUY_MAX:
+                errors.append("RSI_BUY_MIN must be less than or equal to RSI_BUY_MAX.")
             if not (0 <= cls.RSI_SELL_MIN <= 100):
                 errors.append("RSI_SELL_MIN must be between 0 and 100.")
 

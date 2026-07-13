@@ -192,6 +192,7 @@ def main():
         min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
         rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
         rsi_period=Settings.RSI_PERIOD,
+        rsi_buy_min=Settings.RSI_BUY_MIN,
         rsi_buy_max=Settings.RSI_BUY_MAX,
         rsi_sell_min=Settings.RSI_SELL_MIN,
         ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,
@@ -219,33 +220,67 @@ def main():
                 time.sleep(Settings.LOOP_INTERVAL_SECONDS)
                 continue
                 
-            # Get latest market price
+            # Get latest market price and completed candles for strategy evaluation
+            # (Wait for candle to close: drop the current active/open candle from indicator calculations)
             latest_candle = df.iloc[-1]
             latest_price = float(latest_candle['close'])
             latest_time_unix = int(latest_candle['start'])
             latest_time_str = datetime.utcfromtimestamp(latest_time_unix).isoformat() + "Z"
             
-            logger.info(f"Latest candle price: ${latest_price:,.2f} USD (at {latest_time_str})")
+            logger.info(f"Latest candle price (real-time): ${latest_price:,.2f} USD (at {latest_time_str})")
+            
+            granularity_seconds = GRANULARITY_MAP.get(Settings.GRANULARITY, 60)
+            current_time = int(time.time())
+            
+            if current_time < latest_time_unix + granularity_seconds:
+                # The latest candle is incomplete/open. Evaluate indicators on the last closed candle.
+                df_completed = df.iloc[:-1].reset_index(drop=True)
+            else:
+                # The latest candle is already closed.
+                df_completed = df.copy()
             
             # Evaluate strategy
-            signal = strategy.evaluate(df)
-            logger.info(f"Strategy evaluation signal: {signal} (Current Position: {state_manager.state['position']})")
+            signal = strategy.evaluate(df_completed)
+            logger.info(f"Strategy evaluation signal (on closed candle): {signal} (Current Position: {state_manager.state['position']})")
             
-            # Check Risk Management (Stop Loss / Take Profit)
+            # Check Risk Management (Stop Loss / Take Profit / Break-even Stop)
             sell_reason = "STRATEGY"
             if state_manager.state["position"] == "LONG" and state_manager.state["entry_price"] > 0:
                 price_change_percent = ((latest_price - state_manager.state["entry_price"]) / state_manager.state["entry_price"]) * 100
+                entry_price = state_manager.state["entry_price"]
+                holdings = state_manager.state.get("holdings_base", 0.0)
+                
+                # Fee calculations
+                f = Settings.FEE_RATE_PERCENT / 100.0
+                net_pl_pct = (latest_price * (1.0 - f) - entry_price * (1.0 + f)) / (entry_price * (1.0 + f)) * 100.0
+                
+                # Calculate if break-even stop is active (based on highest net profit reached)
+                break_even_active = False
+                highest_price = state_manager.state.get("highest_price_since_entry", entry_price)
+                highest_net_pl_pct = 0.0
+                if entry_price > 0.0:
+                    highest_net_pl_pct = (highest_price * (1.0 - f) - entry_price * (1.0 + f)) / (entry_price * (1.0 + f)) * 100.0
+                    
+                if Settings.BREAK_EVEN_TRIGGER_PERCENT > 0.0 and highest_net_pl_pct >= Settings.BREAK_EVEN_TRIGGER_PERCENT:
+                    break_even_active = True
+                
+                # Check Break-even Stop (trigger at net break-even price, i.e. net P/L <= 0.05% to lock in positive PnL)
+                net_breakeven_price = entry_price * (1.0 + f + 0.0005) / (1.0 - f)
+                if break_even_active and latest_price <= net_breakeven_price:
+                    signal = "SELL"
+                    sell_reason = f"BREAK_EVEN (Price fell back to break-even price ${net_breakeven_price:.4f} after peaking at net +{highest_net_pl_pct:.2f}%)"
+                    logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
                 # Check Stop Loss
-                if Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
+                elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                     signal = "SELL"
-                    sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${state_manager.state['entry_price']:.2f})"
+                    sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
                     logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
                 # Check Take Profit
                 elif Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
                     signal = "SELL"
-                    sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${state_manager.state['entry_price']:.2f})"
+                    sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                     logger.info(f"💰 Risk management triggered: {sell_reason}")
 
             # Fetch last calculated strategy values
@@ -257,31 +292,168 @@ def main():
             
             mode_str = "SIMULATED / DRY RUN" if Settings.DRY_RUN else "LIVE TRADING"
             
-            print("\n" + "="*50)
-            print(f"MARKET CHECK SUMMARY ({mode_str})")
-            print("-"*50)
-            print(f"Trading Pair:      {Settings.TRADING_PAIR}")
-            print(f"Current Price:     ${latest_price:,.2f} USD")
-            print(f"Short SMA ({Settings.SMA_SHORT_WINDOW}):   ${short_val:,.2f} USD" if short_val is not None else f"Short SMA ({Settings.SMA_SHORT_WINDOW}):   N/A")
-            print(f"Long SMA ({Settings.SMA_LONG_WINDOW}):    ${long_val:,.2f} USD" if long_val is not None else f"Long SMA ({Settings.SMA_LONG_WINDOW}):    N/A")
+            # If in LONG position, update metrics
+            if state_manager.state["position"] == "LONG":
+                state_manager.update_position_metrics(latest_price)
+            
+            # Calculate additional market metrics
+            # 1. Distance Below Recent High
+            recent_high = float(df['high'].max())
+            dist_high_usd = recent_high - latest_price
+            dist_high_pct = (dist_high_usd / recent_high) * 100.0 if recent_high > 0.0 else 0.0
+            
+            # 2. ATR (14-period)
+            high_prices = df['high']
+            low_prices = df['low']
+            prev_close_prices = df['close'].shift(1)
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - prev_close_prices).abs()
+            tr3 = (low_prices - prev_close_prices).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_val = tr.rolling(window=14).mean().iloc[-1]
+            
+            # 3. Volume vs 20-period average
+            latest_volume = float(df['volume'].iloc[-1])
+            avg_volume_20 = float(df['volume'].rolling(window=20).mean().iloc[-1])
+            volume_pct = (latest_volume / avg_volume_20) * 100.0 if avg_volume_20 > 0.0 else 0.0
+            
+            def format_vol(v):
+                if v >= 1_000_000:
+                    return f"{v/1_000_000:.1f}M"
+                if v >= 1_000:
+                    return f"{v/1_000:.1f}K"
+                return f"{v:.1f}"
+            
+            summary_lines = [
+                "="*50,
+                f"MARKET CHECK SUMMARY ({mode_str})",
+                "-"*50,
+                f"Trading Pair:      {Settings.TRADING_PAIR}",
+                f"Current Price:     ${latest_price:,.2f} USD",
+                f"Evaluation Candle: {datetime.utcfromtimestamp(int(df_completed.iloc[-1]['start'])).strftime('%Y-%m-%d %H:%M UTC')}",
+                f"Short SMA ({Settings.SMA_SHORT_WINDOW}):   ${short_val:,.2f} USD" if short_val is not None else f"Short SMA ({Settings.SMA_SHORT_WINDOW}):   N/A",
+                f"Long SMA ({Settings.SMA_LONG_WINDOW}):    ${long_val:,.2f} USD" if long_val is not None else f"Long SMA ({Settings.SMA_LONG_WINDOW}):    N/A"
+            ]
             if spread_val is not None:
-                print(f"Spread:            {spread_val:.4f}% (Min Req: {Settings.SMA_MIN_SPREAD_PERCENT:.2f}%)")
+                summary_lines.append(f"Spread:            {spread_val:.4f}% (Min Req: {Settings.SMA_MIN_SPREAD_PERCENT:.2f}%)")
+            
+            summary_lines.append(f"Dist Below High:   -${dist_high_usd:,.2f} USD (-{dist_high_pct:.2f}%)" if dist_high_usd > 0.0 else f"Dist Below High:   $0.00 USD (0.00%)")
+            atr_format = f"${atr_val:,.4f} USD" if latest_price < 10.0 else f"${atr_val:,.2f} USD"
+            summary_lines.append(f"ATR (14):          {atr_format}")
+            summary_lines.append(f"Volume vs 20-Avg:  {volume_pct:.2f}% (Latest: {format_vol(latest_volume)} vs Avg: {format_vol(avg_volume_20)})")
             if Settings.RSI_FILTER_ENABLED:
-                print(f"RSI ({Settings.RSI_PERIOD}):         {rsi_val:.2f}" if rsi_val is not None else f"RSI ({Settings.RSI_PERIOD}):         N/A")
+                if rsi_val is not None:
+                    summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         {rsi_val:.2f} (Buy Req: {Settings.RSI_BUY_MIN:.1f}-{Settings.RSI_BUY_MAX:.1f})")
+                else:
+                    summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         N/A")
             if Settings.EMA_TREND_FILTER_ENABLED:
-                print(f"EMA ({Settings.EMA_TREND_PERIOD}):        ${ema_val:,.2f} USD" if ema_val is not None else f"EMA ({Settings.EMA_TREND_PERIOD}):        N/A")
+                summary_lines.append(f"EMA ({Settings.EMA_TREND_PERIOD}):        ${ema_val:,.2f} USD" if ema_val is not None else f"EMA ({Settings.EMA_TREND_PERIOD}):        N/A")
+                if ema_val is not None:
+                    dist_usd = latest_price - ema_val
+                    dist_pct = (dist_usd / ema_val) * 100.0
+                    sign = "+" if dist_usd >= 0 else "-"
+                    summary_lines.append(f"Distance Above EMA{Settings.EMA_TREND_PERIOD}: {sign}${abs(dist_usd):,.2f} USD ({dist_pct:+.2f}%)")
             
             if signal == "SELL" and sell_reason != "STRATEGY":
-                print(f"Signal:            {signal} (Reason: {sell_reason})")
+                summary_lines.append(f"Signal:            {signal} (Reason: {sell_reason})")
             else:
-                print(f"Signal:            {signal}")
-            print(f"Current Position:  {state_manager.state['position']}")
-            print("="*50 + "\n")
+                summary_lines.append(f"Signal:            {signal}")
+            summary_lines.append(f"Current Position:  {state_manager.state['position']}")
+            
+            # Additional position details if LONG
+            if state_manager.state["position"] == "LONG":
+                entry_price = state_manager.state.get("entry_price", 0.0)
+                holdings = state_manager.state.get("holdings_base", 0.0)
+                
+                pl_pct = 0.0
+                pl_usd = 0.0
+                net_pl_pct = 0.0
+                net_pl_usd = 0.0
+                f = Settings.FEE_RATE_PERCENT / 100.0
+                if entry_price > 0.0:
+                    pl_pct = ((latest_price - entry_price) / entry_price) * 100
+                    pl_usd = (latest_price - entry_price) * holdings
+                    net_pl_pct = (latest_price * (1.0 - f) - entry_price * (1.0 + f)) / (entry_price * (1.0 + f)) * 100.0
+                    net_pl_usd = holdings * (latest_price * (1.0 - f) - entry_price * (1.0 + f))
+                
+                highest_price = state_manager.state.get("highest_price_since_entry", entry_price)
+                if highest_price == 0.0:
+                    highest_price = entry_price
+                highest_pl_pct = ((highest_price - entry_price) / entry_price * 100) if entry_price > 0.0 else 0.0
+                highest_pl_usd = (highest_price - entry_price) * holdings
+                highest_net_pl_pct = ((highest_price * (1.0 - f) - entry_price * (1.0 + f)) / (entry_price * (1.0 + f)) * 100.0) if entry_price > 0.0 else 0.0
+                highest_net_pl_usd = holdings * (highest_price * (1.0 - f) - entry_price * (1.0 + f)) if entry_price > 0.0 else 0.0
+                
+                lowest_price = state_manager.state.get("lowest_price_since_entry", entry_price)
+                if lowest_price == 0.0:
+                    lowest_price = entry_price
+                lowest_pl_pct = ((lowest_price - entry_price) / entry_price * 100) if entry_price > 0.0 else 0.0
+                lowest_pl_usd = (lowest_price - entry_price) * holdings
+                lowest_net_pl_pct = ((lowest_price * (1.0 - f) - entry_price * (1.0 + f)) / (entry_price * (1.0 + f)) * 100.0) if entry_price > 0.0 else 0.0
+                lowest_net_pl_usd = holdings * (lowest_price * (1.0 - f) - entry_price * (1.0 + f)) if entry_price > 0.0 else 0.0
+                
+                max_drawdown = state_manager.state.get("max_drawdown_since_entry", 0.0)
+                
+                hours_held = 0.0
+                entry_time_str = state_manager.get_entry_time()
+                if entry_time_str:
+                    try:
+                        t_str = entry_time_str.rstrip('Z')
+                        if '.' in t_str:
+                            fmt = "%Y-%m-%dT%H:%M:%S.%f"
+                        else:
+                            fmt = "%Y-%m-%dT%H:%M:%S"
+                        entry_dt = datetime.strptime(t_str, fmt)
+                        hours_held = (datetime.utcnow() - entry_dt).total_seconds() / 3600.0
+                    except Exception:
+                        pass
+                
+                # Calculate if break-even stop is active for logging
+                break_even_active = False
+                if Settings.BREAK_EVEN_TRIGGER_PERCENT > 0.0 and highest_net_pl_pct >= Settings.BREAK_EVEN_TRIGGER_PERCENT:
+                    break_even_active = True
+                
+                trailing_stop_active = False
+                
+                summary_lines.append(f"Entry Price:       ${entry_price:,.2f} USD")
+                summary_lines.append(f"Current P/L:       {pl_pct:+.2f}% (${pl_usd:+.2f} USD) | Net: {net_pl_pct:+.2f}% (${net_pl_usd:+.2f} USD)")
+                summary_lines.append(f"Maximum Favorable: {highest_pl_pct:+.2f}% (${highest_pl_usd:+.2f} USD) | Net: {highest_net_pl_pct:+.2f}% (${highest_net_pl_usd:+.2f} USD)")
+                summary_lines.append(f"Maximum Adverse:   {lowest_pl_pct:+.2f}% (${lowest_pl_usd:+.2f} USD) | Net: {lowest_net_pl_pct:+.2f}% (${lowest_net_pl_usd:+.2f} USD)")
+                summary_lines.append(f"Lowest Drawdown:   {max_drawdown:.2f}%")
+                summary_lines.append(f"Hours Held:        {hours_held:.2f} hours")
+                summary_lines.append(f"Trailing Stop?:    {'Yes' if trailing_stop_active else 'No'}")
+                if Settings.BREAK_EVEN_TRIGGER_PERCENT > 0.0:
+                    summary_lines.append(f"Break-even Stop?:  {'Yes (Active)' if break_even_active else f'No (Trigger at net +{Settings.BREAK_EVEN_TRIGGER_PERCENT:.2f}%)'}")
+                
+            summary_lines.append("="*50)
+            
+            logger.info("\n" + "\n".join(summary_lines))
 
             # Action: BUY
             if signal == "BUY":
                 if state_manager.state["position"] == "NONE":
-                    logger.info(f"Triggering BUY signal at ${latest_price:,.2f} USD")
+                    ema_filter_status = "DISABLED"
+                    if Settings.EMA_TREND_FILTER_ENABLED:
+                        ema_filter_status = "PASS" if (ema_val is not None and latest_price > ema_val) else "FAIL"
+                    
+                    rsi_str = f"{rsi_val:.1f}" if rsi_val is not None else "N/A"
+                    timestamp_utc = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+                    
+                    buy_signal_lines = [
+                        "*"*40,
+                        "BUY SIGNAL",
+                        "Reason:",
+                        "SMA Bullish Cross",
+                        f"Short SMA: {short_val:.3f}" if short_val is not None else "Short SMA: N/A",
+                        f"Long SMA: {long_val:.3f}" if long_val is not None else "Long SMA: N/A",
+                        f"Spread: {spread_val:.2f}%" if spread_val is not None else "Spread: N/A",
+                        f"RSI: {rsi_str}",
+                        f"EMA Filter: {ema_filter_status}",
+                        "Timestamp:",
+                        f"{timestamp_utc}",
+                        "*"*40
+                    ]
+                    logger.info("\n" + "\n".join(buy_signal_lines))
                     
                     if Settings.DRY_RUN:
                         # Simulate BUY
@@ -294,12 +466,21 @@ def main():
                             net_spend = Settings.TRADE_AMOUNT_USD - mock_fee
                             acquired_base = net_spend / latest_price
                             
+                            indicators_dict = {
+                                "sma_short": short_val,
+                                "sma_long": long_val,
+                                "ema": ema_val,
+                                "rsi": rsi_val,
+                                "spread": spread_val
+                            }
                             trade = state_manager.record_trade(
                                 trade_type="BUY",
                                 price=latest_price,
                                 amount_usd=net_spend,
                                 amount_base=acquired_base,
-                                fee_usd=mock_fee
+                                fee_usd=mock_fee,
+                                reason="SMA Bullish Cross",
+                                indicators=indicators_dict
                             )
                             logger.info(f"Simulated BUY executed: Acquired {acquired_base:.8f} {base_asset} for ${Settings.TRADE_AMOUNT_USD:.2f} USD (Fee: ${mock_fee:.4f})")
                             send_trade_notification(
@@ -312,17 +493,19 @@ def main():
                                 is_dry_run=True
                             )
                             
-                            # Print simulated order details
-                            print("\n" + "*"*40)
-                            print("[SIMULATED ORDER EXECUTED]")
-                            print(f"Product:   {Settings.TRADING_PAIR}")
-                            print(f"Side:      BUY")
-                            print(f"Price:     ${latest_price:,.2f} USD")
-                            print(f"Size:      {acquired_base:.8f} {base_asset}")
-                            print(f"Fee:       ${mock_fee:.4f} USD")
-                            print(f"Timestamp: {datetime.utcnow().isoformat()}Z")
-                            print(f"Reason:    SMA Short window crossed above SMA Long window with spread {spread_val:.4f}%")
-                            print("*"*40 + "\n")
+                            order_lines = [
+                                "*"*40,
+                                "[SIMULATED ORDER EXECUTED]",
+                                f"Product:   {Settings.TRADING_PAIR}",
+                                f"Side:      BUY",
+                                f"Price:     ${latest_price:,.2f} USD",
+                                f"Size:      {acquired_base:.8f} {base_asset}",
+                                f"Fee:       ${mock_fee:.4f} USD",
+                                f"Timestamp: {datetime.utcnow().isoformat()}Z",
+                                f"Reason:    SMA Short window crossed above SMA Long window with spread {spread_val:.4f}%",
+                                "*"*40
+                            ]
+                            logger.info("\n" + "\n".join(order_lines))
                     else:
                         # Live BUY
                         try:
@@ -363,12 +546,21 @@ def main():
                             avg_price = float(order_info.get('avg_price', latest_price))
                             
                             if filled_size_base > 0:
+                                indicators_dict = {
+                                    "sma_short": short_val,
+                                    "sma_long": long_val,
+                                    "ema": ema_val,
+                                    "rsi": rsi_val,
+                                    "spread": spread_val
+                                }
                                 trade = state_manager.record_trade(
                                     trade_type="BUY",
                                     price=avg_price,
                                     amount_usd=filled_val_usd,
                                     amount_base=filled_size_base,
-                                    fee_usd=fee_usd
+                                    fee_usd=fee_usd,
+                                    reason="SMA Bullish Cross",
+                                    indicators=indicators_dict
                                 )
                                 logger.info(f"Live BUY filled: {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Total cost: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f})")
                                 send_trade_notification(
@@ -390,7 +582,40 @@ def main():
             # Action: SELL
             elif signal == "SELL":
                 if state_manager.state["position"] == "LONG":
-                    logger.info(f"Triggering SELL signal at ${latest_price:,.2f} USD")
+                    ema_filter_status = "DISABLED"
+                    if Settings.EMA_TREND_FILTER_ENABLED:
+                        ema_filter_status = "PASS" if (ema_val is not None and latest_price < ema_val) else "FAIL"
+                    
+                    rsi_str = f"{rsi_val:.1f}" if rsi_val is not None else "N/A"
+                    timestamp_utc = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+                    
+                    reason_str = "SMA Bearish Cross"
+                    if sell_reason == "STOP_LOSS":
+                        reason_str = "Stop Loss Triggered"
+                    elif sell_reason == "TAKE_PROFIT":
+                        reason_str = "Take Profit Triggered"
+                    elif "STOP_LOSS" in sell_reason:
+                        reason_str = "Stop Loss Triggered"
+                    elif "TAKE_PROFIT" in sell_reason:
+                        reason_str = "Take Profit Triggered"
+                    elif "BREAK_EVEN" in sell_reason:
+                        reason_str = "Break-even Stop Triggered"
+                    
+                    sell_signal_lines = [
+                        "*"*40,
+                        "SELL SIGNAL",
+                        "Reason:",
+                        f"{reason_str}",
+                        f"Short SMA: {short_val:.3f}" if short_val is not None else "Short SMA: N/A",
+                        f"Long SMA: {long_val:.3f}" if long_val is not None else "Long SMA: N/A",
+                        f"Spread: {spread_val:.2f}%" if spread_val is not None else "Spread: N/A",
+                        f"RSI: {rsi_str}",
+                        f"EMA Filter: {ema_filter_status}",
+                        "Timestamp:",
+                        f"{timestamp_utc}",
+                        "*"*40
+                    ]
+                    logger.info("\n" + "\n".join(sell_signal_lines))
                     
                     if Settings.DRY_RUN:
                         # Simulate SELL
@@ -410,7 +635,8 @@ def main():
                                 price=latest_price,
                                 amount_usd=gross_usd,
                                 amount_base=holdings,
-                                fee_usd=mock_fee
+                                fee_usd=mock_fee,
+                                reason=sell_reason
                             )
                             logger.info(f"Simulated SELL executed: Sold {holdings:.8f} {base_asset} for ${net_usd:.2f} USD (Fee: ${mock_fee:.4f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
                             send_trade_notification(
@@ -424,19 +650,21 @@ def main():
                                 realized_pnl=trade.get('realized_pnl_usd', 0.0)
                             )
                             
-                            # Print simulated order details
-                            print("\n" + "*"*40)
-                            print("[SIMULATED ORDER EXECUTED]")
-                            print(f"Product:   {Settings.TRADING_PAIR}")
-                            print(f"Side:      SELL")
-                            print(f"Price:     ${latest_price:,.2f} USD")
-                            print(f"Size:      {holdings:.8f} {base_asset}")
-                            print(f"Fee:       ${mock_fee:.4f} USD")
-                            print(f"Timestamp: {datetime.utcnow().isoformat()}Z")
                             reason_str = sell_reason if sell_reason != "STRATEGY" else f"SMA Short window crossed below SMA Long window with spread {spread_val:.4f}%"
-                            print(f"Reason:    {reason_str}")
-                            print(f"PnL:       ${trade['realized_pnl_usd']:.2f} USD")
-                            print("*"*40 + "\n")
+                            order_lines = [
+                                "*"*40,
+                                "[SIMULATED ORDER EXECUTED]",
+                                f"Product:   {Settings.TRADING_PAIR}",
+                                f"Side:      SELL",
+                                f"Price:     ${latest_price:,.2f} USD",
+                                f"Size:      {holdings:.8f} {base_asset}",
+                                f"Fee:       ${mock_fee:.4f} USD",
+                                f"Timestamp: {datetime.utcnow().isoformat()}Z",
+                                f"Reason:    {reason_str}",
+                                f"PnL:       ${trade['realized_pnl_usd']:.2f} USD",
+                                "*"*40
+                            ]
+                            logger.info("\n" + "\n".join(order_lines))
                     else:
                         # Live SELL
                         try:
@@ -488,7 +716,8 @@ def main():
                                         price=avg_price,
                                         amount_usd=filled_val_usd,
                                         amount_base=filled_size_base,
-                                        fee_usd=fee_usd
+                                        fee_usd=fee_usd,
+                                        reason=sell_reason
                                     )
                                     logger.info(f"Live SELL filled: Sold {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Realized: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
                                     send_trade_notification(
