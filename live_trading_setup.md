@@ -72,3 +72,21 @@ You can check on your bot at any time using the following terminal commands:
   ```bash
   pm2 stop coinbase-bot
   ```
+
+---
+
+## 6. Manual Position Exit & Reset (`manual_sell.py`)
+If you need to close out a position manually, do not just stop the bot. Stopping the bot leaves the asset in your account balance (live) or leaves the state file set to `LONG` (dry run).
+
+To cleanly execute a sell order (both live or simulated) and reset the bot state:
+1. Run the manual closeout script:
+   ```bash
+   .venv/bin/python manual_sell.py <coin_symbol>
+   ```
+   *Example:* `.venv/bin/python manual_sell.py btc`
+2. Confirm the prompt. The script will fetch current prices, place the market sell order (if live), update `trades.csv` and `completed_trades.csv`, send an email alert, and reset the local position tracking to `NONE`.
+3. If you want to keep the bot from entering a new trade immediately after closing, stop the PM2 bot process first:
+   ```bash
+   pm2 stop btc-bot
+   .venv/bin/python manual_sell.py btc --yes
+   ```

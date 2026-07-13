@@ -18,6 +18,7 @@ A modular, secure, and automated cryptocurrency algorithmic trading system desig
 ## 📁 Repository Structure
 
 * [`bot.py`](file:///home/leeunks/coinbase-trading-bot/bot.py): Main orchestration script for running a trading bot process.
+* [`manual_sell.py`](file:///home/leeunks/coinbase-trading-bot/manual_sell.py): Script to manually exit active positions and submit sell orders (simulated or live).
 * [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py): Backtesting engine for historical strategy simulation.
 * [`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py): CLI screener that scans 15 popular USD coins on Coinbase.
 * [`daily_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_report.py): Emailling report script integrated with a 10-minute crontab scheduler.
@@ -82,6 +83,20 @@ The 10-minute automated email screener runs silently via the system cron. You ca
 ```bash
 tail -n 25 logs/daily_report.log       # View the last scan results table
 tail -f logs/daily_report.log          # Watch scans in real-time
+```
+
+### 6. Manually Closing Positions (`manual_sell.py`)
+If you ever want to close an open position manually (real or simulated) rather than waiting for the bot's automatic stop-loss or take-profit triggers, use the helper script:
+
+```bash
+# List all currently active open positions
+.venv/bin/python manual_sell.py
+
+# Manually close out a specific position (e.g., BTC)
+.venv/bin/python manual_sell.py btc
+
+# Close position instantly without confirmation prompts
+.venv/bin/python manual_sell.py btc --yes
 ```
 
 ---
