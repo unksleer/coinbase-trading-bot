@@ -305,14 +305,17 @@ def main():
                 print("Local bot state has been reset.")
             return
 
-        # Double check with user if live balance is different
-        sell_amount = live_holdings
+        # Handle difference in holdings safely
         if abs(live_holdings - holdings) / max(holdings, 1e-8) > 0.05:
             print(f"Warning: Local state holdings ({holdings:.8f}) differ from Coinbase account balance ({live_holdings:.8f}).")
-            use_live = input("Do you want to sell the ENTIRE Coinbase balance? [y/N]: ")
-            if use_live.lower() not in ("y", "yes"):
-                print("Operation cancelled. Please adjust balances manually.")
-                return
+            if live_holdings >= holdings:
+                sell_amount = holdings
+                print(f"Coinbase balance is larger. Selling ONLY the bot's tracked size: {sell_amount:.8f} {coin_symbol}.")
+            else:
+                sell_amount = live_holdings
+                print(f"Coinbase balance is smaller. Selling ALL available: {sell_amount:.8f} {coin_symbol}.")
+        else:
+            sell_amount = holdings
 
         # Place market sell order
         client_order_id = str(uuid.uuid4())

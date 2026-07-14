@@ -180,10 +180,18 @@ def run_fast_backtest(closes, high_low, short_sma, long_sma, min_spread, stop_lo
     }
 
 def main():
-    pair = "NEAR-USD"
-    granularity = "ONE_HOUR"
-    candles = 3000
-    fee_rate = 0.012
+    import argparse
+    parser = argparse.ArgumentParser(description="Fast Coinbase Trading Bot Optimizer")
+    parser.add_argument("--pair", type=str, default="BTC-USD", help="Trading pair (default: BTC-USD)")
+    parser.add_argument("--granularity", type=str, default="ONE_HOUR", help="Candle size (default: ONE_HOUR)")
+    parser.add_argument("--candles", type=int, default=3000, help="Total candles to backtest (default: 3000)")
+    parser.add_argument("--fee-rate", type=float, default=0.012, help="Fee rate per trade (default: 0.012)")
+    args = parser.parse_args()
+    
+    pair = args.pair
+    granularity = args.granularity
+    candles = args.candles
+    fee_rate = args.fee_rate
     
     df = fetch_historical_data(pair, granularity, candles)
     if df.empty:

@@ -220,7 +220,7 @@ def main():
     parser.add_argument("--candles", type=int, default=1000, help="Total candles to backtest (default: 1000)")
     parser.add_argument("--optimize", action="store_true", help="Run grid search optimizer to find best parameters")
     parser.add_argument("--trade-amount", type=float, default=10.0, help="USD trade size (default: 10.0, set to 0 to use all available cash)")
-    parser.add_argument("--fee-rate", type=float, default=0.006, help="Fee rate per trade, e.g. 0.006 for 0.6% (default: 0.006)")
+    parser.add_argument("--fee-rate", type=float, default=0.006, help="Fee rate per trade, e.g. 0.006 for 0.6 percent (default: 0.006)")
     args = parser.parse_args()
     
     df = fetch_historical_data(args.pair, args.granularity, args.candles)
