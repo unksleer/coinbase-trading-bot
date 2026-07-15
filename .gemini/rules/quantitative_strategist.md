@@ -14,3 +14,9 @@ Always verify that the **EMA Trend Filter (200)** is enabled when evaluating SMA
 
 ## GitHub Push Automation
 After making any successful code or configuration modifications (such as editing `.env` or strategy parameters), stage, commit, and push the changes to GitHub by executing the local `./push.sh` script.
+
+## State Synchronization Guardrail
+Ensure that any background daemon processes (like live trading bots) that write state to disk reload the state file from the disk at the start of each execution loop. This prevents the daemon's in-memory state from overwriting manual/external state updates (e.g., from manual exit scripts or manual file edits).
+
+## Entrypoint Parameter Alignment
+Ensure all codebase entrypoints (such as the market screener/daily report and the live trading bots) initialize shared strategies with identical parameter sets (e.g., passing both `RSI_BUY_MIN` and `RSI_BUY_MAX` to matching filters) to prevent alerting on signals that the bot will filter out.

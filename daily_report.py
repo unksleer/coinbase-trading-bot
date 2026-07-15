@@ -99,6 +99,7 @@ def main():
         min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
         rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
         rsi_period=Settings.RSI_PERIOD,
+        rsi_buy_min=Settings.RSI_BUY_MIN,
         rsi_buy_max=Settings.RSI_BUY_MAX,
         rsi_sell_min=Settings.RSI_SELL_MIN,
         ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,

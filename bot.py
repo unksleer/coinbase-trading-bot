@@ -209,6 +209,9 @@ def main():
         while True:
             logger.info("--- Starting market check ---")
             
+            # Reload state from disk in case of external/manual modifications
+            state_manager.reload_state()
+            
             # Fetch historical candle data
             if client:
                 df = fetch_candles_authenticated(client, Settings.TRADING_PAIR, Settings.GRANULARITY, required_candles + 10)

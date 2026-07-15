@@ -52,6 +52,14 @@ class StateManager:
             # We will rely on logging from the caller if needed
             pass
 
+    def reload_state(self):
+        """
+        Reloads state from the JSON file to ensure we have the latest
+        on-disk changes (e.g. from manual sells).
+        """
+        self.state = self.load_state()
+        return self.state
+
     def record_trade(self, trade_type: str, price: float, amount_usd: float, amount_base: float, fee_usd: float = 0.0, reason: str = None, indicators: dict = None):
         """
         Records a trade in the state and updates balances and position.
