@@ -221,7 +221,7 @@ def main():
             
             # Fetch historical candle data
             if client:
-                df = fetch_candles_authenticated(client, Settings.TRADING_PAIR, Settings.GRANULARITY, required_candles + 10)
+                df = fetch_candles_authenticated(client, Settings.TRADING_PAIR, Settings.GRANULARITY, max(300, required_candles + 10))
             else:
                 df = fetch_candles_public(Settings.TRADING_PAIR, Settings.GRANULARITY)
                 
