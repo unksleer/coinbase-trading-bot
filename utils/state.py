@@ -304,7 +304,11 @@ class StateManager:
         elif "BREAK_EVEN" in exit_reason:
             exit_reason_friendly = "Break-even Stop Triggered"
         elif exit_reason == "STRATEGY":
-            exit_reason_friendly = "SMA Bearish Cross"
+            from config.settings import Settings
+            if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+                exit_reason_friendly = "RSI Fell back from Overbought"
+            else:
+                exit_reason_friendly = "SMA Bearish Cross"
             
         headers = [
             "pair",

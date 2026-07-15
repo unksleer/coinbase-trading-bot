@@ -110,6 +110,18 @@ class Settings:
     except ValueError:
         FEE_RATE_PERCENT = 1.20
 
+    STRATEGY_TYPE = get_env_with_profile("STRATEGY_TYPE", "SMA_CROSSOVER").strip().upper()
+
+    try:
+        RSI_OVERSOLD = float(get_env_with_profile("RSI_OVERSOLD", "30.0"))
+    except ValueError:
+        RSI_OVERSOLD = 30.0
+
+    try:
+        RSI_OVERBOUGHT = float(get_env_with_profile("RSI_OVERBOUGHT", "70.0"))
+    except ValueError:
+        RSI_OVERBOUGHT = 70.0
+
     @classmethod
     def validate(cls):
         """

@@ -1,3 +1,4 @@
 pair,entry_time,exit_time,entry_price,exit_price,entry_reason,exit_reason,gross_pct,net_pct,fees_usd,mfe_pct,mae_pct,holding_time_hours,entry_sma_short,entry_sma_long,entry_ema,entry_rsi,entry_spread
 BTC-USDC,2026-07-12T19:01:02.438230Z,2026-07-13T23:50:51.931061Z,64112.43,62165.73,SMA Bullish Cross,MANUAL_EXIT,-3.0364,-4.1998,0.28735,0.0,-3.5843,28.8304,,,,,
 RENDER-USDC,2026-07-12T09:03:06.787876Z,2026-07-14T00:26:04.989564Z,1.548,1.482,SMA Bullish Cross,MANUAL_EXIT,-4.2636,-5.4124,0.28241,0.0,-4.7804,39.3828,,,,,
+SOL-USDC,2026-07-15T15:50:45.004649Z,2026-07-15T16:10:50.293259Z,78.11,77.72,SMA Bullish Cross,SMA Bearish Cross,-0.4993,-2.8594,0.236522,0.0256,-0.5633,0.3348,78.058,78.025,,,0.0423

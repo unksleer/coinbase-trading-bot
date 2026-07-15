@@ -13,7 +13,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import Settings
-from strategies.simple_moving_average import SMACrossoverStrategy
+from strategies import SMACrossoverStrategy, RSIMeanReversionStrategy
 
 # List of top USD pairs on Coinbase to scan (identical to USDC movement)
 COINS_TO_SCAN = [
@@ -93,18 +93,25 @@ def main():
     print(f"[{datetime.now().isoformat()}] Starting Daily Market Scan Report...")
     
     # Initialize the strategy using current .env settings
-    strategy = SMACrossoverStrategy(
-        short_window=Settings.SMA_SHORT_WINDOW,
-        long_window=Settings.SMA_LONG_WINDOW,
-        min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
-        rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
-        rsi_period=Settings.RSI_PERIOD,
-        rsi_buy_min=Settings.RSI_BUY_MIN,
-        rsi_buy_max=Settings.RSI_BUY_MAX,
-        rsi_sell_min=Settings.RSI_SELL_MIN,
-        ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,
-        ema_period=Settings.EMA_TREND_PERIOD
-    )
+    if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+        strategy = RSIMeanReversionStrategy(
+            rsi_period=Settings.RSI_PERIOD,
+            rsi_oversold=Settings.RSI_OVERSOLD,
+            rsi_overbought=Settings.RSI_OVERBOUGHT
+        )
+    else:
+        strategy = SMACrossoverStrategy(
+            short_window=Settings.SMA_SHORT_WINDOW,
+            long_window=Settings.SMA_LONG_WINDOW,
+            min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
+            rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
+            rsi_period=Settings.RSI_PERIOD,
+            rsi_buy_min=Settings.RSI_BUY_MIN,
+            rsi_buy_max=Settings.RSI_BUY_MAX,
+            rsi_sell_min=Settings.RSI_SELL_MIN,
+            ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,
+            ema_period=Settings.EMA_TREND_PERIOD
+        )
     required_candles = strategy.get_required_candles_count()
     
     results = []

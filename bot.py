@@ -10,7 +10,7 @@ from config.settings import Settings
 from utils.logger import setup_logger
 from utils.state import StateManager
 from utils.notifications import send_trade_notification
-from strategies.simple_moving_average import SMACrossoverStrategy
+from strategies import SMACrossoverStrategy, RSIMeanReversionStrategy
 
 # Initialize logger
 logger = setup_logger(name="coinbase_bot", log_file="logs/bot.log")
@@ -185,19 +185,26 @@ def main():
             sys.exit(1)
         logger.info("API keys not provided. Running Dry Run using public market data feeds.")
         
-    # 4. Initialize Strategy (SMA Crossover with RSI and EMA Trend Filters)
-    strategy = SMACrossoverStrategy(
-        short_window=Settings.SMA_SHORT_WINDOW,
-        long_window=Settings.SMA_LONG_WINDOW,
-        min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
-        rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
-        rsi_period=Settings.RSI_PERIOD,
-        rsi_buy_min=Settings.RSI_BUY_MIN,
-        rsi_buy_max=Settings.RSI_BUY_MAX,
-        rsi_sell_min=Settings.RSI_SELL_MIN,
-        ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,
-        ema_period=Settings.EMA_TREND_PERIOD
-    )
+    # 4. Initialize Strategy
+    if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+        strategy = RSIMeanReversionStrategy(
+            rsi_period=Settings.RSI_PERIOD,
+            rsi_oversold=Settings.RSI_OVERSOLD,
+            rsi_overbought=Settings.RSI_OVERBOUGHT
+        )
+    else:
+        strategy = SMACrossoverStrategy(
+            short_window=Settings.SMA_SHORT_WINDOW,
+            long_window=Settings.SMA_LONG_WINDOW,
+            min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
+            rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
+            rsi_period=Settings.RSI_PERIOD,
+            rsi_buy_min=Settings.RSI_BUY_MIN,
+            rsi_buy_max=Settings.RSI_BUY_MAX,
+            rsi_sell_min=Settings.RSI_SELL_MIN,
+            ema_filter_enabled=Settings.EMA_TREND_FILTER_ENABLED,
+            ema_period=Settings.EMA_TREND_PERIOD
+        )
     logger.info(f"Strategy initialized: {strategy.name}")
     required_candles = strategy.get_required_candles_count()
     logger.info(f"Strategy requires at least {required_candles} historical candles.")
@@ -344,9 +351,12 @@ def main():
             atr_format = f"${atr_val:,.4f} USD" if latest_price < 10.0 else f"${atr_val:,.2f} USD"
             summary_lines.append(f"ATR (14):          {atr_format}")
             summary_lines.append(f"Volume vs 20-Avg:  {volume_pct:.2f}% (Latest: {format_vol(latest_volume)} vs Avg: {format_vol(avg_volume_20)})")
-            if Settings.RSI_FILTER_ENABLED:
+            if Settings.RSI_FILTER_ENABLED or Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
                 if rsi_val is not None:
-                    summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         {rsi_val:.2f} (Buy Req: {Settings.RSI_BUY_MIN:.1f}-{Settings.RSI_BUY_MAX:.1f})")
+                    if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+                        summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         {rsi_val:.2f} (Oversold: {Settings.RSI_OVERSOLD:.1f}, Overbought: {Settings.RSI_OVERBOUGHT:.1f})")
+                    else:
+                        summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         {rsi_val:.2f} (Buy Req: {Settings.RSI_BUY_MIN:.1f}-{Settings.RSI_BUY_MAX:.1f})")
                 else:
                     summary_lines.append(f"RSI ({Settings.RSI_PERIOD}):         N/A")
             if Settings.EMA_TREND_FILTER_ENABLED:
@@ -446,16 +456,23 @@ def main():
                         "*"*40,
                         "BUY SIGNAL",
                         "Reason:",
-                        "SMA Bullish Cross",
-                        f"Short SMA: {short_val:.3f}" if short_val is not None else "Short SMA: N/A",
-                        f"Long SMA: {long_val:.3f}" if long_val is not None else "Long SMA: N/A",
-                        f"Spread: {spread_val:.2f}%" if spread_val is not None else "Spread: N/A",
-                        f"RSI: {rsi_str}",
-                        f"EMA Filter: {ema_filter_status}",
+                        "RSI Recovered from Oversold" if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION" else "SMA Bullish Cross",
+                    ]
+                    if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+                        buy_signal_lines.append(f"RSI: {rsi_str} (Oversold: {Settings.RSI_OVERSOLD})")
+                    else:
+                        buy_signal_lines.extend([
+                            f"Short SMA: {short_val:.3f}" if short_val is not None else "Short SMA: N/A",
+                            f"Long SMA: {long_val:.3f}" if long_val is not None else "Long SMA: N/A",
+                            f"Spread: {spread_val:.2f}%" if spread_val is not None else "Spread: N/A",
+                            f"RSI: {rsi_str}",
+                            f"EMA Filter: {ema_filter_status}"
+                        ])
+                    buy_signal_lines.extend([
                         "Timestamp:",
                         f"{timestamp_utc}",
                         "*"*40
-                    ]
+                    ])
                     logger.info("\n" + "\n".join(buy_signal_lines))
                     
                     if Settings.DRY_RUN:
@@ -482,7 +499,7 @@ def main():
                                 amount_usd=net_spend,
                                 amount_base=acquired_base,
                                 fee_usd=mock_fee,
-                                reason="SMA Bullish Cross",
+                                reason="RSI Recovered from Oversold" if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION" else "SMA Bullish Cross",
                                 indicators=indicators_dict
                             )
                             logger.info(f"Simulated BUY executed: Acquired {acquired_base:.8f} {base_asset} for ${Settings.TRADE_AMOUNT_USD:.2f} USD (Fee: ${mock_fee:.4f})")
@@ -505,7 +522,7 @@ def main():
                                 f"Size:      {acquired_base:.8f} {base_asset}",
                                 f"Fee:       ${mock_fee:.4f} USD",
                                 f"Timestamp: {datetime.utcnow().isoformat()}Z",
-                                f"Reason:    SMA Short window crossed above SMA Long window with spread {spread_val:.4f}%",
+                                f"Reason:    RSI recovered above oversold threshold {Settings.RSI_OVERSOLD:.1f}" if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION" else f"Reason:    SMA Short window crossed above SMA Long window with spread {spread_val:.4f}%",
                                 "*"*40
                             ]
                             logger.info("\n" + "\n".join(order_lines))
@@ -562,7 +579,7 @@ def main():
                                     amount_usd=filled_val_usd,
                                     amount_base=filled_size_base,
                                     fee_usd=fee_usd,
-                                    reason="SMA Bullish Cross",
+                                    reason="RSI Recovered from Oversold" if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION" else "SMA Bullish Cross",
                                     indicators=indicators_dict
                                 )
                                 logger.info(f"Live BUY filled: {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Total cost: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f})")

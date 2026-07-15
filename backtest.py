@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
-from strategies.simple_moving_average import SMACrossoverStrategy
+from strategies import SMACrossoverStrategy, RSIMeanReversionStrategy
 
 # Granularity mapping
 GRANULARITY_MAP = {
@@ -80,21 +80,29 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
 def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spread: float, stop_loss: float, take_profit: float,
                  rsi_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
                  ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 100.0, gran_seconds: int = 3600,
-                 trade_amount_usd: float = 10.0, fee_rate: float = 0.006) -> dict:
+                 trade_amount_usd: float = 10.0, fee_rate: float = 0.006, strategy_type: str = "SMA_CROSSOVER",
+                 rsi_oversold: float = 30.0, rsi_overbought: float = 70.0) -> dict:
     """
     Simulates trading over the historical DataFrame.
     """
-    strategy = SMACrossoverStrategy(
-        short_window=short_window,
-        long_window=long_window,
-        min_spread_percent=min_spread,
-        rsi_filter_enabled=rsi_enabled,
-        rsi_period=rsi_period,
-        rsi_buy_max=rsi_buy_max,
-        rsi_sell_min=rsi_sell_min,
-        ema_filter_enabled=ema_enabled,
-        ema_period=ema_period
-    )
+    if strategy_type == "RSI_MEAN_REVERSION":
+        strategy = RSIMeanReversionStrategy(
+            rsi_period=rsi_period,
+            rsi_oversold=rsi_oversold,
+            rsi_overbought=rsi_overbought
+        )
+    else:
+        strategy = SMACrossoverStrategy(
+            short_window=short_window,
+            long_window=long_window,
+            min_spread_percent=min_spread,
+            rsi_filter_enabled=rsi_enabled,
+            rsi_period=rsi_period,
+            rsi_buy_max=rsi_buy_max,
+            rsi_sell_min=rsi_sell_min,
+            ema_filter_enabled=ema_enabled,
+            ema_period=ema_period
+        )
     required = strategy.get_required_candles_count()
     
     cash = start_cash
@@ -303,21 +311,30 @@ def main():
             ema_period=Settings.EMA_TREND_PERIOD,
             gran_seconds=gran_seconds,
             trade_amount_usd=args.trade_amount,
-            fee_rate=args.fee_rate
+            fee_rate=args.fee_rate,
+            strategy_type=Settings.STRATEGY_TYPE,
+            rsi_oversold=Settings.RSI_OVERSOLD,
+            rsi_overbought=Settings.RSI_OVERBOUGHT
         )
         
         print("\n" + "="*50)
         print("BACKTEST RESULTS (CURRENT CONFIGURATION)")
         print("="*50)
-        print(f"Short Window:        {Settings.SMA_SHORT_WINDOW}")
-        print(f"Long Window:         {Settings.SMA_LONG_WINDOW}")
-        print(f"Min Spread %:        {Settings.SMA_MIN_SPREAD_PERCENT}%")
+        print(f"Strategy Type:       {Settings.STRATEGY_TYPE}")
+        if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+            print(f"RSI Period:          {Settings.RSI_PERIOD}")
+            print(f"RSI Oversold (Buy):  {Settings.RSI_OVERSOLD}")
+            print(f"RSI Overbought(Sell): {Settings.RSI_OVERBOUGHT}")
+        else:
+            print(f"Short Window:        {Settings.SMA_SHORT_WINDOW}")
+            print(f"Long Window:         {Settings.SMA_LONG_WINDOW}")
+            print(f"Min Spread %:        {Settings.SMA_MIN_SPREAD_PERCENT}%")
+            print(f"RSI Filter:          {Settings.RSI_FILTER_ENABLED} (Period: {Settings.RSI_PERIOD}, Buy Max: {Settings.RSI_BUY_MAX}, Sell Min: {Settings.RSI_SELL_MIN})")
+            print(f"EMA Trend Filter:    {Settings.EMA_TREND_FILTER_ENABLED} (Period: {Settings.EMA_TREND_PERIOD})")
         print(f"Stop Loss %:         {Settings.STOP_LOSS_PERCENT}%")
         print(f"Take Profit %:       {Settings.TAKE_PROFIT_PERCENT}%")
         print(f"Simulated Fee Rate:  {args.fee_rate * 100:.2f}% per trade")
         print(f"Trade Size:          ${args.trade_amount:.2f} USD" if args.trade_amount > 0.0 else "Trade Size:          100% of Cash")
-        print(f"RSI Filter:          {Settings.RSI_FILTER_ENABLED} (Period: {Settings.RSI_PERIOD}, Buy Max: {Settings.RSI_BUY_MAX}, Sell Min: {Settings.RSI_SELL_MIN})")
-        print(f"EMA Trend Filter:    {Settings.EMA_TREND_FILTER_ENABLED} (Period: {Settings.EMA_TREND_PERIOD})")
         print("-"*50)
         print(f"Total Actions:       {res['total_trades']}")
         print(f"Completed Trades:    {res['completed_trades']}")
