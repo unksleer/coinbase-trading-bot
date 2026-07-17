@@ -8,6 +8,9 @@ A modular, secure, and automated cryptocurrency algorithmic trading system desig
 
 * **Multi-Asset Live Bots**: Run isolated trading bots for multiple coins (e.g., BTC, ETH, SOL) concurrently. State and trade histories are kept separate (e.g., `state_btc-usdc.json`, `state_eth-usdc.json`) to prevent conflicts.
 * **Instant Trade Shortcut**: Launch live trading bots for any cryptocurrency instantly with a single command using the [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh) script.
+* **Coin-Specific Overrides**: Finetune trading settings per asset directly in [.env](file:///home/leeunks/coinbase-trading-bot/.env) (e.g. `SOL_SMA_SHORT_WINDOW=12`).
+* **ATR-Based Risk Management**: Set volatility-adapted stops (e.g., 3.0x ATR Stop Loss / 6.0x ATR Take Profit) instead of static percentages.
+* **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py)) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)) using public APIs.
 * **Systematic Screener & Alerts**: A market scanner ([`daily_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_report.py)) runs in the background every 10 minutes, compiling real-time prices, 24h changes, RSI, and SMA spreads for 15 top assets.
 * **Alert-Only Emails**: Receives rich HTML emails only when active **`BUY`** signals are triggered, keeping your inbox clean.
 * **Advanced Backtesting**: Run historical simulations with custom trade sizes or test compounding portfolio growth (using 100% of cash) with [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py).
@@ -21,6 +24,7 @@ A modular, secure, and automated cryptocurrency algorithmic trading system desig
 * [`manual_sell.py`](file:///home/leeunks/coinbase-trading-bot/manual_sell.py): Script to manually exit active positions and submit sell orders (simulated or live).
 * [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py): Backtesting engine for historical strategy simulation.
 * [`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py): CLI screener that scans 15 popular USD coins on Coinbase.
+* [`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py): Dedicated CLI stock trend and volatility scanner powered by Yahoo Finance.
 * [`daily_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_report.py): Emailling report script integrated with a 10-minute crontab scheduler.
 * [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh): Command-line shortcut script to start a live bot.
 * [`.env`](file:///home/leeunks/coinbase-trading-bot/.env): Environment variables containing API keys, SMTP credentials, and parameters.
@@ -72,10 +76,15 @@ Run historical simulations using the [`backtest.py`](file:///home/leeunks/coinba
 .venv/bin/python backtest.py --optimize
 ```
 
-### 4. Running the Market Screener
+### 4. Running the Market Screeners
 Execute a manual scan across 15 high-liquidity Coinbase pairs:
 ```bash
 .venv/bin/python scanner.py
+```
+
+Execute a daily chart trend scan across top tech stocks and major index ETFs:
+```bash
+.venv/bin/python stock_scanner.py
 ```
 
 ### 5. Viewing Screener & Alert Logs
@@ -118,3 +127,5 @@ Edit [`.env`](file:///home/leeunks/coinbase-trading-bot/.env) to configure setti
 * **Risk Controls**:
   * `TAKE_PROFIT_PERCENT=6.0` (Sells position immediately at a 6% gain)
   * `STOP_LOSS_PERCENT=3.0` (Sells position immediately at a 3% loss)
+  * `STOP_LOSS_ATR_MULTIPLE=3.0` (Uncomment to set Stop Loss at 3.0 * Entry ATR)
+  * `TAKE_PROFIT_ATR_MULTIPLE=6.0` (Uncomment to set Take Profit at 6.0 * Entry ATR)

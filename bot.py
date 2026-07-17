@@ -156,8 +156,9 @@ def main():
         sys.exit(1)
         
     # 2. Initialize State Manager
+    state_file = os.getenv("STATE_FILE", f"state_{Settings.TRADING_PAIR.lower()}.json")
     state_manager = StateManager(
-        state_file=f"state_{Settings.TRADING_PAIR.lower()}.json",
+        state_file=state_file,
         dry_run=Settings.DRY_RUN
     )
     
@@ -249,6 +250,27 @@ def main():
                 # The latest candle is already closed.
                 df_completed = df.copy()
             
+            # Calculate additional market metrics (moved up to support ATR risk management)
+            # 1. Distance Below Recent High
+            recent_high = float(df['high'].max())
+            dist_high_usd = recent_high - latest_price
+            dist_high_pct = (dist_high_usd / recent_high) * 100.0 if recent_high > 0.0 else 0.0
+            
+            # 2. ATR (14-period)
+            high_prices = df['high']
+            low_prices = df['low']
+            prev_close_prices = df['close'].shift(1)
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - prev_close_prices).abs()
+            tr3 = (low_prices - prev_close_prices).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_val = tr.rolling(window=14).mean().iloc[-1]
+            
+            # 3. Volume vs 20-period average
+            latest_volume = float(df['volume'].iloc[-1])
+            avg_volume_20 = float(df['volume'].rolling(window=20).mean().iloc[-1])
+            volume_pct = (latest_volume / avg_volume_20) * 100.0 if avg_volume_20 > 0.0 else 0.0
+
             # Evaluate strategy
             signal = strategy.evaluate(df_completed)
             logger.info(f"Strategy evaluation signal (on closed candle): {signal} (Current Position: {state_manager.state['position']})")
@@ -276,22 +298,44 @@ def main():
                 
                 # Check Break-even Stop (trigger at net break-even price, i.e. net P/L <= 0.05% to lock in positive PnL)
                 net_breakeven_price = entry_price * (1.0 + f + 0.0005) / (1.0 - f)
+                
+                # ATR Threshold (fallback to current if entry wasn't saved)
+                entry_atr = state_manager.state.get("entry_indicators", {}).get("atr", None)
+                atr_threshold = entry_atr if entry_atr is not None else atr_val
+
                 if break_even_active and latest_price <= net_breakeven_price:
                     signal = "SELL"
                     sell_reason = f"BREAK_EVEN (Price fell back to break-even price ${net_breakeven_price:.4f} after peaking at net +{highest_net_pl_pct:.2f}%)"
                     logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
-                # Check Stop Loss
+                # Check ATR-based Stop Loss
+                elif Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                    sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
+                    if latest_price <= sl_price:
+                        signal = "SELL"
+                        sell_reason = f"STOP_LOSS_ATR (Price fell below ATR stop price ${sl_price:.2f} using multiple {Settings.STOP_LOSS_ATR_MULTIPLE} * ATR ${atr_threshold:.2f})"
+                        logger.warning(f"🚨 Risk management triggered: {sell_reason}")
+                
+                # Check percentage-based Stop Loss
                 elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                     signal = "SELL"
                     sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
                     logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
-                # Check Take Profit
-                elif Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
-                    signal = "SELL"
-                    sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
-                    logger.info(f"💰 Risk management triggered: {sell_reason}")
+                # Check ATR-based Take Profit
+                if signal != "SELL":
+                    if Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                        tp_price = entry_price + (Settings.TAKE_PROFIT_ATR_MULTIPLE * atr_threshold)
+                        if latest_price >= tp_price:
+                            signal = "SELL"
+                            sell_reason = f"TAKE_PROFIT_ATR (Price rose above ATR profit price ${tp_price:.2f} using multiple {Settings.TAKE_PROFIT_ATR_MULTIPLE} * ATR ${atr_threshold:.2f})"
+                            logger.info(f"💰 Risk management triggered: {sell_reason}")
+                    
+                    # Check percentage-based Take Profit
+                    elif Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
+                        signal = "SELL"
+                        sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
+                        logger.info(f"💰 Risk management triggered: {sell_reason}")
 
             # Fetch last calculated strategy values
             short_val = getattr(strategy, "last_short", None)
@@ -306,26 +350,6 @@ def main():
             if state_manager.state["position"] == "LONG":
                 state_manager.update_position_metrics(latest_price)
             
-            # Calculate additional market metrics
-            # 1. Distance Below Recent High
-            recent_high = float(df['high'].max())
-            dist_high_usd = recent_high - latest_price
-            dist_high_pct = (dist_high_usd / recent_high) * 100.0 if recent_high > 0.0 else 0.0
-            
-            # 2. ATR (14-period)
-            high_prices = df['high']
-            low_prices = df['low']
-            prev_close_prices = df['close'].shift(1)
-            tr1 = high_prices - low_prices
-            tr2 = (high_prices - prev_close_prices).abs()
-            tr3 = (low_prices - prev_close_prices).abs()
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr_val = tr.rolling(window=14).mean().iloc[-1]
-            
-            # 3. Volume vs 20-period average
-            latest_volume = float(df['volume'].iloc[-1])
-            avg_volume_20 = float(df['volume'].rolling(window=20).mean().iloc[-1])
-            volume_pct = (latest_volume / avg_volume_20) * 100.0 if avg_volume_20 > 0.0 else 0.0
             
             def format_vol(v):
                 if v >= 1_000_000:
@@ -437,6 +461,12 @@ def main():
                 summary_lines.append(f"Trailing Stop?:    {'Yes' if trailing_stop_active else 'No'}")
                 if Settings.BREAK_EVEN_TRIGGER_PERCENT > 0.0:
                     summary_lines.append(f"Break-even Stop?:  {'Yes (Active)' if break_even_active else f'No (Trigger at net +{Settings.BREAK_EVEN_TRIGGER_PERCENT:.2f}%)'}")
+                if Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                    sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
+                    summary_lines.append(f"ATR Stop Loss:     ${sl_price:.2f} (Entry ATR: ${atr_threshold:.2f}, Multiple: {Settings.STOP_LOSS_ATR_MULTIPLE}x)")
+                if Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                    tp_price = entry_price + (Settings.TAKE_PROFIT_ATR_MULTIPLE * atr_threshold)
+                    summary_lines.append(f"ATR Take Profit:   ${tp_price:.2f} (Entry ATR: ${atr_threshold:.2f}, Multiple: {Settings.TAKE_PROFIT_ATR_MULTIPLE}x)")
                 
             summary_lines.append("="*50)
             
@@ -491,7 +521,8 @@ def main():
                                 "sma_long": long_val,
                                 "ema": ema_val,
                                 "rsi": rsi_val,
-                                "spread": spread_val
+                                "spread": spread_val,
+                                "atr": atr_val
                             }
                             trade = state_manager.record_trade(
                                 trade_type="BUY",
@@ -571,7 +602,8 @@ def main():
                                     "sma_long": long_val,
                                     "ema": ema_val,
                                     "rsi": rsi_val,
-                                    "spread": spread_val
+                                    "spread": spread_val,
+                                    "atr": atr_val
                                 }
                                 trade = state_manager.record_trade(
                                     trade_type="BUY",

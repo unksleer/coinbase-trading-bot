@@ -26,10 +26,12 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
     chunk_size = 300
     fetched = 0
     
+    active_product_id = product_id
+    
     while fetched < total_candles:
         limit = min(chunk_size, total_candles - fetched)
         start_time = end_time - pd.Timedelta(seconds=limit * gran_seconds)
-        url = f"https://api.exchange.coinbase.com/products/{product_id}/candles"
+        url = f"https://api.exchange.coinbase.com/products/{active_product_id}/candles"
         params = {
             "granularity": gran_seconds,
             "start": start_time.isoformat(),
@@ -37,6 +39,13 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
         }
         try:
             response = requests.get(url, params=params, timeout=10)
+            if response.status_code in (400, 404) and active_product_id.endswith("-USDC"):
+                fallback_product_id = active_product_id[:-4] + "USD"
+                print(f"Candles request for {active_product_id} failed with {response.status_code}. Falling back to {fallback_product_id}...")
+                active_product_id = fallback_product_id
+                url = f"https://api.exchange.coinbase.com/products/{active_product_id}/candles"
+                response = requests.get(url, params=params, timeout=10)
+                
             response.raise_for_status()
             data = response.json()
             if not data:
@@ -57,6 +66,7 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
     df['start'] = pd.to_numeric(df['start'])
     df = df.sort_values(by='start', ascending=True).reset_index(drop=True)
     return df
+
 
 def run_fast_backtest(closes, high_low, short_sma, long_sma, min_spread, stop_loss, take_profit,
                       rsi_vals, ema_vals, start_cash=100.0, trade_amount_usd=10.0, fee_rate=0.012,

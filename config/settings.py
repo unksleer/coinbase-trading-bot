@@ -7,17 +7,33 @@ load_dotenv()
 # Determine the active profile (e.g. CONSERVATIVE, AGGRESSIVE)
 ACTIVE_PROFILE = os.getenv("ACTIVE_PROFILE", "CONSERVATIVE").strip().upper()
 
+# Determine the active coin prefix (e.g. SOL, BTC) from TRADING_PAIR env variable
+TRADING_PAIR_ENV = os.getenv("TRADING_PAIR", "BTC-USD").strip()
+try:
+    COIN_PREFIX = TRADING_PAIR_ENV.split('-')[0].upper()
+except Exception:
+    COIN_PREFIX = ""
+
 def get_env_with_profile(key: str, default: str) -> str:
     """
-    Returns environment variable value. If ACTIVE_PROFILE is set,
-    first looks for f"{ACTIVE_PROFILE}_{key}". If not found, falls back
-    to the base key, and finally to the default.
+    Returns environment variable value. Checks:
+    1. Coin-specific key (e.g. SOL_SMA_SHORT_WINDOW)
+    2. Profile-specific key (e.g. AGGRESSIVE_SMA_SHORT_WINDOW)
+    3. Base key (e.g. SMA_SHORT_WINDOW)
+    4. Default value
     """
+    if COIN_PREFIX:
+        coin_key = f"{COIN_PREFIX}_{key}"
+        if coin_key in os.environ:
+            return os.environ[coin_key]
+            
     if ACTIVE_PROFILE:
         profile_key = f"{ACTIVE_PROFILE}_{key}"
         if profile_key in os.environ:
             return os.environ[profile_key]
+            
     return os.getenv(key, default)
+
 
 class Settings:
     # Coinbase Developer Platform (CDP) API Credentials
@@ -70,6 +86,16 @@ class Settings:
         TAKE_PROFIT_PERCENT = float(get_env_with_profile("TAKE_PROFIT_PERCENT", "0.0"))
     except ValueError:
         TAKE_PROFIT_PERCENT = 0.0
+
+    try:
+        STOP_LOSS_ATR_MULTIPLE = float(get_env_with_profile("STOP_LOSS_ATR_MULTIPLE", "0.0"))
+    except ValueError:
+        STOP_LOSS_ATR_MULTIPLE = 0.0
+
+    try:
+        TAKE_PROFIT_ATR_MULTIPLE = float(get_env_with_profile("TAKE_PROFIT_ATR_MULTIPLE", "0.0"))
+    except ValueError:
+        TAKE_PROFIT_ATR_MULTIPLE = 0.0
 
     RSI_FILTER_ENABLED = get_env_with_profile("RSI_FILTER_ENABLED", "False").lower() in ("true", "1", "t", "yes")
     
@@ -155,6 +181,12 @@ class Settings:
 
         if cls.TAKE_PROFIT_PERCENT < 0:
             errors.append("TAKE_PROFIT_PERCENT must be greater than or equal to 0.")
+
+        if cls.STOP_LOSS_ATR_MULTIPLE < 0:
+            errors.append("STOP_LOSS_ATR_MULTIPLE must be greater than or equal to 0.")
+
+        if cls.TAKE_PROFIT_ATR_MULTIPLE < 0:
+            errors.append("TAKE_PROFIT_ATR_MULTIPLE must be greater than or equal to 0.")
 
         if cls.BREAK_EVEN_TRIGGER_PERCENT < 0:
             errors.append("BREAK_EVEN_TRIGGER_PERCENT must be greater than or equal to 0.")

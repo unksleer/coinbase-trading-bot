@@ -24,3 +24,9 @@ logs/
 # Local State Files
 state.json
 state_*.json
+
+# Trade logs & data
+*.csv
+
+# Scratch directory
+scratch/

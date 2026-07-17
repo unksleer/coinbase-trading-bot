@@ -34,12 +34,14 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
     chunk_size = 300
     fetched = 0
     
+    active_product_id = product_id
+    
     while fetched < total_candles:
         limit = min(chunk_size, total_candles - fetched)
         # Calculate start time for this chunk
         start_time = end_time - pd.Timedelta(seconds=limit * gran_seconds)
         
-        url = f"https://api.exchange.coinbase.com/products/{product_id}/candles"
+        url = f"https://api.exchange.coinbase.com/products/{active_product_id}/candles"
         params = {
             "granularity": gran_seconds,
             "start": start_time.isoformat(),
@@ -48,6 +50,13 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
         
         try:
             response = requests.get(url, params=params, timeout=10)
+            if response.status_code in (400, 404) and active_product_id.endswith("-USDC"):
+                fallback_product_id = active_product_id[:-4] + "USD"
+                print(f"Candles request for {active_product_id} failed with {response.status_code}. Falling back to {fallback_product_id}...")
+                active_product_id = fallback_product_id
+                url = f"https://api.exchange.coinbase.com/products/{active_product_id}/candles"
+                response = requests.get(url, params=params, timeout=10)
+                
             response.raise_for_status()
             data = response.json()
             
@@ -77,11 +86,13 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
     df = df.sort_values(by='start', ascending=True).reset_index(drop=True)
     return df
 
+
 def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spread: float, stop_loss: float, take_profit: float,
                  rsi_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
                  ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 100.0, gran_seconds: int = 3600,
                  trade_amount_usd: float = 10.0, fee_rate: float = 0.006, strategy_type: str = "SMA_CROSSOVER",
-                 rsi_oversold: float = 30.0, rsi_overbought: float = 70.0) -> dict:
+                 rsi_oversold: float = 30.0, rsi_overbought: float = 70.0,
+                 stop_loss_atr_multiple: float = 0.0, take_profit_atr_multiple: float = 0.0) -> dict:
     """
     Simulates trading over the historical DataFrame.
     """
@@ -105,9 +116,20 @@ def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spre
         )
     required = strategy.get_required_candles_count()
     
+    # Precompute ATR (14-period)
+    high_prices = df['high']
+    low_prices = df['low']
+    prev_close = df['close'].shift(1)
+    tr1 = high_prices - low_prices
+    tr2 = (high_prices - prev_close).abs()
+    tr3 = (low_prices - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr_series = tr.rolling(window=14).mean()
+    
     cash = start_cash
     holdings = 0.0
     entry_price = 0.0
+    entry_atr = 0.0
     position = "NONE"
     
     trades = []
@@ -127,10 +149,31 @@ def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spre
         # Risk management check
         if position == "LONG" and entry_price > 0:
             price_change = ((price - entry_price) / entry_price) * 100
-            if stop_loss > 0.0 and price_change <= -stop_loss:
+            
+            # Check ATR Stop Loss
+            atr_sl_triggered = False
+            if stop_loss_atr_multiple > 0.0 and entry_atr > 0.0:
+                sl_price = entry_price - (stop_loss_atr_multiple * entry_atr)
+                if price <= sl_price:
+                    signal = "SELL"
+                    atr_sl_triggered = True
+            
+            # Check percentage Stop Loss
+            if not atr_sl_triggered and stop_loss > 0.0 and price_change <= -stop_loss:
                 signal = "SELL"
-            elif take_profit > 0.0 and price_change >= take_profit:
-                signal = "SELL"
+                
+            # Check ATR Take Profit
+            if signal != "SELL":
+                atr_tp_triggered = False
+                if take_profit_atr_multiple > 0.0 and entry_atr > 0.0:
+                    tp_price = entry_price + (take_profit_atr_multiple * entry_atr)
+                    if price >= tp_price:
+                        signal = "SELL"
+                        atr_tp_triggered = True
+                
+                # Check percentage Take Profit
+                if not atr_tp_triggered and take_profit > 0.0 and price_change >= take_profit:
+                    signal = "SELL"
                 
         # Handle trades
         if signal == "BUY" and position == "NONE":
@@ -143,6 +186,7 @@ def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spre
                 cash -= trade_amount
                 holdings += acquired
                 entry_price = price
+                entry_atr = float(atr_series.iloc[i]) if not pd.isna(atr_series.iloc[i]) else 0.0
                 position = "LONG"
                 buy_index = i
                 trades.append({"type": "BUY", "price": price, "amount_usd": net_spend, "holdings": holdings, "pnl": 0.0})
@@ -231,7 +275,12 @@ def main():
     parser.add_argument("--fee-rate", type=float, default=0.006, help="Fee rate per trade, e.g. 0.006 for 0.6 percent (default: 0.006)")
     args = parser.parse_args()
     
+    # Set TRADING_PAIR environment variable so Settings loaded dynamically matches the backtested pair
+    import os
+    os.environ["TRADING_PAIR"] = args.pair
+    
     df = fetch_historical_data(args.pair, args.granularity, args.candles)
+
     if df.empty:
         print("Error: Could not retrieve historical data.")
         sys.exit(1)
@@ -314,7 +363,9 @@ def main():
             fee_rate=args.fee_rate,
             strategy_type=Settings.STRATEGY_TYPE,
             rsi_oversold=Settings.RSI_OVERSOLD,
-            rsi_overbought=Settings.RSI_OVERBOUGHT
+            rsi_overbought=Settings.RSI_OVERBOUGHT,
+            stop_loss_atr_multiple=Settings.STOP_LOSS_ATR_MULTIPLE,
+            take_profit_atr_multiple=Settings.TAKE_PROFIT_ATR_MULTIPLE
         )
         
         print("\n" + "="*50)
@@ -333,6 +384,8 @@ def main():
             print(f"EMA Trend Filter:    {Settings.EMA_TREND_FILTER_ENABLED} (Period: {Settings.EMA_TREND_PERIOD})")
         print(f"Stop Loss %:         {Settings.STOP_LOSS_PERCENT}%")
         print(f"Take Profit %:       {Settings.TAKE_PROFIT_PERCENT}%")
+        print(f"Stop Loss ATR Mult:  {Settings.STOP_LOSS_ATR_MULTIPLE}x")
+        print(f"Take Profit ATR Mult:{Settings.TAKE_PROFIT_ATR_MULTIPLE}x")
         print(f"Simulated Fee Rate:  {args.fee_rate * 100:.2f}% per trade")
         print(f"Trade Size:          ${args.trade_amount:.2f} USD" if args.trade_amount > 0.0 else "Trade Size:          100% of Cash")
         print("-"*50)

@@ -190,7 +190,7 @@ def main():
             product_id = f"{coin_symbol}-USDC"
             quote_symbol = "USDC"
 
-    state_file = f"state_{product_id.lower()}.json"
+    state_file = os.getenv("STATE_FILE", f"state_{product_id.lower()}.json")
     
     if not os.path.exists(state_file):
         print(f"Error: State file '{state_file}' does not exist.")
