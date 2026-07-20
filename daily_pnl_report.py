@@ -197,6 +197,7 @@ def main():
         <tr style="background-color: #111827;">
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; color: #ffffff; font-weight: bold;">{r['name']}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center;">{mode_badge}</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center; color: #cbd5e1;">1x (Spot)</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center;">{pos_badge}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #cbd5e1;">{entry_str}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #cbd5e1;">{current_str}</td>
@@ -234,10 +235,19 @@ def main():
                 exit_reason_str = row['exit_reason']
                 pair_name = row['pair']
                 
+                # Check what strategy settings were active
+                sma_s = row.get('entry_sma_short')
+                sma_l = row.get('entry_sma_long')
+                if pd.notna(sma_s) and pd.notna(sma_l) and str(sma_s) != "" and str(sma_l) != "" and str(sma_s) != "nan" and str(sma_l) != "nan":
+                    setup_display = f"SMA {int(float(sma_s))}/{int(float(sma_l))} (1x Spot)"
+                else:
+                    setup_display = "1x Spot"
+                
                 losses_rows += f"""
                 <tr style="background-color: #111827;">
                     <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #ffffff; font-weight: bold;">{pair_name}</td>
                     <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #cbd5e1; font-size: 12px;">{date_display}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #cbd5e1; font-size: 12px;">{setup_display}</td>
                     <td style="padding: 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #f87171; font-weight: 500;">{pnl_val:+.2f} USD ({pct_val:+.2f}%)</td>
                     <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #f87171; font-weight: bold;">{exit_reason_str}</td>
                 </tr>
@@ -250,6 +260,7 @@ def main():
                     <tr>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Pair</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Exit Date</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Leveraged Setup</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151; text-align: right;">Loss (Net)</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Primary Cause / Reason</th>
                     </tr>
@@ -294,6 +305,7 @@ def main():
                     <tr>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151;">Bot Name</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Type</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Leverage</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Position</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: right;">Entry Px</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: right;">Current Px</th>
