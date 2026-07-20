@@ -193,11 +193,14 @@ def main():
         entry_str = f"${r['entry']:,.2f}" if r["entry"] > 0 else "-"
         current_str = f"${r['current']:,.2f}" if r["current"] > 0 else "-"
         
+        leveraged_val = r["entry"] * r["holdings"]
+        leveraged_str = f"${leveraged_val:,.2f}" if r["position"] == "LONG" and leveraged_val > 0 else "-"
+        
         table_rows += f"""
         <tr style="background-color: #111827;">
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; color: #ffffff; font-weight: bold;">{r['name']}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center;">{mode_badge}</td>
-            <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center; color: #cbd5e1;">1x (Spot)</td>
+            <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center; color: #cbd5e1;">{leveraged_str}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: center;">{pos_badge}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #cbd5e1;">{entry_str}</td>
             <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #cbd5e1;">{current_str}</td>
@@ -230,8 +233,8 @@ def main():
                 except:
                     date_display = exit_time_str
                     
-                pnl_val = row['pnl_usd'] if 'pnl_usd' in row else (row['net_pct'] / 100.0 * 10.0)
-                pct_val = row['net_pct']
+                pnl_val = float(row['pnl_usd']) if 'pnl_usd' in row and pd.notna(row['pnl_usd']) else 0.0
+                pct_val = float(row['net_pct']) if 'net_pct' in row and pd.notna(row['net_pct']) else 0.0
                 exit_reason_str = row['exit_reason']
                 pair_name = row['pair']
                 
@@ -239,9 +242,17 @@ def main():
                 sma_s = row.get('entry_sma_short')
                 sma_l = row.get('entry_sma_long')
                 if pd.notna(sma_s) and pd.notna(sma_l) and str(sma_s) != "" and str(sma_l) != "" and str(sma_s) != "nan" and str(sma_l) != "nan":
-                    setup_display = f"SMA {int(float(sma_s))}/{int(float(sma_l))} (1x Spot)"
+                    strat_display = f"SMA {int(float(sma_s))}/{int(float(sma_l))}"
                 else:
-                    setup_display = "1x Spot"
+                    strat_display = "SMA Crossover"
+                
+                # Compute leveraged amount mathematically: amount = pnl / (net_pct / 100.0)
+                if pct_val != 0.0:
+                    leveraged_amount = abs(pnl_val / (pct_val / 100.0))
+                else:
+                    leveraged_amount = 10.0 # Default fallback
+                    
+                setup_display = f"${leveraged_amount:,.2f} ({strat_display})"
                 
                 losses_rows += f"""
                 <tr style="background-color: #111827;">
@@ -305,7 +316,7 @@ def main():
                     <tr>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151;">Bot Name</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Type</th>
-                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Leverage</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Leveraged USD</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: center;">Position</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: right;">Entry Px</th>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151; text-align: right;">Current Px</th>
