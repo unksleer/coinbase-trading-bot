@@ -210,6 +210,56 @@ def main():
     live_color = "#34d399" if total_live_pnl >= 0 else "#f87171"
     sim_color = "#34d399" if total_sim_pnl >= 0 else "#f87171"
     
+    # 4. Extract recent losses and exit reasons
+    losses_html = ""
+    if not df_completed.empty:
+        pnl_col = 'pnl_usd' if 'pnl_usd' in df_completed.columns else 'net_pct'
+        df_losses = df_completed[df_completed[pnl_col] < 0.0]
+        
+        if not df_losses.empty:
+            df_losses = df_losses.sort_values(by='exit_time', ascending=False)
+            recent_losses = df_losses.head(5)
+            
+            losses_rows = ""
+            for _, row in recent_losses.iterrows():
+                exit_time_str = row['exit_time']
+                try:
+                    dt = datetime.strptime(exit_time_str.split('.')[0].replace('Z', ''), "%Y-%m-%dT%H:%M:%S")
+                    date_display = dt.strftime("%b %d, %Y at %I:%M %p")
+                except:
+                    date_display = exit_time_str
+                    
+                pnl_val = row['pnl_usd'] if 'pnl_usd' in row else (row['net_pct'] / 100.0 * 10.0)
+                pct_val = row['net_pct']
+                exit_reason_str = row['exit_reason']
+                pair_name = row['pair']
+                
+                losses_rows += f"""
+                <tr style="background-color: #111827;">
+                    <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #ffffff; font-weight: bold;">{pair_name}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #cbd5e1; font-size: 12px;">{date_display}</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #1f2937; text-align: right; color: #f87171; font-weight: 500;">{pnl_val:+.2f} USD ({pct_val:+.2f}%)</td>
+                    <td style="padding: 10px; border-bottom: 1px solid #1f2937; color: #f87171; font-weight: bold;">{exit_reason_str}</td>
+                </tr>
+                """
+                
+            losses_html = f"""
+            <h3 style="margin-top: 30px; color: #ffffff; font-size: 16px; font-weight: 600; margin-bottom: 15px;">🚨 Recent Losses & Exit Reasons (Last 5)</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; margin-bottom: 30px;">
+                <thead>
+                    <tr>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Pair</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Exit Date</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151; text-align: right;">Loss (Net)</th>
+                        <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 10px; border-bottom: 2px solid #374151;">Primary Cause / Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {losses_rows}
+                </tbody>
+            </table>
+            """
+    
     date_str = datetime.now().strftime("%A, %B %d, %Y")
     
     html_content = f"""<!DOCTYPE html>
@@ -239,7 +289,7 @@ def main():
             
             <h3 style="margin-top: 0; color: #ffffff; font-size: 16px; font-weight: 600; margin-bottom: 15px;">Asset Performance Breakdown</h3>
             
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; margin-bottom: 20px;">
                 <thead>
                     <tr>
                         <th style="background-color: #1f2937; color: #94a3b8; font-weight: 600; padding: 12px 10px; border-bottom: 2px solid #374151;">Bot Name</th>
@@ -257,6 +307,8 @@ def main():
                     {table_rows}
                 </tbody>
             </table>
+            
+            {losses_html}
         </div>
         
         <div class="footer" style="background-color: #0b0f19; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1f2937;">
