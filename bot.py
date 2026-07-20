@@ -124,6 +124,37 @@ def get_asset_balance(client, currency: str) -> float:
         logger.error(f"Error fetching balance for {currency}: {e}")
     return 0.0
 
+def get_product_precisions(client, product_id: str):
+    """
+    Fetches product details from Coinbase and returns the number of decimal places
+    for price (quote_increment) and base size (base_increment).
+    """
+    try:
+        product = client.get_product(product_id=product_id)
+        product_dict = product.to_dict() if hasattr(product, 'to_dict') else product
+        
+        base_inc = product_dict.get('base_increment', '0.00000001')
+        quote_inc = product_dict.get('quote_increment', '0.01')
+        
+        def get_decimal_places(increment_str: str) -> int:
+            try:
+                inc_float = float(increment_str)
+                if inc_float >= 1.0:
+                    return 0
+                if '.' in increment_str:
+                    return len(increment_str.split('.')[1].rstrip('0'))
+                return 0
+            except Exception:
+                return 8
+                
+        price_decimals = get_decimal_places(quote_inc)
+        size_decimals = get_decimal_places(base_inc)
+        
+        return price_decimals, size_decimals
+    except Exception as e:
+        logger.error(f"Error fetching product precision for {product_id}: {e}")
+        return 2, 8
+
 def main():
     logger.info("=========================================")
     logger.info("Initializing Coinbase Automatic Trading Bot")
@@ -271,6 +302,20 @@ def main():
             avg_volume_20 = float(df['volume'].rolling(window=20).mean().iloc[-1])
             volume_pct = (latest_volume / avg_volume_20) * 100.0 if avg_volume_20 > 0.0 else 0.0
 
+            # 4. Calculate 14-period RSI Series for exit checks (weakening check)
+            closes_series = pd.to_numeric(df['close'])
+            delta = closes_series.diff()
+            gain = delta.clip(lower=0)
+            loss = -delta.clip(upper=0)
+            avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+            avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+            rs = avg_gain / avg_loss.replace(0, 1e-9)
+            rsi_series = 100 - (100 / (1 + rs))
+            
+            current_rsi = float(rsi_series.iloc[-1]) if not rsi_series.empty else 50.0
+            prev_rsi = float(rsi_series.iloc[-2]) if len(rsi_series) > 1 else current_rsi
+            rsi_weakening = current_rsi < prev_rsi
+
             # Evaluate strategy
             signal = strategy.evaluate(df_completed)
             logger.info(f"Strategy evaluation signal (on closed candle): {signal} (Current Position: {state_manager.state['position']})")
@@ -336,6 +381,22 @@ def main():
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                         logger.info(f"💰 Risk management triggered: {sell_reason}")
+                
+                # If strategy returned SELL, but we configured disabling strategy exits, override to HOLD
+                # unless the trade is profitable net of fees AND RSI is weakening.
+                if signal == "SELL" and sell_reason == "STRATEGY":
+                    if Settings.DISABLE_STRATEGY_EXITS:
+                        is_profitable = (net_pl_pct > 0.0)
+                        if is_profitable and rsi_weakening:
+                            logger.info(f"Strategy returned SELL signal (Bearish crossover). Allowing exit because trade is profitable (+{net_pl_pct:.2f}%) and RSI is weakening (current: {current_rsi:.2f} < previous: {prev_rsi:.2f}).")
+                        else:
+                            reason_details = []
+                            if not is_profitable:
+                                reason_details.append(f"not profitable ({net_pl_pct:+.2f}%)")
+                            if not rsi_weakening:
+                                reason_details.append(f"RSI not weakening ({current_rsi:.2f} >= {prev_rsi:.2f})")
+                            logger.info(f"Strategy returned SELL signal (Bearish crossover), but DISABLE_STRATEGY_EXITS is enabled. Ignoring exit to hold position because trade is {', '.join(reason_details)}.")
+                            signal = "HOLD"
 
             # Fetch last calculated strategy values
             short_val = getattr(strategy, "last_short", None)
@@ -560,41 +621,91 @@ def main():
                     else:
                         # Live BUY
                         try:
+                            # 1. Fetch bid/ask & precisions
+                            price_decimals, size_decimals = get_product_precisions(client, Settings.TRADING_PAIR)
+                            
+                            logger.info("Fetching best bid/ask for limit order placement...")
+                            bid_ask = client.get_best_bid_ask(product_ids=[Settings.TRADING_PAIR])
+                            bid_ask_dict = bid_ask.to_dict() if hasattr(bid_ask, 'to_dict') else bid_ask
+                            pricebooks = bid_ask_dict.get('pricebooks', [])
+                            if not pricebooks or not pricebooks[0].get('bids'):
+                                raise ValueError("Could not fetch bids from Coinbase order book.")
+                                
+                            best_bid = float(pricebooks[0]['bids'][0]['price'])
+                            
+                            # For buying, place limit order at the best bid (Maker price)
+                            limit_price = round(best_bid, price_decimals)
+                            base_size_raw = Settings.TRADE_AMOUNT_USD / limit_price
+                            base_size = round(base_size_raw, size_decimals)
+                            
+                            limit_price_str = f"{limit_price:.{price_decimals}f}"
+                            base_size_str = f"{base_size:.{size_decimals}f}"
+                            
                             # Generate unique client order ID
                             client_order_id = str(uuid.uuid4())
-                            logger.info(f"Placing live market BUY order. Client Order ID: {client_order_id}")
+                            logger.info(f"Placing live Limit BUY order (Maker, Post-Only). Price: {limit_price_str}, Size: {base_size_str}, Client Order ID: {client_order_id}")
                             
-                            order = client.market_order_buy(
+                            order = client.limit_order_gtc_buy(
                                 client_order_id=client_order_id,
                                 product_id=Settings.TRADING_PAIR,
-                                quote_size=str(Settings.TRADE_AMOUNT_USD)
+                                base_size=base_size_str,
+                                limit_price=limit_price_str,
+                                post_only=True
                             )
                             
-                            # Note: Detailed fill price and actual fees may need to be fetched via get_order,
-                            # but we can record the trade with the best estimation or query the filled order.
-                            # Safely extract order ID from CreateOrderResponse
                             order_dict = order.to_dict() if hasattr(order, 'to_dict') else (order if isinstance(order, dict) else {})
                             success_resp = order_dict.get('success_response') or {}
                             order_id = order_dict.get('order_id') or success_resp.get('order_id') or order_dict.get('id')
-                            logger.info(f"Market BUY order placed. Order ID: {order_id}. Fetching fill details...")
                             
-                            # Pause briefly to allow order to fill
-                            time.sleep(1.5)
-                            fill_details = client.get_order(order_id=order_id)
-                            
-                            if hasattr(fill_details, 'to_dict'):
-                                fill_dict = fill_details.to_dict()
-                            else:
-                                fill_dict = fill_details
+                            if not order_id:
+                                error_resp = order_dict.get('error_response') or {}
+                                error_msg = error_resp.get('message', 'Unknown API Error')
+                                raise ValueError(f"Coinbase order creation failed: {error_msg}")
                                 
+                            logger.info(f"Limit BUY order placed. Order ID: {order_id}. Waiting for fill...")
+                            
+                            # Wait for limit order to fill
+                            filled = False
+                            wait_time = 0
+                            max_wait = 60
+                            order_info = {}
+                            
+                            while wait_time < max_wait:
+                                time.sleep(5)
+                                wait_time += 5
+                                fill_details = client.get_order(order_id=order_id)
+                                fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
+                                order_info = fill_dict.get('order', {})
+                                status = order_info.get('status')
+                                logger.info(f"Order status checking: {status} (waited {wait_time}s)")
+                                
+                                if status == 'FILLED':
+                                    filled = True
+                                    break
+                                elif status in ['CANCELLED', 'EXPIRED', 'FAILED']:
+                                    break
+                                    
+                            if not filled:
+                                filled_size_base = float(order_info.get('filled_size', 0.0))
+                                if filled_size_base > 0:
+                                    logger.warning(f"Limit order {order_id} partially filled. Size filled: {filled_size_base}. Cancelling remainder.")
+                                    filled = True
+                                
+                                logger.warning(f"Limit order {order_id} did not fill completely. Attempting to cancel.")
+                                try:
+                                    client.cancel_orders(order_ids=[order_id])
+                                except Exception as cancel_err:
+                                    logger.error(f"Failed to cancel order {order_id}: {cancel_err}")
+                                    
+                            # Retrieve final details
+                            fill_details = client.get_order(order_id=order_id)
+                            fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
                             order_info = fill_dict.get('order', {})
                             
-                            # Extract exact execution details
-                            # Depending on fill details, exact filled values are in 'cum_value' / 'filled_size' etc.
-                            filled_val_usd = float(order_info.get('filled_value', Settings.TRADE_AMOUNT_USD))
+                            filled_val_usd = float(order_info.get('filled_value', 0.0))
                             filled_size_base = float(order_info.get('filled_size', 0.0))
                             fee_usd = float(order_info.get('total_fees', 0.0))
-                            avg_price = float(order_info.get('avg_price', latest_price))
+                            avg_price = float(order_info.get('avg_price', limit_price))
                             
                             if filled_size_base > 0:
                                 indicators_dict = {
@@ -614,7 +725,7 @@ def main():
                                     reason="RSI Recovered from Oversold" if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION" else "SMA Bullish Cross",
                                     indicators=indicators_dict
                                 )
-                                logger.info(f"Live BUY filled: {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Total cost: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f})")
+                                logger.info(f"Live Limit BUY filled: {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Total cost: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f})")
                                 send_trade_notification(
                                     trade_type="BUY",
                                     pair=Settings.TRADING_PAIR,
@@ -625,9 +736,9 @@ def main():
                                     is_dry_run=False
                                 )
                             else:
-                                logger.error("Live order filled size was 0. Order might still be pending or rejected.")
+                                logger.error("Limit order was cancelled or expired with 0 size filled.")
                         except Exception as e:
-                            logger.error(f"Failed to execute live BUY order: {e}")
+                            logger.error(f"Failed to execute live limit BUY order: {e}")
                 else:
                     logger.info("BUY signal triggered, but position is already LONG. Holding current position.")
             
@@ -729,38 +840,91 @@ def main():
                                 state_manager.state["position"] = "NONE"
                                 state_manager.save_state()
                             else:
-                                # 2. Place market sell order
-                                client_order_id = str(uuid.uuid4())
-                                logger.info(f"Placing live market SELL order for {holdings:.8f} {base_asset}. Client Order ID: {client_order_id}")
+                                # 2. Fetch ask price & precisions
+                                price_decimals, size_decimals = get_product_precisions(client, Settings.TRADING_PAIR)
                                 
-                                order = client.market_order_sell(
+                                logger.info("Fetching best bid/ask for limit order placement...")
+                                bid_ask = client.get_best_bid_ask(product_ids=[Settings.TRADING_PAIR])
+                                bid_ask_dict = bid_ask.to_dict() if hasattr(bid_ask, 'to_dict') else bid_ask
+                                pricebooks = bid_ask_dict.get('pricebooks', [])
+                                if not pricebooks or not pricebooks[0].get('asks'):
+                                    raise ValueError("Could not fetch asks from Coinbase order book.")
+                                    
+                                best_ask = float(pricebooks[0]['asks'][0]['price'])
+                                
+                                # For selling, place limit order at the best ask (Maker price)
+                                limit_price = round(best_ask, price_decimals)
+                                base_size = round(holdings, size_decimals)
+                                
+                                limit_price_str = f"{limit_price:.{price_decimals}f}"
+                                base_size_str = f"{base_size:.{size_decimals}f}"
+                                
+                                # 3. Place limit sell order
+                                client_order_id = str(uuid.uuid4())
+                                logger.info(f"Placing live Limit SELL order (Maker, Post-Only). Price: {limit_price_str}, Size: {base_size_str}, Client Order ID: {client_order_id}")
+                                
+                                order = client.limit_order_gtc_sell(
                                     client_order_id=client_order_id,
                                     product_id=Settings.TRADING_PAIR,
-                                    base_size=str(holdings)
+                                    base_size=base_size_str,
+                                    limit_price=limit_price_str,
+                                    post_only=True
                                 )
                                 
                                 # Safely extract order ID from CreateOrderResponse
                                 order_dict = order.to_dict() if hasattr(order, 'to_dict') else (order if isinstance(order, dict) else {})
                                 success_resp = order_dict.get('success_response') or {}
                                 order_id = order_dict.get('order_id') or success_resp.get('order_id') or order_dict.get('id')
-                                logger.info(f"Market SELL order placed. Order ID: {order_id}. Fetching fill details...")
                                 
-                                # Pause briefly to allow order to fill
-                                time.sleep(1.5)
-                                fill_details = client.get_order(order_id=order_id)
-                                
-                                if hasattr(fill_details, 'to_dict'):
-                                    fill_dict = fill_details.to_dict()
-                                else:
-                                    fill_dict = fill_details
+                                if not order_id:
+                                    error_resp = order_dict.get('error_response') or {}
+                                    error_msg = error_resp.get('message', 'Unknown API Error')
+                                    raise ValueError(f"Coinbase order creation failed: {error_msg}")
                                     
+                                logger.info(f"Limit SELL order placed. Order ID: {order_id}. Waiting for fill...")
+                                
+                                # Wait for limit order to fill
+                                filled = False
+                                wait_time = 0
+                                max_wait = 60
+                                order_info = {}
+                                
+                                while wait_time < max_wait:
+                                    time.sleep(5)
+                                    wait_time += 5
+                                    fill_details = client.get_order(order_id=order_id)
+                                    fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
+                                    order_info = fill_dict.get('order', {})
+                                    status = order_info.get('status')
+                                    logger.info(f"Order status checking: {status} (waited {wait_time}s)")
+                                    
+                                    if status == 'FILLED':
+                                        filled = True
+                                        break
+                                    elif status in ['CANCELLED', 'EXPIRED', 'FAILED']:
+                                        break
+                                        
+                                if not filled:
+                                    filled_size_base = float(order_info.get('filled_size', 0.0))
+                                    if filled_size_base > 0:
+                                        logger.warning(f"Limit order {order_id} partially filled. Size filled: {filled_size_base}. Cancelling remainder.")
+                                        filled = True
+                                    
+                                    logger.warning(f"Limit order {order_id} did not fill completely. Attempting to cancel.")
+                                    try:
+                                        client.cancel_orders(order_ids=[order_id])
+                                    except Exception as cancel_err:
+                                        logger.error(f"Failed to cancel order {order_id}: {cancel_err}")
+                                
+                                # Retrieve final details
+                                fill_details = client.get_order(order_id=order_id)
+                                fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
                                 order_info = fill_dict.get('order', {})
                                 
-                                # Extract exact execution details
-                                filled_val_usd = float(order_info.get('filled_value', holdings * latest_price))
-                                filled_size_base = float(order_info.get('filled_size', holdings))
+                                filled_val_usd = float(order_info.get('filled_value', base_size * limit_price))
+                                filled_size_base = float(order_info.get('filled_size', base_size))
                                 fee_usd = float(order_info.get('total_fees', 0.0))
-                                avg_price = float(order_info.get('avg_price', latest_price))
+                                avg_price = float(order_info.get('avg_price', limit_price))
                                 
                                 if filled_size_base > 0:
                                     trade = state_manager.record_trade(
@@ -771,7 +935,7 @@ def main():
                                         fee_usd=fee_usd,
                                         reason=sell_reason
                                     )
-                                    logger.info(f"Live SELL filled: Sold {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Realized: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
+                                    logger.info(f"Live Limit SELL filled: Sold {filled_size_base:.8f} {base_asset} at average price ${avg_price:,.2f} USD (Realized: ${filled_val_usd:.2f}, Fee: ${fee_usd:.2f}). Realized PnL: ${trade['realized_pnl_usd']:.2f} USD")
                                     send_trade_notification(
                                         trade_type="SELL",
                                         pair=Settings.TRADING_PAIR,
@@ -783,9 +947,9 @@ def main():
                                         realized_pnl=trade.get('realized_pnl_usd', 0.0)
                                     )
                                 else:
-                                    logger.error("Live order filled size was 0. Order might still be pending or rejected.")
+                                    logger.error("Limit order was cancelled or expired with 0 size filled.")
                         except Exception as e:
-                            logger.error(f"Failed to execute live SELL order: {e}")
+                            logger.error(f"Failed to execute live limit SELL order: {e}")
                 else:
                     logger.info("SELL signal triggered, but position is already NONE. Doing nothing.")
             

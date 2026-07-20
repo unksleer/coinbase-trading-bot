@@ -43,6 +43,11 @@ def send_trade_notification(trade_type: str, pair: str, price: float, amount_usd
         </tr>
         """
 
+    # Format human-friendly timezone-aware timestamps
+    now_utc = datetime.utcnow()
+    now_local = datetime.now()
+    formatted_time = f"{now_local.strftime('%A, %b %d, %Y at %I:%M:%S %p')} (Local) / {now_utc.strftime('%I:%M:%S %p')} UTC"
+
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -86,7 +91,7 @@ def send_trade_notification(trade_type: str, pair: str, price: float, amount_usd
                     {pnl_row}
                     <tr style="background-color: #111827;">
                         <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; color: #9ca3af; font-weight: 500;">Timestamp:</td>
-                        <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; color: #ffffff;">{datetime.utcnow().isoformat()}Z</td>
+                        <td style="padding: 12px 10px; border-bottom: 1px solid #1f2937; color: #ffffff;">{formatted_time}</td>
                     </tr>
                 </tbody>
             </table>
