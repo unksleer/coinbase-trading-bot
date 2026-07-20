@@ -831,12 +831,14 @@ def main():
                     else:
                         # Live SELL
                         try:
-                            # 1. Fetch exact balance of base currency to sell
-                            holdings = get_asset_balance(client, base_asset)
-                            logger.info(f"Retrieved live {base_asset} account balance: {holdings:.8f}")
+                            # 1. Fetch local state holdings and verify against exchange account balance
+                            state_holdings = state_manager.state.get("holdings_base", 0.0)
+                            exchange_balance = get_asset_balance(client, base_asset)
+                            holdings = min(state_holdings, exchange_balance)
+                            logger.info(f"Local state holdings: {state_holdings:.8f}, Exchange balance: {exchange_balance:.8f}. Selling: {holdings:.8f}")
                             
                             if holdings <= 1e-8:
-                                logger.warning(f"No available {base_asset} balance found to sell. Resetting local position to NONE.")
+                                logger.warning(f"No available {base_asset} balance found to sell (state: {state_holdings:.8f}, exchange: {exchange_balance:.8f}). Resetting local position to NONE.")
                                 state_manager.state["position"] = "NONE"
                                 state_manager.save_state()
                             else:
