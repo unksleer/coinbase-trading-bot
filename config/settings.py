@@ -139,6 +139,7 @@ class Settings:
     STRATEGY_TYPE = get_env_with_profile("STRATEGY_TYPE", "SMA_CROSSOVER").strip().upper()
 
     DISABLE_STRATEGY_EXITS = get_env_with_profile("DISABLE_STRATEGY_EXITS", "False").lower() in ("true", "1", "t", "yes")
+    DISABLE_BUYS = get_env_with_profile("DISABLE_BUYS", "False").lower() in ("true", "1", "t", "yes")
 
     try:
         RSI_OVERSOLD = float(get_env_with_profile("RSI_OVERSOLD", "30.0"))

@@ -534,7 +534,7 @@ def main():
             logger.info("\n" + "\n".join(summary_lines))
 
             # Action: BUY
-            if signal == "BUY":
+            if signal == "BUY" and not Settings.DISABLE_BUYS:
                 if state_manager.state["position"] == "NONE":
                     ema_filter_status = "DISABLED"
                     if Settings.EMA_TREND_FILTER_ENABLED:
@@ -739,6 +739,12 @@ def main():
                                 logger.error("Limit order was cancelled or expired with 0 size filled.")
                         except Exception as e:
                             logger.error(f"Failed to execute live limit BUY order: {e}")
+                else:
+                    logger.info("BUY signal triggered, but position is already LONG. Holding current position.")
+            
+            elif signal == "BUY" and Settings.DISABLE_BUYS:
+                if state_manager.state["position"] == "NONE":
+                    logger.info("BUY signal triggered, but buying is disabled (Exit-Only mode). Skipping entry.")
                 else:
                     logger.info("BUY signal triggered, but position is already LONG. Holding current position.")
             
