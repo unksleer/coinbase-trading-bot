@@ -70,7 +70,12 @@ def main():
     
     # 1. Fetch all PM2 processes
     try:
-        result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, check=True)
+        # Prepend Node/NVM bin folder to PATH so subprocess can resolve node and pm2 under restricted cron environments
+        env = os.environ.copy()
+        nvm_path = "/home/leeunks/.nvm/versions/node/v20.20.2/bin"
+        env["PATH"] = f"{nvm_path}:{env.get('PATH', '')}"
+        
+        result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, check=True, env=env)
         pm2_list = json.loads(result.stdout)
     except Exception as e:
         print(f"Error listing PM2 processes: {e}")
