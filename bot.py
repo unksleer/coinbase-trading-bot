@@ -454,7 +454,7 @@ def main():
                             # Simulate BUY
                             cash = state_manager.state["cash_usd"]
                             if cash >= Settings.TRADE_AMOUNT_USD:
-                                mock_fee = Settings.TRADE_AMOUNT_USD * 0.002
+                                mock_fee = Settings.TRADE_AMOUNT_USD * (Settings.FEE_RATE_PERCENT / 100.0)
                                 net_spend = Settings.TRADE_AMOUNT_USD - mock_fee
                                 acquired_base = net_spend / latest_price
                                 indicators_dict = {
@@ -586,7 +586,7 @@ def main():
                             holdings = state_manager.state["holdings_base"]
                             if holdings > 0:
                                 gross_usd = holdings * latest_price
-                                mock_fee = gross_usd * 0.002
+                                mock_fee = gross_usd * (Settings.FEE_RATE_PERCENT / 100.0)
                                 net_usd = gross_usd - mock_fee
                                 trade = state_manager.record_trade(
                                     trade_type="SELL", price=latest_price,
