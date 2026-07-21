@@ -353,16 +353,16 @@ def main():
                     sell_reason = f"BREAK_EVEN (Price fell back to break-even price ${net_breakeven_price:.4f} after peaking at net +{highest_net_pl_pct:.2f}%)"
                     logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
-                # Check ATR-based Stop Loss
-                elif Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                # Check ATR-based Stop Loss (bypassed if in exit-only mode)
+                elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
                     sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
                     if latest_price <= sl_price:
                         signal = "SELL"
                         sell_reason = f"STOP_LOSS_ATR (Price fell below ATR stop price ${sl_price:.2f} using multiple {Settings.STOP_LOSS_ATR_MULTIPLE} * ATR ${atr_threshold:.2f})"
                         logger.warning(f"🚨 Risk management triggered: {sell_reason}")
                 
-                # Check percentage-based Stop Loss
-                elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
+                # Check percentage-based Stop Loss (bypassed if in exit-only mode)
+                elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                     signal = "SELL"
                     sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
                     logger.warning(f"🚨 Risk management triggered: {sell_reason}")
@@ -381,6 +381,12 @@ def main():
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                         logger.info(f"💰 Risk management triggered: {sell_reason}")
+                
+                # Check Exit-only Break-even Target (close position at net $0 loss/gain once profitable)
+                if signal != "SELL" and Settings.DISABLE_BUYS and net_pl_pct >= 0.0:
+                    signal = "SELL"
+                    sell_reason = f"EXIT_ONLY_BREAK_EVEN (Exit-only mode: price recovered to net break-even at net +{net_pl_pct:.2f}% inclusive of all transaction fees)"
+                    logger.info(f"💰 Exit-only risk management: {sell_reason}")
                 
                 # If strategy returned SELL, but we configured disabling strategy exits, override to HOLD
                 # unless the trade is profitable net of fees AND RSI is weakening.
