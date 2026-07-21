@@ -151,6 +151,11 @@ class Settings:
     except ValueError:
         RSI_OVERBOUGHT = 70.0
 
+    try:
+        MIN_BULLISH_MARKET_RATIO = float(get_env_with_profile("MIN_BULLISH_MARKET_RATIO", "0.0"))
+    except ValueError:
+        MIN_BULLISH_MARKET_RATIO = 0.0
+
     @classmethod
     def validate(cls):
         """
@@ -219,5 +224,8 @@ class Settings:
         }
         if cls.GRANULARITY not in valid_granularities:
             errors.append(f"GRANULARITY must be one of: {', '.join(sorted(valid_granularities))}")
+            
+        if not (0.0 <= cls.MIN_BULLISH_MARKET_RATIO <= 1.0):
+            errors.append("MIN_BULLISH_MARKET_RATIO must be between 0.0 and 1.0.")
             
         return errors

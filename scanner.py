@@ -102,16 +102,21 @@ def main():
             past_price = float(df.iloc[-candles_in_24h]['close'])
             change_24h = ((latest_price - past_price) / past_price) * 100
         
+        above_ema = False
+        if ema is not None and latest_price > ema:
+            above_ema = True
+            
         results.append({
             "Coin": coin.split('-')[0],
             "Price": latest_price,
             "24h Change %": change_24h,
             "RSI": rsi if rsi is not None else 0.0,
             "Spread %": spread if spread is not None else 0.0,
-            "Signal": signal
+            "Signal": signal,
+            "Above EMA": above_ema
         })
         print(f"Done (Signal: {signal})")
-        time.sleep(0.2) # Sleep to avoid rate limiting
+        time.sleep(0.2)
         
     if not results:
         print("\nNo pairs scanned successfully.")
@@ -119,7 +124,7 @@ def main():
         
     scan_df = pd.DataFrame(results)
     
-    # Sort helper to prioritize BUY signals, then high spread crossover momentum, then 24h change
+    # Sort helper to prioritize BUY signals
     def sort_key(row):
         sig_val = 2 if row['Signal'] == 'BUY' else (0 if row['Signal'] == 'SELL' else 1)
         return (sig_val, row['Spread %'], row['24h Change %'])
@@ -131,12 +136,35 @@ def main():
     print("SCREENER RESULTS")
     print("="*75)
     
-    # Format float output
     pd.options.display.float_format = '{:,.4f}'.format
     print(scan_df.to_string(index=False))
     print("="*75)
     
-    # Highlight potential movers
+    # Export metrics scoreboard to logs/market_metrics.json
+    try:
+        os.makedirs("logs", exist_ok=True)
+        total_scanned = len(results)
+        bullish_count = len([r for r in results if r["Above EMA"]])
+        bullish_ratio = bullish_count / total_scanned if total_scanned > 0 else 0.0
+        
+        scoreboard = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "market_bullish_ratio": bullish_ratio,
+            "bullish_count": bullish_count,
+            "total_scanned": total_scanned,
+            "results": results
+        }
+        
+        # Write atomically
+        temp_path = "logs/market_metrics.json.tmp"
+        final_path = "logs/market_metrics.json"
+        with open(temp_path, 'w') as f:
+            import json
+            json.dump(scoreboard, f, indent=4)
+        os.replace(temp_path, final_path)
+    except Exception as e:
+        print(f"Error saving scoreboard JSON: {e}")
+    
     buys = scan_df[scan_df['Signal'] == 'BUY']
     if not buys.empty:
         print("\n🚀 ACTIVE BUY SIGNALS DETECTED:")

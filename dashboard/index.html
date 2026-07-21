@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coinbase Systematic Trading Dashboard</title>
+    <!-- Modern Premium Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080c16;
+            --glass-bg: rgba(17, 24, 39, 0.5);
+            --glass-border: rgba(255, 255, 255, 0.05);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-green: #34d399;
+            --accent-red: #f87171;
+            --accent-blue: #60a5fa;
+            --accent-glow-green: rgba(52, 211, 153, 0.15);
+            --accent-glow-red: rgba(248, 113, 113, 0.15);
+            --accent-glow-blue: rgba(96, 165, 250, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(31, 41, 55, 0.3) 0, transparent 50%),
+                radial-gradient(at 50% 0%, rgba(17, 24, 39, 0.4) 0, transparent 50%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* --- Header Styles --- */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            margin-bottom: 30px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(52, 211, 153, 0.1);
+            border: 1px solid rgba(52, 211, 153, 0.2);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent-green);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        /* --- Grid Layouts --- */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .performance-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(12px);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .performance-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .performance-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+        }
+
+        .card-live::before { background-color: var(--accent-green); }
+        .card-sim::before { background-color: var(--accent-blue); }
+
+        .card-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+
+        .card-value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .card-subtext {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        /* --- Split Panels --- */
+        .panels-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .panels-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+        }
+
+        .panel-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* --- Active Position List --- */
+        .ledger-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        .ledger-table th {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 12px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .ledger-table td {
+            font-size: 14px;
+            padding: 16px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: #e2e8f0;
+        }
+
+        .badge-mode {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-live { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); }
+        .badge-sim { background: rgba(96, 165, 250, 0.15); color: var(--accent-blue); }
+
+        /* --- Market Breadth Radial Gauge --- */
+        .gauge-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 20px 0;
+        }
+
+        .gauge {
+            position: relative;
+            width: 180px;
+            height: 180px;
+        }
+
+        .gauge-svg {
+            transform: rotate(-90deg);
+        }
+
+        .gauge-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.03);
+            stroke-width: 12;
+        }
+
+        .gauge-fill {
+            fill: none;
+            stroke: url(#gauge-grad);
+            stroke-width: 12;
+            stroke-dasharray: 440;
+            stroke-dashoffset: 440;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1s ease;
+        }
+
+        .gauge-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .gauge-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .gauge-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+
+        .regime-text {
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        /* --- Scanner Grid Scoreboard --- */
+        .scanner-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            margin-bottom: 30px;
+        }
+
+        .scanner-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .coin-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 16px;
+            position: relative;
+            transition: transform 0.2s ease, border-color 0.2s;
+        }
+
+        .coin-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .coin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .coin-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .coin-signal {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .sig-buy { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); box-shadow: 0 0 10px var(--accent-glow-green); }
+        .sig-sell { background: rgba(248, 113, 113, 0.15); color: var(--accent-red); box-shadow: 0 0 10px var(--accent-glow-red); }
+        .sig-hold { background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); }
+
+        .coin-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .coin-metrics {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .coin-metric-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .metric-val {
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+
+        .val-up { color: var(--accent-green) !important; }
+        .val-down { color: var(--accent-red) !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- --- Header --- -->
+        <header>
+            <div class="header-title">
+                <h1>Systematic Trading Bot Dashboard</h1>
+                <p id="last-updated">Last Updated: Loading...</p>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span>SYSTEM ONLINE</span>
+            </div>
+        </header>
+
+        <!-- --- Performance Grid --- -->
+        <div class="dashboard-grid">
+            <div class="performance-card card-live">
+                <div class="card-label">Live Realized PnL</div>
+                <div class="card-value" id="live-realized-pnl">$0.00 USD</div>
+                <div class="card-subtext" id="live-fees-paid">Fees paid: $0.00</div>
+            </div>
+            <div class="performance-card card-sim">
+                <div class="card-label">Simulated Realized PnL</div>
+                <div class="card-value" id="sim-realized-pnl">$0.00 USD</div>
+                <div class="card-subtext" id="sim-fees-paid">Fees paid: $0.00</div>
+            </div>
+            <div class="performance-card card-live" id="live-unrealized-card">
+                <div class="card-label">Live Unrealized PnL</div>
+                <div class="card-value" id="live-unrealized-pnl">$0.00 USD</div>
+                <div class="card-subtext">Active market exposure</div>
+            </div>
+            <div class="performance-card card-sim" id="sim-unrealized-card">
+                <div class="card-label">Simulated Unrealized PnL</div>
+                <div class="card-value" id="sim-unrealized-pnl">$0.00 USD</div>
+                <div class="card-subtext">Active simulated exposure</div>
+            </div>
+        </div>
+
+        <!-- --- Split Panels --- -->
+        <div class="panels-grid">
+            <!-- Active Positions Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Active Positions Ledger</h2>
+                    <span id="active-positions-count" class="card-subtext">0 active positions</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Coin</th>
+                                <th>Mode</th>
+                                <th>Entry Price</th>
+                                <th>Current Price</th>
+                                <th>Holdings</th>
+                                <th style="text-align: right;">Unrealized PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-body">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 40px 0;">No active trading positions.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Market Regime Gauge Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Market Regime Index</h2>
+                </div>
+                <div class="gauge-container">
+                    <div class="gauge">
+                        <svg class="gauge-svg" width="180" height="180" viewBox="0 0 180 180">
+                            <defs>
+                                <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#3b82f6" />
+                                    <stop offset="100%" stop-color="#10b981" />
+                                </linearGradient>
+                            </defs>
+                            <circle class="gauge-bg" cx="90" cy="90" r="70" />
+                            <circle id="gauge-arc" class="gauge-fill" cx="90" cy="90" r="70" />
+                        </svg>
+                        <div class="gauge-text">
+                            <div class="gauge-value" id="gauge-pct">0%</div>
+                            <div class="gauge-label">Bullish</div>
+                        </div>
+                    </div>
+                    <div class="regime-text" id="regime-status" style="color: var(--text-secondary);">Analyzing...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- --- Scanner Scoreboard --- -->
+        <div class="scanner-panel">
+            <div class="panel-header">
+                <h2>Multi-Asset Screener Scoreboard</h2>
+                <span class="card-subtext">Hourly bars • Volatility Filters enabled</span>
+            </div>
+            <div class="scanner-grid" id="scanner-cards">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- --- JS Orchestrator --- -->
+    <script>
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('/api/metrics');
+                if (!response.ok) throw new Error("HTTP error " + response.status);
+                const data = await response.json();
+                
+                updateDashboard(data);
+            } catch (err) {
+                console.error("Failed to load metrics scoreboard:", err);
+            }
+        }
+
+        function formatCurrency(val) {
+            const num = parseFloat(val);
+            if (isNaN(num)) return "$0.00";
+            const sign = num < 0 ? "-" : "";
+            return sign + "$" + Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatPnL(val) {
+            const num = parseFloat(val);
+            if (isNaN(num)) return "$0.00";
+            const sign = num > 0 ? "+" : (num < 0 ? "-" : "");
+            return sign + "$" + Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatPercent(val) {
+            const num = parseFloat(val);
+            if (isNaN(num)) return "0.00%";
+            const sign = num > 0 ? "+" : "";
+            return sign + num.toFixed(2) + "%";
+        }
+
+        function updateDashboard(data) {
+            // Update Timestamp
+            if (data.timestamp) {
+                const d = new Date(data.timestamp);
+                document.getElementById('last-updated').textContent = "Last Updated: " + d.toLocaleDateString() + " at " + d.toLocaleTimeString();
+            }
+
+            // Update Performance Cards
+            const perf = data.performance || {};
+            document.getElementById('live-realized-pnl').textContent = formatCurrency(perf.live_realized_pnl);
+            document.getElementById('live-realized-pnl').className = "card-value " + (perf.live_realized_pnl >= 0 ? "val-up" : "val-down");
+            document.getElementById('live-fees-paid').textContent = "Fees paid: " + formatCurrency(perf.live_fees);
+
+            document.getElementById('sim-realized-pnl').textContent = formatCurrency(perf.sim_realized_pnl);
+            document.getElementById('sim-realized-pnl').className = "card-value " + (perf.sim_realized_pnl >= 0 ? "val-up" : "val-down");
+            document.getElementById('sim-fees-paid').textContent = "Fees paid: " + formatCurrency(perf.sim_fees);
+
+            // Update Active Positions
+            const positions = data.active_positions || [];
+            document.getElementById('active-positions-count').textContent = positions.length + " active position" + (positions.length !== 1 ? "s" : "");
+            
+            const positionsBody = document.getElementById('positions-body');
+            if (positions.length === 0) {
+                positionsBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 40px 0;">No active trading positions.</td></tr>`;
+                document.getElementById('live-unrealized-pnl').textContent = "$0.00 USD";
+                document.getElementById('live-unrealized-pnl').className = "card-value";
+                document.getElementById('sim-unrealized-pnl').textContent = "$0.00 USD";
+                document.getElementById('sim-unrealized-pnl').className = "card-value";
+            } else {
+                let liveUnrealizedTotal = 0;
+                let simUnrealizedTotal = 0;
+                let html = "";
+                
+                positions.forEach(pos => {
+                    const modeClass = pos.mode === "Live" ? "badge-live" : "badge-sim";
+                    const pnlClass = pos.unrealized_pnl >= 0 ? "val-up" : "val-down";
+                    
+                    if (pos.mode === "Live") {
+                        liveUnrealizedTotal += pos.unrealized_pnl;
+                    } else {
+                        simUnrealizedTotal += pos.unrealized_pnl;
+                    }
+
+                    html += `
+                    <tr>
+                        <td style="font-weight: 700; color: #ffffff;">${pos.coin}</td>
+                        <td><span class="badge-mode ${modeClass}">${pos.mode}</span></td>
+                        <td>${formatCurrency(pos.entry_price)}</td>
+                        <td>${formatCurrency(pos.current_price)}</td>
+                        <td style="font-family: monospace;">${pos.holdings.toFixed(6)}</td>
+                        <td style="text-align: right; font-weight: 700;" class="${pnlClass}">${formatPnL(pos.unrealized_pnl)}</td>
+                    </tr>
+                    `;
+                });
+                positionsBody.innerHTML = html;
+
+                document.getElementById('live-unrealized-pnl').textContent = formatPnL(liveUnrealizedTotal);
+                document.getElementById('live-unrealized-pnl').className = "card-value " + (liveUnrealizedTotal >= 0 ? "val-up" : "val-down");
+                document.getElementById('sim-unrealized-pnl').textContent = formatPnL(simUnrealizedTotal);
+                document.getElementById('sim-unrealized-pnl').className = "card-value " + (simUnrealizedTotal >= 0 ? "val-up" : "val-down");
+            }
+
+            // Update Market Breadth Radial Gauge
+            const scanner = data.scanner || {};
+            const ratio = scanner.market_bullish_ratio || 0.0;
+            const pct = Math.round(ratio * 100);
+            
+            document.getElementById('gauge-pct').textContent = pct + "%";
+            
+            // stroke-dasharray is 440 (circumference). offset is 440 * (1 - ratio)
+            const arc = document.getElementById('gauge-arc');
+            const offset = 440 * (1 - ratio);
+            arc.style.strokeDashoffset = offset;
+
+            const regimeStatus = document.getElementById('regime-status');
+            if (pct >= 60) {
+                regimeStatus.textContent = "📈 STRONG BULLISH MARKET TREND";
+                regimeStatus.style.color = "var(--accent-green)";
+            } else if (pct >= 40) {
+                regimeStatus.textContent = "⚖️ NEUTRAL CONSOLIDATION TREND";
+                regimeStatus.style.color = "var(--accent-blue)";
+            } else {
+                regimeStatus.textContent = "📉 CRITICAL BEARISH MARKET DOWNTREND";
+                regimeStatus.style.color = "var(--accent-red)";
+            }
+
+            // Update Scanner Grid Scoreboard Cards
+            const results = scanner.results || [];
+            const scannerGrid = document.getElementById('scanner-cards');
+            let cardsHtml = "";
+            
+            // Sort: BUY first, then SELL, then HOLD
+            const sortedResults = [...results].sort((a, b) => {
+                const aVal = a.Signal === 'BUY' ? 2 : (a.Signal === 'SELL' ? 0 : 1);
+                const bVal = b.Signal === 'BUY' ? 2 : (b.Signal === 'SELL' ? 0 : 1);
+                return bVal - aVal;
+            });
+
+            sortedResults.forEach(item => {
+                let sigClass = "sig-hold";
+                if (item.Signal === 'BUY') sigClass = "sig-buy";
+                if (item.Signal === 'SELL') sigClass = "sig-sell";
+                
+                const changeValClass = item["24h Change %"] >= 0 ? "val-up" : "val-down";
+                const changeStr = formatPercent(item["24h Change %"]);
+                
+                cardsHtml += `
+                <div class="coin-card">
+                    <div class="coin-header">
+                        <span class="coin-name">${item.Coin}</span>
+                        <span class="coin-signal ${sigClass}">${item.Signal}</span>
+                    </div>
+                    <div class="coin-price">${formatCurrency(item.Price)}</div>
+                    <div class="coin-metrics">
+                        <div class="coin-metric-item">
+                            <span>24h Change</span>
+                            <span class="metric-val ${changeValClass}">${changeStr}</span>
+                        </div>
+                        <div class="coin-metric-item">
+                            <span>RSI (14)</span>
+                            <span class="metric-val">${item.RSI.toFixed(1)}</span>
+                        </div>
+                        <div class="coin-metric-item">
+                            <span>Spread</span>
+                            <span class="metric-val">${formatPercent(item["Spread %"])}</span>
+                        </div>
+                    </div>
+                </div>
+                `;
+            });
+            scannerGrid.innerHTML = cardsHtml;
+        }
+
+        // Fetch metrics on load
+        fetchMetrics();
+        // Poll scoreboard every 10 seconds
+        setInterval(fetchMetrics, 10000);
+    </script>
+</body>
+</html>

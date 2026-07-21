@@ -435,6 +435,20 @@ def main():
                 # Process Actions
                 # BUY
                 if signal == "BUY" and not Settings.DISABLE_BUYS:
+                    # Check market-wide bullish ratio regime filter
+                    if Settings.MIN_BULLISH_MARKET_RATIO > 0.0:
+                        metrics_path = "logs/market_metrics.json"
+                        if os.path.exists(metrics_path):
+                            try:
+                                with open(metrics_path, 'r') as f:
+                                    metrics = json.load(f)
+                                ratio = float(metrics.get("market_bullish_ratio", 0.0))
+                                if ratio < Settings.MIN_BULLISH_MARKET_RATIO:
+                                    logger.warning(f"BUY signal blocked: broad market is critically bearish (Ratio: {ratio:.2f} < Required: {Settings.MIN_BULLISH_MARKET_RATIO:.2f})")
+                                    signal = "HOLD"
+                            except Exception as e:
+                                logger.error(f"Error checking market breadth scoreboard: {e}. Falling back to default execution.")
+
                     if state_manager.state["position"] == "NONE":
                         if Settings.DRY_RUN:
                             # Simulate BUY
