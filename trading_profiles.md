@@ -76,7 +76,18 @@ In the codebase, [config/settings.py](file:///home/leeunks/coinbase-trading-bot/
    ```bash
    # Restart all running bots
    pm2 restart all
-   
-   # Restart only the BTC bot
-   pm2 restart btc-bot
    ```
+
+---
+
+## 6. Hardened Risk controls
+Every profile and asset prefix supports optional environment variable overrides for capital preservation:
+* **`MAX_VAL_PER_ORDER`**: Maximum quote currency value per single order.
+* **`MAX_EXPOSURE_PER_PRODUCT`**: Maximum holding exposure value allowed per product.
+* **`MIN_QUOTE_RESERVE`**: Minimum quote balance safety reserves.
+* **`MAX_TRADES_PER_DAY`**: Max transaction loops inside 24 hours.
+* **`CONSECUTIVE_LOSS_COOLDOWN_TRADES`**: Loss counts triggering a temporary trading cooldown.
+* **`CONSECUTIVE_LOSS_COOLDOWN_SECONDS`**: Cooldown window in seconds.
+* **`REPEATED_API_ERROR_LIMIT`**: Coinbase rate/connection error breaker limit.
+* **`STALE_MARKET_DATA_CUTOFF_SECONDS`**: Expiry threshold for market price data.
+

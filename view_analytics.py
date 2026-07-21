@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import csv
+import sys
 from datetime import datetime
 
 def load_trades(csv_path="trades.csv"):
@@ -25,13 +26,13 @@ def load_trades(csv_path="trades.csv"):
                     "dry_run": row["dry_run"] == "True"
                 })
     except Exception as e:
-        print(f"Error loading trades CSV: {e}")
+        print(f"Error loading trades CSV {csv_path}: {e}")
     return trades
 
-def print_analytics():
-    trades = load_trades()
+def print_analytics(csv_path="trades.csv"):
+    trades = load_trades(csv_path)
     if not trades:
-        print("No trades found in trades.csv. Make sure the file exists and has records.")
+        print(f"No trades found in {csv_path}. Make sure the file exists and has records.")
         return
 
     # Filter completed trades (Sells)
@@ -42,7 +43,7 @@ def print_analytics():
     completed_roundtrips = len(sells)
     
     total_fees = sum(t["fee_usd"] for t in trades)
-    total_realized_pnl = sum(t["realized_pnl_usd"] for t in sells) # realized_pnl is only recorded on sell
+    total_realized_pnl = sum(t["realized_pnl_usd"] for t in sells)
     
     winning_trades = [t for t in sells if t["realized_pnl_usd"] > 0]
     losing_trades = [t for t in sells if t["realized_pnl_usd"] <= 0]
@@ -68,6 +69,7 @@ def print_analytics():
     print("\n" + "="*60)
     print("      COINBASE TRADING BOT PERFORMANCE ANALYTICS      ")
     print("="*60)
+    print(f"Source File:          {csv_path}")
     print(f"Total Transactions:   {total_trades} ({len(buys)} BUYs, {len(sells)} SELLs)")
     print(f"Completed Roundtrips: {completed_roundtrips}")
     print(f"Total Fees Paid:      ${total_fees:.4f} USD")
@@ -100,4 +102,7 @@ def print_analytics():
     print("="*60 + "\n")
 
 if __name__ == "__main__":
-    print_analytics()
+    csv_file = "trades.csv"
+    if "--dry" in sys.argv or "--dry-run" in sys.argv:
+        csv_file = "trades_dry.csv"
+    print_analytics(csv_file)

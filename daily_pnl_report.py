@@ -11,8 +11,8 @@ from ssl import create_default_context
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# Add project root to path
-PROJECT_ROOT = "/home/leeunks/coinbase-trading-bot"
+# Resolve project root dynamically
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(PROJECT_ROOT)
 
 from dotenv import load_dotenv
@@ -27,18 +27,42 @@ SMTP_PASS = os.getenv("SMTP_PASS", "")
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", SMTP_USER)
 
 def get_live_price(product_id: str) -> float:
-    # Strip any bot suffixes (like -HYPER or -ATR) for Coinbase API lookup
     base_pair = product_id.split('-')
     clean_pair = f"{base_pair[0]}-USDC" if len(base_pair) > 1 else "BTC-USDC"
     
-    url = f"https://api.exchange.coinbase.com/products/{clean_pair}/ticker"
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return float(response.json().get("price", 0.0))
-    except Exception as e:
-        print(f"Error fetching ticker for {clean_pair}: {e}")
+    def fetch_price(pair: str) -> float:
+        url_candles = f"https://api.exchange.coinbase.com/products/{pair}/candles"
+        try:
+            response = requests.get(url_candles, params={"granularity": 60}, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    return float(data[0][4])
+        except Exception:
+            pass
+            
+        url_ticker = f"https://api.exchange.coinbase.com/products/{pair}/ticker"
+        try:
+            response = requests.get(url_ticker, timeout=10)
+            if response.status_code == 200:
+                return float(response.json().get("price", 0.0))
+        except Exception:
+            pass
+            
         return 0.0
+
+    price = fetch_price(clean_pair)
+    if price > 0.0:
+        return price
+        
+    if clean_pair.endswith("-USDC"):
+        usd_pair = clean_pair.replace("-USDC", "-USD")
+        print(f"Retrying price fetch for {clean_pair} using USD equivalent: {usd_pair}")
+        price = fetch_price(usd_pair)
+        if price > 0.0:
+            return price
+            
+    return 0.0
 
 def send_pnl_email(subject: str, html_content: str):
     if not SMTP_ENABLED:
@@ -68,9 +92,7 @@ def send_pnl_email(subject: str, html_content: str):
 def main():
     print(f"[{datetime.now().isoformat()}] Generating Daily PnL Statement...")
     
-    # 1. Fetch all PM2 processes
     try:
-        # Prepend Node/NVM bin folder to PATH so subprocess can resolve node and pm2 under restricted cron environments
         env = os.environ.copy()
         nvm_path = "/home/leeunks/.nvm/versions/node/v20.20.2/bin"
         env["PATH"] = f"{nvm_path}:{env.get('PATH', '')}"
@@ -81,33 +103,40 @@ def main():
         print(f"Error listing PM2 processes: {e}")
         return
 
-    # 2. Load completed trades CSV for realized PnL
-    csv_path = os.path.join(PROJECT_ROOT, "completed_trades.csv")
-    df_completed = pd.DataFrame()
-    if os.path.exists(csv_path):
+    # Load both completed trades databases
+    csv_live_path = os.path.join(PROJECT_ROOT, "completed_trades.csv")
+    csv_dry_path = os.path.join(PROJECT_ROOT, "completed_trades_dry.csv")
+    
+    df_live = pd.DataFrame()
+    df_dry = pd.DataFrame()
+    
+    if os.path.exists(csv_live_path):
         try:
-            df_completed = pd.read_csv(csv_path)
+            df_live = pd.read_csv(csv_live_path)
         except Exception as e:
             print(f"Error reading completed_trades.csv: {e}")
+            
+    if os.path.exists(csv_dry_path):
+        try:
+            df_dry = pd.read_csv(csv_dry_path)
+        except Exception as e:
+            print(f"Error reading completed_trades_dry.csv: {e}")
 
     bot_reports = []
     
-    # 3. Process each online trading bot
     for p in pm2_list:
         name = p.get("name")
-        env = p.get("pm2_env", {})
-        status = env.get("status", p.get("status"))
+        p_env = p.get("pm2_env", {})
+        status = p_env.get("status", p.get("status"))
         
-        # Skip system or non-trading processes
         if status != "online" or name == "hgtv-automation":
             continue
             
-        pair = env.get("TRADING_PAIR", "SOL-USDC")
-        state_file_name = env.get("STATE_FILE", "")
-        dry_run = env.get("DRY_RUN", "True").lower() in ("true", "1", "t", "yes")
+        pair = p_env.get("TRADING_PAIR", "SOL-USDC")
+        state_file_name = p_env.get("STATE_FILE", "")
+        dry_run = p_env.get("DRY_RUN", "True").lower() in ("true", "1", "t", "yes")
         is_dry_run_str = "Simulated" if dry_run else "Live"
         
-        # Load state file
         state_pnl_usd = 0.0
         position = "NONE"
         entry_price = 0.0
@@ -128,20 +157,18 @@ def main():
                     if position == "LONG" and holdings > 0.0:
                         current_price = get_live_price(pair)
                         if current_price > 0.0:
-                            # Gross unrealized PnL
                             unrealized_pnl = (current_price - entry_price) * holdings
-                            # Subtract estimated entry fee for net unrealized
                             entry_fee = float(state_data.get("entry_fee_usd", 0.0))
                             unrealized_pnl -= entry_fee
                 except Exception as e:
                     print(f"Error reading state file {state_file_name}: {e}")
                     
-        # Calculate realized PnL from completed_trades.csv
+        # Select isolated database based on dry-run config
+        df_target = df_dry if dry_run else df_live
+        
         realized_pnl = 0.0
         trades_count = 0
-        if not df_completed.empty:
-            # Map bot names to the CSV pair representation
-            # Simulated bots write with -HYPER or -ATR suffix
+        if not df_target.empty:
             csv_pair_name = pair
             if dry_run:
                 if "hyper" in name:
@@ -149,13 +176,13 @@ def main():
                 elif "atr" in name:
                     csv_pair_name = f"{pair}-ATR"
             
-            bot_trades = df_completed[df_completed['pair'] == csv_pair_name]
+            # Support matching both raw pair or name representation in CSV
+            bot_trades = df_target[df_target['pair'] == csv_pair_name]
             trades_count = len(bot_trades)
             if 'pnl_usd' in bot_trades.columns:
                 realized_pnl = float(bot_trades['pnl_usd'].sum())
-            else:
-                # Fallback calculation if pnl_usd column is somehow missing
-                realized_pnl = float((bot_trades['net_pct'] / 100.0 * 10.0).sum()) # Assume $10 base capital fallback
+            elif 'net_pct' in bot_trades.columns:
+                realized_pnl = float((bot_trades['net_pct'] / 100.0 * 10.0).sum())
                 
         bot_reports.append({
             "name": name,
@@ -170,13 +197,12 @@ def main():
             "unrealized": unrealized_pnl,
             "total": realized_pnl + unrealized_pnl
         })
-        time.sleep(0.1) # Safe API rate limit spacing
+        time.sleep(0.1)
 
     if not bot_reports:
         print("No active trading bots to report.")
         return
 
-    # Build PnL HTML Table rows
     table_rows = ""
     total_live_pnl = 0.0
     total_sim_pnl = 0.0
@@ -189,7 +215,6 @@ def main():
         pos_badge = f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(16, 185, 129, 0.2); color: #34d399;">LONG</span>""" if r["position"] == "LONG" else f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(156, 163, 175, 0.2); color: #9ca3af;">NONE</span>"""
         mode_badge = f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(239, 68, 68, 0.2); color: #f87171;">LIVE</span>""" if r["mode"] == "Live" else f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(59, 130, 246, 0.2); color: #60a5fa;">SIM</span>"""
         
-        # Accumulate totals
         if r["mode"] == "Live":
             total_live_pnl += r["total"]
         else:
@@ -219,11 +244,21 @@ def main():
     live_color = "#34d399" if total_live_pnl >= 0 else "#f87171"
     sim_color = "#34d399" if total_sim_pnl >= 0 else "#f87171"
     
-    # 4. Extract recent losses and exit reasons
+    # Render recent losses from combined logs for transparency
     losses_html = ""
-    if not df_completed.empty:
-        pnl_col = 'pnl_usd' if 'pnl_usd' in df_completed.columns else 'net_pct'
-        df_losses = df_completed[df_completed[pnl_col] < 0.0]
+    df_combined_losses = pd.DataFrame()
+    
+    # Combine losses for reporting purposes
+    list_dfs = []
+    if not df_live.empty:
+        list_dfs.append(df_live)
+    if not df_dry.empty:
+        list_dfs.append(df_dry)
+        
+    if list_dfs:
+        df_all = pd.concat(list_dfs, ignore_index=True)
+        pnl_col = 'pnl_usd' if 'pnl_usd' in df_all.columns else 'net_pct'
+        df_losses = df_all[df_all[pnl_col] < 0.0]
         
         if not df_losses.empty:
             df_losses = df_losses.sort_values(by='exit_time', ascending=False)
@@ -243,7 +278,6 @@ def main():
                 exit_reason_str = row['exit_reason']
                 pair_name = row['pair']
                 
-                # Check what strategy settings were active
                 sma_s = row.get('entry_sma_short')
                 sma_l = row.get('entry_sma_long')
                 if pd.notna(sma_s) and pd.notna(sma_l) and str(sma_s) != "" and str(sma_l) != "" and str(sma_s) != "nan" and str(sma_l) != "nan":
@@ -251,11 +285,10 @@ def main():
                 else:
                     strat_display = "SMA Crossover"
                 
-                # Compute leveraged amount mathematically: amount = pnl / (net_pct / 100.0)
                 if pct_val != 0.0:
                     leveraged_amount = abs(pnl_val / (pct_val / 100.0))
                 else:
-                    leveraged_amount = 10.0 # Default fallback
+                    leveraged_amount = 10.0
                     
                 setup_display = f"${leveraged_amount:,.2f} ({strat_display})"
                 
@@ -302,7 +335,6 @@ def main():
         </div>
         
         <div class="content" style="padding: 30px;">
-            <!-- Summary Blocks -->
             <div style="display: flex; gap: 20px; margin-bottom: 30px;">
                 <div style="flex: 1; padding: 20px; border-radius: 8px; background-color: #1e293b; border: 1px solid #334155; text-align: center;">
                     <div style="font-size: 12px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; font-weight: 600;">Combined Live Portfolio PnL</div>
@@ -340,13 +372,13 @@ def main():
         </div>
         
         <div class="footer" style="background-color: #0b0f19; padding: 20px; text-align: center; font-size: 11px; color: #64748b; border-top: 1px solid #1f2937;">
-            <p style="margin: 0;">This statement is compiled and emailed automatically by your Coinbase Systematic Trading Bot platform daily at 9:00 AM.</p>
+            <p style="margin: 0;">This statement is compiled and emailed automatically by your Coinbase Systematic Trading Bot daily at 9:00 AM.</p>
         </div>
+    </div>
     </div>
 </body>
 </html>"""
 
-    # Send PnL Statement Email
     subject = f"📊 Daily PnL Statement: Live {total_live_pnl:+.2f} USD • Sim {total_sim_pnl:+.2f} USD"
     send_pnl_email(subject, html_content)
 

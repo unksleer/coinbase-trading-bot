@@ -4,128 +4,99 @@ A modular, secure, and automated cryptocurrency algorithmic trading system desig
 
 ---
 
-## 🚀 Key Features
+## 🛡️ Safety & Concurrency Safeguards
 
-* **Multi-Asset Live Bots**: Run isolated trading bots for multiple coins (e.g., BTC, ETH, SOL) concurrently. State and trade histories are kept separate (e.g., `state_btc-usdc.json`, `state_eth-usdc.json`) to prevent conflicts.
-* **Instant Trade Shortcut**: Launch live trading bots for any cryptocurrency instantly with a single command using the [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh) script.
-* **Coin-Specific Overrides**: Finetune trading settings per asset directly in [.env](file:///home/leeunks/coinbase-trading-bot/.env) (e.g. `SOL_SMA_SHORT_WINDOW=12`).
-* **ATR-Based Risk Management**: Set volatility-adapted stops (e.g., 3.0x ATR Stop Loss / 6.0x ATR Take Profit) instead of static percentages.
-* **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py)) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)) using public APIs.
-* **Systematic Screener & Alerts**: A market scanner ([`daily_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_report.py)) runs in the background every 10 minutes, compiling real-time prices, 24h changes, RSI, and SMA spreads for 15 top assets.
-* **Alert-Only Emails**: Receives rich HTML emails only when active **`BUY`** signals are triggered, keeping your inbox clean.
-* **Advanced Backtesting**: Run historical simulations with custom trade sizes or test compounding portfolio growth (using 100% of cash) with [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py).
-* **Grid Search Optimizer**: Find the best windows, spreads, stop-loss, and take-profit parameters using the built-in backtest optimizer.
+This bot is engineered with strict production safety safeguards to protect capital and state integrity:
+
+1. **Dry-Run / Live-Mode Isolation**: 
+   * **State Separation**: Live bots write to `state_<pair>.json` while simulated bots write to `state_<pair>_dry.json`. There is zero overlap.
+   * **Log Separation**: Transactions are routed to isolated files: live trades use `trades.csv` / `completed_trades.csv`, while simulations use `trades_dry.csv` / `completed_trades_dry.csv`.
+2. **Durable Order Journal**: Logs every trade intent with a generated UUID client-order ID *before* submitting it to Coinbase. Unresolved orders (from sudden crashes/reboots) are reconciled against the exchange on startup and continuously during the execution loop.
+3. **Atomic Persistence & Backups**: State saves write to a temporary `.tmp` file, flush/sync to disk using `os.fsync`, and atomically swap to the main destination. Maintains a `.bak` backup file to recover from write failures.
+4. **Concurrency Locking**: Utilizes a hybrid OS-level file lock (`fcntl.flock`) and thread lock (`threading.RLock`) to prevent multiple bot processes or CLI tools from mutating the same state file simultaneously.
+5. **Fail-Closed Design**: In live mode, any corrupt state parser errors or schema validation mismatches will halt execution and fail-closed immediately rather than silently resetting holdings.
+6. **Risk Circuit Breakers**:
+   * **Stale Data Cutoff**: Stops trading if market data is older than 5 minutes.
+   * **API Error Circuit Breaker**: Exits and halts trading if repeated Coinbase connection failures occur (default limit: 5).
+   * **Consecutive Loss Cooldown**: Halts buying if consecutive transactions resulted in losses within a set cooldown window.
+   * **Capped Exposure**: Enforces strict limit checks on order value and total product exposure.
 
 ---
 
-## 📁 Repository Structure
+## 🚀 Key Features
 
-* [`bot.py`](file:///home/leeunks/coinbase-trading-bot/bot.py): Main orchestration script for running a trading bot process.
-* [`manual_sell.py`](file:///home/leeunks/coinbase-trading-bot/manual_sell.py): Script to manually exit active positions and submit sell orders (simulated or live).
-* [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py): Backtesting engine for historical strategy simulation.
-* [`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py): CLI screener that scans 15 popular USD coins on Coinbase.
-* [`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py): Dedicated CLI stock trend and volatility scanner powered by Yahoo Finance.
-* [`daily_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_report.py): Emailling report script integrated with a 10-minute crontab scheduler.
-* [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh): Command-line shortcut script to start a live bot.
-* [`.env`](file:///home/leeunks/coinbase-trading-bot/.env): Environment variables containing API keys, SMTP credentials, and parameters.
-* [`config/settings.py`](file:///home/leeunks/coinbase-trading-bot/config/settings.py): Application configuration loading and validation logic.
-* [`utils/state.py`](file:///home/leeunks/coinbase-trading-bot/utils/state.py): Position state and trade history persistence manager.
+* **Multi-Asset Live Bots**: Run isolated trading bots for multiple coins (e.g., BTC, ETH, SOL) concurrently.
+* **Instant Trade Shortcut**: Launch live trading bots for any cryptocurrency instantly with a single command using the [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh) script.
+* **Coin-Specific Overrides**: Finetune trading settings per asset directly in [.env](file:///home/leeunks/coinbase-trading-bot/.env) (e.g. `SOL_SMA_SHORT_WINDOW=12`).
+* **ATR-Based Risk Management**: Set volatility-adapted stops (e.g., 3.0x ATR Stop Loss / 6.0x ATR Take Profit) instead of static percentages.
+* **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py)) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)).
+* **Email PnL Statements**: Integrated daily HTML report ([`daily_pnl_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_pnl_report.py)) summarizes realized and unrealized performance for all online bots.
 
 ---
 
 ## 🛠️ Usage Instructions
 
-### 1. Launching Live Trading Bots (`trade.sh` Shortcut)
-Use the executable helper script to start live bots in the background using PM2. PM2 manages the processes, auto-resurrects them on crashes, and restores them on system reboots.
+### 1. Launching Trading Bots (`trade.sh` Shortcut)
+The helper script runs in **Dry-Run (Simulation) by default**. To launch a live bot, you must pass the `--live` flag and type the explicit acknowledgement:
 
 ```bash
-# Syntax: ./trade.sh <coin_name> [amount_usdc]
-# Note: If no amount is specified, it defaults to 50.0 USDC.
+# Start a simulated dry-run BTC-USDC bot
+./trade.sh btc 10
 
-# Examples:
-./trade.sh btc 145    # Starts a live BTC-USDC bot trading $145 USDC per position
-./trade.sh eth 100    # Starts a live ETH-USDC bot trading $100 USDC per position
-./trade.sh sol 50     # Starts a live SOL-USDC bot trading $50 USDC per position
+# Start a live, real-money BTC-USDC bot (requires typing: I_CONFIRM_LIVE_TRADING)
+./trade.sh btc 50 --live
 ```
 
 ### 2. Monitoring Bots (PM2 Commands)
-Manage your running bots in real-time:
 ```bash
-pm2 status             # Check which bots are currently active
-pm2 logs               # View live logs for all running bots
-pm2 logs btc-bot       # View live logs for a specific bot
-pm2 stop btc-bot       # Pause the Bitcoin bot
-pm2 delete btc-bot     # Stop and remove the Bitcoin bot process
-pm2 save               # Save active bots list to survive system reboots
+pm2 status             # Check active bots
+pm2 logs               # View live logs
+pm2 logs btc-bot       # View live logs for specific bot
+pm2 delete btc-bot     # Stop and remove specific bot
 ```
 
-### 3. Running Backtests & Strategy Optimizations
-Run historical simulations using the [`backtest.py`](file:///home/leeunks/coinbase-trading-bot/backtest.py) engine.
+### 3. Manually Closing Positions (`manual_sell.py`)
+Close an open position manually under lock safety. Targets dry-run files by default or via argument overrides:
 
 ```bash
-# Run baseline backtest using default .env parameters ($10 fixed trade size)
-.venv/bin/python backtest.py
-
-# Run backtest simulating 100% cash compounding portfolio allocation
-.venv/bin/python backtest.py --trade-amount 0
-
-# Run a custom trade size backtest (e.g. $150 trades) on 2,000 candles
-.venv/bin/python backtest.py --trade-amount 150 --candles 2000
-
-# Run grid search optimizer to discover top-performing parameter combinations
-.venv/bin/python backtest.py --optimize
-```
-
-### 4. Running the Market Screeners
-Execute a manual scan across 15 high-liquidity Coinbase pairs:
-```bash
-.venv/bin/python scanner.py
-```
-
-Execute a daily chart trend scan across top tech stocks and major index ETFs:
-```bash
-.venv/bin/python stock_scanner.py
-```
-
-### 5. Viewing Screener & Alert Logs
-The 10-minute automated email screener runs silently via the system cron. You can view the full market metrics history inside the log:
-```bash
-tail -n 25 logs/daily_report.log       # View the last scan results table
-tail -f logs/daily_report.log          # Watch scans in real-time
-```
-
-### 6. Manually Closing Positions (`manual_sell.py`)
-If you ever want to close an open position manually (real or simulated) rather than waiting for the bot's automatic stop-loss or take-profit triggers, use the helper script:
-
-```bash
-# List all currently active open positions
+# List all active open positions
 .venv/bin/python manual_sell.py
 
-# Manually close out a specific position (e.g., BTC)
-.venv/bin/python manual_sell.py btc
+# Close simulated BTC position manually
+.venv/bin/python manual_sell.py btc --dry
 
-# Close position instantly without confirmation prompts
-.venv/bin/python manual_sell.py btc --yes
+# Close live BTC position manually
+.venv/bin/python manual_sell.py btc --live
+```
+
+### 4. Viewing Performance Analytics
+```bash
+# Display performance analytics for simulated dry-run trades
+.venv/bin/python view_analytics.py --dry
+
+# Display performance analytics for live production trades
+.venv/bin/python view_analytics.py
 ```
 
 ---
 
 ## ⚙️ Configuration (`.env` Parameters)
 
-Edit [`.env`](file:///home/leeunks/coinbase-trading-bot/.env) to configure settings. Major strategy parameters include:
+Edit [`.env`](file:///home/leeunks/coinbase-trading-bot/.env) to configure settings. Major safety settings include:
 
-* **Moving Average Crossover**:
-  * `SMA_SHORT_WINDOW=5` (Fast line: average price of the last 5 hours)
-  * `SMA_LONG_WINDOW=50` (Slow line: average price of the last 50 hours)
-  * `SMA_MIN_SPREAD_PERCENT=0.0` (Required crossover spread percentage to buy)
-* **Uptrend Filter**:
-  * `EMA_TREND_FILTER_ENABLED=True`
-  * `EMA_TREND_PERIOD=200` (Filters buys to only execute when price is above the 200-hour EMA)
-* **Hype Filter**:
-  * `RSI_FILTER_ENABLED=True`
-  * `RSI_BUY_MAX=60` (Filters buys to only execute when the 14-period RSI is below 60)
-* **Risk Controls**:
-  * `TAKE_PROFIT_PERCENT=6.0` (Sells position immediately at a 6% gain)
-  * `STOP_LOSS_PERCENT=3.0` (Sells position immediately at a 3% loss)
-  * `STOP_LOSS_ATR_MULTIPLE=3.0` (Uncomment to set Stop Loss at 3.0 * Entry ATR)
-  * `TAKE_PROFIT_ATR_MULTIPLE=6.0` (Uncomment to set Take Profit at 6.0 * Entry ATR)
+```ini
+# --- Global Safety Configs ---
+DRY_RUN=True                          # Default is True. Set to False for live trading.
+EMERGENCY_KILL_SWITCH=False           # Set to True to instantly disable bot executions.
+APPROVED_PRODUCT_ALLOWLIST=BTC-USDC,ETH-USDC,SOL-USDC   # List of allowed pairs.
+
+# --- Risk Limits ---
+MAX_VAL_PER_ORDER=100.0               # Maximum USD value allowed per order.
+MAX_EXPOSURE_PER_PRODUCT=500.0        # Maximum exposure allowed per pair.
+MIN_QUOTE_RESERVE=10.0                # Minimum cash to retain.
+MAX_TRADES_PER_DAY=10                 # Maximum daily buy/sell cycles.
+CONSECUTIVE_LOSS_COOLDOWN_TRADES=3    # Limit on consecutive losses before cooldown.
+CONSECUTIVE_LOSS_COOLDOWN_SECONDS=3600 # Loss cooldown duration in seconds.
+STALE_MARKET_DATA_CUTOFF_SECONDS=300  # Cutoff age for stale market candles.
+REPEATED_API_ERROR_LIMIT=5            # Error limit before circuit breaker trips.
+```
