@@ -31,7 +31,24 @@ class RiskEngine:
         """
         current_time = time.time()
         age = current_time - latest_timestamp_unix
-        cutoff = getattr(self.settings, "STALE_MARKET_DATA_CUTOFF_SECONDS", 300)
+        
+        # Resolve candle granularity in seconds
+        granularity = getattr(self.settings, "GRANULARITY", "ONE_MINUTE")
+        gran_map = {
+            'ONE_MINUTE': 60,
+            'FIVE_MINUTE': 300,
+            'FIFTEEN_MINUTE': 900,
+            'THIRTY_MINUTE': 1800,
+            'ONE_HOUR': 3600,
+            'TWO_HOUR': 7200,
+            'SIX_HOUR': 21600,
+            'ONE_DAY': 86400
+        }
+        granularity_seconds = gran_map.get(granularity, 60)
+        
+        # Enforce cutoff: at least 2 periods of the current granularity to avoid false alarms
+        settings_cutoff = getattr(self.settings, "STALE_MARKET_DATA_CUTOFF_SECONDS", 300)
+        cutoff = max(settings_cutoff, granularity_seconds * 2)
         
         if age > cutoff:
             msg = f"Stale market data detected: last candle was {age:.1f}s ago (Cutoff: {cutoff}s)"
