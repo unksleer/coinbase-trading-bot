@@ -755,8 +755,19 @@ def main():
                             except Exception as e:
                                 logger.error(f"Failed live Limit SELL block: {e}")
                 else:
-                    portfolio_value = state_manager.state["cash_usd"] + (state_manager.state["holdings_base"] * latest_price)
-                    logger.info(f"Position: {state_manager.state['position']} | Cash: ${state_manager.state['cash_usd']:.2f} USD | Holdings: {state_manager.state['holdings_base']:.8f} {base_asset} | Portfolio Value: ${portfolio_value:.2f} USD")
+                    if state_manager.state["position"] == "LONG":
+                        entry_p = state_manager.state["entry_price"]
+                        holds = state_manager.state["holdings_base"]
+                        entry_f = state_manager.state.get("entry_fee_usd", 0.0)
+                        
+                        gross_cost = holds * entry_p
+                        current_val = holds * latest_price
+                        pnl_val = current_val - gross_cost - entry_f
+                        pnl_p = ((latest_price - entry_p) / entry_p * 100.0) if entry_p > 0 else 0.0
+                        
+                        logger.info(f"Position: LONG | Holdings: {holds:.8f} {base_asset} | Entry Price: ${entry_p:.2f} | Current Price: ${latest_price:.2f} | Active P&L: {pnl_p:+.2f}% ({pnl_val:+.2f} USD)")
+                    else:
+                        logger.info(f"Position: NONE | Holdings: 0.00000000 {base_asset} | Waiting for buy signal...")
             
             logger.info(f"Sleeping for {Settings.LOOP_INTERVAL_SECONDS} seconds before next check.")
             time.sleep(Settings.LOOP_INTERVAL_SECONDS)
