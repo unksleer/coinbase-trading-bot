@@ -5,6 +5,7 @@ import http.server
 import socketserver
 import csv
 import logging
+import subprocess
 
 PORT = 8080
 
@@ -32,12 +33,51 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             
         return super().do_GET()
 
+    def get_pm2_status(self):
+        try:
+            result = subprocess.run(["pm2", "jlist"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                processes = json.loads(result.stdout)
+                bots_list = []
+                for p in processes:
+                    name = p.get("name", "")
+                    if name.endswith("-bot") or name == "dashboard":
+                        env = p.get("pm2_env", {})
+                        dry_run_val = env.get("DRY_RUN", "True")
+                        args = env.get("args", [])
+                        
+                        is_dry = True
+                        if "--live" in args:
+                            is_dry = False
+                        elif str(dry_run_val).strip().lower() in ("false", "0", "f", "no"):
+                            is_dry = False
+                            
+                        status = env.get("status", "unknown")
+                        monit = p.get("monit", {})
+                        memory = monit.get("memory", 0) / (1024 * 1024) # MB
+                        cpu = monit.get("cpu", 0)
+                        restarts = env.get("restart_time", 0)
+                        
+                        bots_list.append({
+                            "name": name,
+                            "status": status.upper(),
+                            "mode": "Simulated" if is_dry else "Live",
+                            "memory": f"{memory:.1f} MB",
+                            "cpu": f"{cpu}%",
+                            "restarts": restarts
+                        })
+                return bots_list
+        except Exception as e:
+            logger.error(f"Error fetching PM2 status: {e}")
+        return []
+
     def get_dashboard_data(self):
         project_root = os.path.dirname(os.path.abspath(__file__))
         data = {
             "timestamp": datetime_now_iso(),
             "scanner": {},
             "active_positions": [],
+            "bots": self.get_pm2_status(),
             "performance": {
                 "live_realized_pnl": 0.0,
                 "live_fees": 0.0,

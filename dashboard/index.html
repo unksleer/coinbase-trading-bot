@@ -160,7 +160,7 @@
         /* --- Split Panels --- */
         .panels-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 2fr 1.3fr 1fr;
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -445,6 +445,31 @@
                 </div>
             </div>
 
+            <!-- Bot Process Monitor Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>System Process Monitor</h2>
+                    <span id="bot-processes-count" class="card-subtext">0 bots online</span>
+                </div>
+                <div style="overflow-y: auto; max-height: 220px;">
+                    <table class="ledger-table" style="font-size: 13px;">
+                        <thead>
+                            <tr>
+                                <th>Bot</th>
+                                <th>Mode</th>
+                                <th>Status</th>
+                                <th style="text-align: right;">CPU / Mem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bots-body">
+                            <tr>
+                                <td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 20px 0;">Loading PM2 statuses...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Market Regime Gauge Panel -->
             <div class="panel">
                 <div class="panel-header">
@@ -579,6 +604,37 @@
                 document.getElementById('live-unrealized-pnl').className = "card-value " + (liveUnrealizedTotal >= 0 ? "val-up" : "val-down");
                 document.getElementById('sim-unrealized-pnl').textContent = formatPnL(simUnrealizedTotal);
                 document.getElementById('sim-unrealized-pnl').className = "card-value " + (simUnrealizedTotal >= 0 ? "val-up" : "val-down");
+            }
+
+            // Update PM2 Bot Statuses
+            const bots = data.bots || [];
+            document.getElementById('bot-processes-count').textContent = bots.length + " bot" + (bots.length !== 1 ? "s" : "") + " monitored";
+            
+            const botsBody = document.getElementById('bots-body');
+            if (bots.length === 0) {
+                botsBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 20px 0;">No active bot processes under PM2.</td></tr>`;
+            } else {
+                let html = "";
+                bots.forEach(b => {
+                    const modeClass = b.mode === "Live" ? "badge-live" : "badge-sim";
+                    const statusClass = b.status === "ONLINE" ? "val-up" : "val-down";
+                    const dotGlow = b.status === "ONLINE" ? "var(--accent-green)" : "var(--accent-red)";
+                    
+                    html += `
+                    <tr>
+                        <td style="font-weight: 700; color: #ffffff;">${b.name.replace("-bot", "")}</td>
+                        <td><span class="badge-mode ${modeClass}">${b.mode}</span></td>
+                        <td>
+                            <span class="${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background-color: ${dotGlow}; box-shadow: 0 0 6px ${dotGlow};"></span>
+                                ${b.status}
+                            </span>
+                        </td>
+                        <td style="text-align: right; color: var(--text-secondary); font-family: monospace;">${b.cpu} / ${b.memory}</td>
+                    </tr>
+                    `;
+                });
+                botsBody.innerHTML = html;
             }
 
             // Update Market Breadth Radial Gauge
