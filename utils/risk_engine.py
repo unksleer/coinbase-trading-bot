@@ -1,4 +1,5 @@
 import logging
+import time
 from decimal import Decimal
 from datetime import datetime, timedelta
 
@@ -28,7 +29,7 @@ class RiskEngine:
         """
         Verifies that latest market candle timestamp is not stale.
         """
-        current_time = datetime.utcnow().timestamp()
+        current_time = time.time()
         age = current_time - latest_timestamp_unix
         cutoff = getattr(self.settings, "STALE_MARKET_DATA_CUTOFF_SECONDS", 300)
         
