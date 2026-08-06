@@ -4,8 +4,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Determine the active profile (e.g. CONSERVATIVE, AGGRESSIVE)
-ACTIVE_PROFILE = os.getenv("ACTIVE_PROFILE", "CONSERVATIVE").strip().upper()
+
 
 # Determine the active coin prefix (e.g. SOL, BTC) from TRADING_PAIR env variable
 TRADING_PAIR_ENV = os.getenv("TRADING_PAIR", "BTC-USD").strip()
@@ -13,6 +12,14 @@ try:
     COIN_PREFIX = TRADING_PAIR_ENV.split('-')[0].upper()
 except Exception:
     COIN_PREFIX = ""
+
+# Determine the active profile (e.g. CONSERVATIVE, AGGRESSIVE)
+coin_profile_key = f"{COIN_PREFIX}_ACTIVE_PROFILE" if COIN_PREFIX else ""
+if coin_profile_key and os.getenv(coin_profile_key):
+    ACTIVE_PROFILE = os.getenv(coin_profile_key).strip().upper()
+else:
+    ACTIVE_PROFILE = os.getenv("ACTIVE_PROFILE", "CONSERVATIVE").strip().upper()
+
 
 def get_env_with_profile(key: str, default: str) -> str:
     """

@@ -73,8 +73,8 @@ class RiskEngine:
             if product_id.upper() not in allowlist:
                 raise RiskLimitViolation(f"Product {product_id} is not in the approved allowlist: {allowlist}")
 
-        # 3. Mandatory Stop Protection in Live Mode
-        if not self.settings.DRY_RUN:
+        # 3. Mandatory Stop Protection in Live Mode (bypassed if strategy exits are disabled)
+        if not self.settings.DRY_RUN and not getattr(self.settings, "DISABLE_STRATEGY_EXITS", False):
             sl_pct = getattr(self.settings, "STOP_LOSS_PERCENT", 0.0)
             sl_atr = getattr(self.settings, "STOP_LOSS_ATR_MULTIPLE", 0.0)
             if sl_pct <= 0.0 and sl_atr <= 0.0:

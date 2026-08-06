@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -21,7 +22,7 @@ def setup_logger(name="coinbase_bot", log_file="bot.log", level=logging.INFO):
         )
 
         # Console handler
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 

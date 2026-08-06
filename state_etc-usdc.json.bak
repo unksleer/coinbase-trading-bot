@@ -1,0 +1,124 @@
+{
+    "dry_run": false,
+    "position": "LONG",
+    "entry_price": 7.05,
+    "cash_usd": 89.5368066882224,
+    "holdings_base": 1.41843972,
+    "trades": [
+        {
+            "timestamp": "2026-07-20T20:16:08.318151Z",
+            "type": "BUY",
+            "price": 6.96,
+            "amount_usd": 10.0000000056,
+            "amount_base": 1.43678161,
+            "fee_usd": 0.0600000000336,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.06000000003360206,
+            "entry_time": "2026-07-20T20:16:08.318151Z"
+        },
+        {
+            "timestamp": "2026-07-20T22:13:58.290698Z",
+            "type": "SELL",
+            "price": 6.91,
+            "amount_usd": 9.9281609251,
+            "amount_base": 1.43678161,
+            "fee_usd": 0.0595689655506,
+            "realized_pnl_usd": -0.19140804608419973,
+            "portfolio_value_usd": -0.19140804608420048,
+            "entry_time": "2026-07-20T20:16:08.318151Z"
+        },
+        {
+            "timestamp": "2026-07-21T00:22:09.536026Z",
+            "type": "BUY",
+            "price": 6.92,
+            "amount_usd": 10.0000000332,
+            "amount_base": 1.44508671,
+            "fee_usd": 0.0600000001992,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.25140804628339986,
+            "entry_time": "2026-07-21T00:22:09.536026Z"
+        },
+        {
+            "timestamp": "2026-07-21T03:59:45.082836Z",
+            "type": "SELL",
+            "price": 6.97,
+            "amount_usd": 10.0722543687,
+            "amount_base": 1.44508671,
+            "fee_usd": 0.0604335262122,
+            "realized_pnl_usd": -0.04817919091140027,
+            "portfolio_value_usd": -0.23958723699560025,
+            "entry_time": "2026-07-21T00:22:09.536026Z"
+        },
+        {
+            "timestamp": "2026-07-21T07:21:42.355437Z",
+            "type": "BUY",
+            "price": 6.98,
+            "amount_usd": 3.165675696,
+            "amount_base": 0.4535352,
+            "fee_usd": 0.018994054176,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.25858129117159967,
+            "entry_time": "2026-07-21T07:21:42.355437Z"
+        },
+        {
+            "timestamp": "2026-07-21T08:03:04.805688Z",
+            "type": "SELL",
+            "price": 7.03,
+            "amount_usd": 3.188352456,
+            "amount_base": 0.4535352,
+            "fee_usd": 0.019130114736,
+            "realized_pnl_usd": -0.015447408912000082,
+            "portfolio_value_usd": -0.25503464590760005,
+            "entry_time": "2026-07-21T07:21:42.355437Z"
+        },
+        {
+            "timestamp": "2026-07-21T10:10:12.622711Z",
+            "type": "BUY",
+            "price": 7.06,
+            "amount_usd": 9.9999999654,
+            "amount_base": 1.41643059,
+            "fee_usd": 0.0599999997924,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.31503464570000084,
+            "entry_time": "2026-07-21T10:10:12.622711Z"
+        },
+        {
+            "timestamp": "2026-07-21T11:11:46.485583Z",
+            "type": "SELL",
+            "price": 7.04,
+            "amount_usd": 9.9716713536,
+            "amount_base": 1.41643059,
+            "fee_usd": 0.0598300281216,
+            "realized_pnl_usd": -0.1481586397139994,
+            "portfolio_value_usd": -0.40319328562160095,
+            "entry_time": "2026-07-21T10:10:12.622711Z"
+        },
+        {
+            "timestamp": "2026-07-21T13:00:52.912656Z",
+            "type": "BUY",
+            "price": 7.05,
+            "amount_usd": 10.000000026,
+            "amount_base": 1.41843972,
+            "fee_usd": 0.060000000156,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.4631932857776011,
+            "entry_time": "2026-07-21T13:00:52.912656Z"
+        }
+    ],
+    "entry_time": "2026-07-21T13:00:52.912656Z",
+    "entry_fee_usd": 0.060000000156,
+    "highest_price_since_entry": 7.18,
+    "lowest_price_since_entry": 6.51,
+    "max_drawdown_since_entry": -7.799442896935928,
+    "entry_reason": "SMA Bullish Cross",
+    "entry_indicators": {
+        "sma_short": 7.06,
+        "sma_long": 7.0569999999999995,
+        "ema": null,
+        "rsi": null,
+        "spread": 0.0425109820036859,
+        "atr": 0.010714285714285803
+    },
+    "version": 2,
+    "orders": {}
+}

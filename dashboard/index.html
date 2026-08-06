@@ -63,6 +63,7 @@
             letter-spacing: 0.5px;
             background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
@@ -392,6 +393,34 @@
             </div>
         </header>
 
+        <!-- --- Bot Signal Status Panel --- -->
+        <div class="scanner-panel" id="bot-signal-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>🤖 Active Bot Signal Status</h2>
+                <span class="card-subtext" id="signal-updated">Updating...</span>
+            </div>
+            <div style="overflow-x: auto;">
+                <table class="ledger-table" id="bot-signal-table">
+                    <thead>
+                        <tr>
+                            <th>Bot</th>
+                            <th>Pair</th>
+                            <th>Position</th>
+                            <th>SMA Short</th>
+                            <th>SMA Long</th>
+                            <th>Spread</th>
+                            <th>RSI</th>
+                            <th>EMA200</th>
+                            <th style="text-align:right;">Signal</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bot-signal-body">
+                        <tr><td colspan="9" style="text-align:center;color:var(--text-secondary);padding:30px 0;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- --- Performance Grid --- -->
         <div class="dashboard-grid">
             <div class="performance-card card-live">
@@ -494,6 +523,37 @@
                     </div>
                     <div class="regime-text" id="regime-status" style="color: var(--text-secondary);">Analyzing...</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- --- Completed Trades Ledger Panel --- -->
+        <div class="panel" style="grid-column: span 3; margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>Completed Trades Ledger (What & Why)</h2>
+                <span id="completed-trades-count" class="card-subtext">0 completed trades</span>
+            </div>
+            <div style="overflow-x: auto; max-height: 400px;">
+                <table class="ledger-table">
+                    <thead>
+                        <tr>
+                            <th>Pair</th>
+                            <th>Mode</th>
+                            <th>Entry Time</th>
+                            <th>Exit Time</th>
+                            <th>Entry Price</th>
+                            <th>Exit Price</th>
+                            <th style="text-align: right;">Net PnL</th>
+                            <th>Fees</th>
+                            <th>Entry Reason</th>
+                            <th>Exit Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="completed-body">
+                        <tr>
+                            <td colspan="10" style="text-align: center; color: var(--text-secondary); padding: 40px 0;">No completed trades recorded.</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -706,12 +766,147 @@
                 `;
             });
             scannerGrid.innerHTML = cardsHtml;
+
+            // Update Completed Trades
+            const completed = data.completed_trades || [];
+            document.getElementById('completed-trades-count').textContent = completed.length + " trade" + (completed.length !== 1 ? "s" : "") + " recorded (last 30)";
+            
+            const completedBody = document.getElementById('completed-body');
+            if (completed.length === 0) {
+                completedBody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-secondary); padding: 40px 0;">No completed trades recorded.</td></tr>`;
+            } else {
+                let html = "";
+                completed.forEach(t => {
+                    const modeClass = t.mode === "Live" ? "badge-live" : "badge-sim";
+                    const pnlClass = t.pnl_usd >= 0 ? "val-up" : "val-down";
+                    
+                    html += `
+                    <tr>
+                        <td style="font-weight: 700; color: #ffffff;">${t.pair}</td>
+                        <td><span class="badge-mode ${modeClass}">${t.mode}</span></td>
+                        <td>${formatDateTime(t.entry_time)}</td>
+                        <td>${formatDateTime(t.exit_time)}</td>
+                        <td>${formatCurrency(t.entry_price)}</td>
+                        <td>${formatCurrency(t.exit_price)}</td>
+                        <td style="text-align: right; font-weight: 700;" class="${pnlClass}">${formatPnL(t.pnl_usd)}</td>
+                        <td>${formatCurrency(t.fees_usd)}</td>
+                        <td style="color: var(--text-secondary); font-size: 13px;">${t.entry_reason}</td>
+                        <td style="color: var(--text-secondary); font-size: 13px; font-weight: 500;">${t.exit_reason}</td>
+                    </tr>
+                    `;
+                });
+                completedBody.innerHTML = html;
+            }
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return "";
+            try {
+                const d = new Date(isoString);
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const hours = String(d.getHours()).padStart(2, '0');
+                const minutes = String(d.getMinutes()).padStart(2, '0');
+                return `${month}/${day} ${hours}:${minutes}`;
+            } catch {
+                return isoString;
+            }
+        }
+
+        // ── Bot Signal Status ─────────────────────────────────────────────
+        async function fetchBotSignals() {
+            try {
+                const res = await fetch('/api/bot_signals');
+                if (!res.ok) return;
+                const signals = await res.json();
+                renderBotSignals(signals);
+            } catch (e) {
+                console.error('Bot signals fetch failed:', e);
+            }
+        }
+
+        function renderBotSignals(signals) {
+            const tbody = document.getElementById('bot-signal-body');
+            if (!signals || signals.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);padding:30px 0;">No signal data available.</td></tr>`;
+                return;
+            }
+
+            // Sort: IN TRADE first, READY second, CLOSE third, WAITING last
+            const order = { 'IN TRADE': 0, 'READY': 1, 'CLOSE': 2, 'WAITING': 3 };
+            signals.sort((a, b) => (order[a.signal] ?? 9) - (order[b.signal] ?? 9));
+
+            let html = '';
+            signals.forEach(s => {
+                const signalConfig = {
+                    'IN TRADE': { cls: 'sig-buy',  label: '🟢 IN TRADE',  glow: 'var(--accent-green)' },
+                    'READY':    { cls: 'sig-buy',  label: '⚡ READY',     glow: 'var(--accent-green)' },
+                    'CLOSE':    { cls: 'sig-hold', label: '🟡 CLOSE',     glow: 'none' },
+                    'WAITING':  { cls: 'sig-hold', label: '⏳ WAITING',   glow: 'none' },
+                }[s.signal] || { cls: 'sig-hold', label: s.signal, glow: 'none' };
+
+                const smaShort = s.sma_short != null ? s.sma_short.toFixed(4) : '—';
+                const smaLong  = s.sma_long  != null ? s.sma_long.toFixed(4)  : '—';
+
+                // Spread color: green if above (bullish), red if below (bearish)
+                const spreadDir = s.direction === 'ABOVE' ? 'val-up' : 'val-down';
+                const spreadTxt = s.spread_pct != null
+                    ? (s.direction === 'ABOVE' ? '+' : '-') + s.spread_pct.toFixed(3) + '%'
+                    : '—';
+
+                // RSI coloring
+                let rsiClass = '';
+                let rsiTxt = '—';
+                if (s.rsi != null) {
+                    rsiTxt = s.rsi.toFixed(1);
+                    if (s.rsi < (s.rsi_min || 30)) rsiClass = 'val-down';
+                    else if (s.rsi > (s.rsi_max || 70)) rsiClass = 'val-down';
+                    else rsiClass = 'val-up';
+                }
+
+                // EMA200
+                let emaTxt = '—';
+                let emaClass = '';
+                if (s.price_vs_ema) {
+                    emaTxt = s.price_vs_ema === 'ABOVE' ? '✅ Above' : '❌ Below';
+                    emaClass = s.price_vs_ema === 'ABOVE' ? 'val-up' : 'val-down';
+                } else {
+                    emaTxt = '🔓 Filter Off';
+                    emaClass = '';
+                }
+
+                const posClass = s.position === 'LONG' ? 'val-up' : 'val-down';
+
+                html += `
+                <tr style="transition: background 0.2s;">
+                    <td style="font-weight:700;color:#fff;">${s.bot.replace('-bot','').toUpperCase()}</td>
+                    <td style="color:var(--text-secondary);font-size:13px;">${s.pair}</td>
+                    <td><span class="${posClass}" style="font-weight:600;">${s.position}</span></td>
+                    <td style="font-family:monospace;font-size:13px;">${smaShort}</td>
+                    <td style="font-family:monospace;font-size:13px;">${smaLong}</td>
+                    <td><span class="${spreadDir}" style="font-weight:600;">${spreadTxt}</span></td>
+                    <td><span class="${rsiClass}" style="font-weight:600;">${rsiTxt}</span></td>
+                    <td><span class="${emaClass}" style="font-size:13px;">${emaTxt}</span></td>
+                    <td style="text-align:right;">
+                        <span class="coin-signal ${signalConfig.cls}"
+                              style="${signalConfig.glow !== 'none' ? 'box-shadow:0 0 10px ' + signalConfig.glow + ';' : ''}">
+                            ${signalConfig.label}
+                        </span>
+                    </td>
+                </tr>`;
+            });
+
+            tbody.innerHTML = html;
+            document.getElementById('signal-updated').textContent =
+                'Updated: ' + new Date().toLocaleTimeString();
         }
 
         // Fetch metrics on load
         fetchMetrics();
-        // Poll scoreboard every 10 seconds
+        fetchBotSignals();
+        // Poll metrics every 10 seconds, signals every 30 seconds
         setInterval(fetchMetrics, 10000);
+        setInterval(fetchBotSignals, 30000);
     </script>
 </body>
 </html>

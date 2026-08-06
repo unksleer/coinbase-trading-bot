@@ -5,7 +5,9 @@ import smtplib
 import time
 import requests
 import subprocess
+import glob
 import pandas as pd
+
 from datetime import datetime
 from ssl import create_default_context
 from email.mime.text import MIMEText
@@ -103,24 +105,41 @@ def main():
         print(f"Error listing PM2 processes: {e}")
         return
 
-    # Load both completed trades databases
-    csv_live_path = os.path.join(PROJECT_ROOT, "completed_trades.csv")
-    csv_dry_path = os.path.join(PROJECT_ROOT, "completed_trades_dry.csv")
+    # Load all completed trades databases
+    sim_files = glob.glob(os.path.join(PROJECT_ROOT, "completed_trades_*_dry.csv"))
+    shared_dry = os.path.join(PROJECT_ROOT, "completed_trades_dry.csv")
+    if os.path.exists(shared_dry) and shared_dry not in sim_files:
+        sim_files.append(shared_dry)
+        
+    live_files = glob.glob(os.path.join(PROJECT_ROOT, "completed_trades_*.csv"))
+    live_files = [f for f in live_files if not f.endswith("_dry.csv") and not f.endswith("_bak.csv")]
+    shared_live = os.path.join(PROJECT_ROOT, "completed_trades.csv")
+    if os.path.exists(shared_live) and shared_live not in live_files:
+        live_files.append(shared_live)
+        
+    df_live_list = []
+    for fpath in live_files:
+        if os.path.exists(fpath):
+            try:
+                df_temp = pd.read_csv(fpath)
+                if not df_temp.empty:
+                    df_live_list.append(df_temp)
+            except Exception as e:
+                print(f"Error reading completed trades file {os.path.basename(fpath)}: {e}")
+                
+    df_live = pd.concat(df_live_list, ignore_index=True) if df_live_list else pd.DataFrame()
     
-    df_live = pd.DataFrame()
-    df_dry = pd.DataFrame()
-    
-    if os.path.exists(csv_live_path):
-        try:
-            df_live = pd.read_csv(csv_live_path)
-        except Exception as e:
-            print(f"Error reading completed_trades.csv: {e}")
-            
-    if os.path.exists(csv_dry_path):
-        try:
-            df_dry = pd.read_csv(csv_dry_path)
-        except Exception as e:
-            print(f"Error reading completed_trades_dry.csv: {e}")
+    df_dry_list = []
+    for fpath in sim_files:
+        if os.path.exists(fpath):
+            try:
+                df_temp = pd.read_csv(fpath)
+                if not df_temp.empty:
+                    df_dry_list.append(df_temp)
+            except Exception as e:
+                print(f"Error reading completed trades file {os.path.basename(fpath)}: {e}")
+                
+    df_dry = pd.concat(df_dry_list, ignore_index=True) if df_dry_list else pd.DataFrame()
 
     bot_reports = []
     

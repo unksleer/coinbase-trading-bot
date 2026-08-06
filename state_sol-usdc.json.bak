@@ -1,0 +1,313 @@
+{
+    "dry_run": false,
+    "position": "LONG",
+    "entry_price": 78.17,
+    "cash_usd": 87.46612071463419,
+    "holdings_base": 0.12792631,
+    "trades": [
+        {
+            "timestamp": "2026-07-11T07:16:23.735026Z",
+            "type": "BUY",
+            "price": 77.96,
+            "amount_usd": 24.6999996936,
+            "amount_base": 0.31691044,
+            "fee_usd": 0.2963999963232,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.2900617875232001
+        },
+        {
+            "timestamp": "2026-07-11T18:15:53.571130Z",
+            "type": "SELL",
+            "price": 78.08,
+            "amount_usd": 24.74849987649849,
+            "amount_base": 0.31691044,
+            "fee_usd": 0.2969819985179819,
+            "realized_pnl_usd": -0.25895274571798044,
+            "portfolio_value_usd": -0.544881811942691
+        },
+        {
+            "timestamp": "2026-07-15T15:50:45.004649Z",
+            "type": "BUY",
+            "price": 78.11,
+            "amount_usd": 9.880092845988045,
+            "amount_base": 0.12646459,
+            "fee_usd": 0.1185611141518565,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.6653866471825935,
+            "entry_time": "2026-07-15T15:50:45.004649Z"
+        },
+        {
+            "timestamp": "2026-07-15T16:10:50.293259Z",
+            "type": "SELL",
+            "price": 77.72,
+            "amount_usd": 9.8300925807,
+            "amount_base": 0.12646459,
+            "fee_usd": 0.1179611109684,
+            "realized_pnl_usd": -0.2858434152202566,
+            "portfolio_value_usd": -0.8314043023509914,
+            "entry_time": "2026-07-15T15:50:45.004649Z"
+        },
+        {
+            "timestamp": "2026-07-15T19:35:27.450679Z",
+            "type": "BUY",
+            "price": 77.16,
+            "amount_usd": 9.880261286271544,
+            "amount_base": 0.12802991,
+            "fee_usd": 0.1185631354352585,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -0.9514408684577944,
+            "entry_time": "2026-07-15T19:35:27.450679Z"
+        },
+        {
+            "timestamp": "2026-07-16T06:10:14.648531Z",
+            "type": "SELL",
+            "price": 77.35,
+            "amount_usd": 9.904886490927213,
+            "amount_base": 0.12802991,
+            "fee_usd": 0.1188586378911266,
+            "realized_pnl_usd": -0.2130960904263854,
+            "portfolio_value_usd": -1.0442008710217063,
+            "entry_time": "2026-07-15T19:35:27.450679Z"
+        },
+        {
+            "timestamp": "2026-07-16T08:00:35.033746Z",
+            "type": "BUY",
+            "price": 76.34,
+            "amount_usd": 9.880374336068147,
+            "amount_base": 0.1293137,
+            "fee_usd": 0.1185644920328177,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -1.1713318411226705,
+            "entry_time": "2026-07-16T08:00:35.033746Z"
+        },
+        {
+            "timestamp": "2026-07-17T13:07:13.240776Z",
+            "type": "SELL",
+            "price": 73.74,
+            "amount_usd": 9.533345383602889,
+            "amount_base": 0.1293137,
+            "fee_usd": 0.1144001446032347,
+            "realized_pnl_usd": -0.5691802566360535,
+            "portfolio_value_usd": -1.6241944601230163,
+            "entry_time": "2026-07-16T08:00:35.033746Z"
+        },
+        {
+            "timestamp": "2026-07-20T19:07:17.150678Z",
+            "type": "BUY",
+            "price": 77.63,
+            "amount_usd": 10.0000000534,
+            "amount_base": 0.12881618,
+            "fee_usd": 0.0600000003204,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -1.6841944604434183,
+            "entry_time": "2026-07-20T19:07:17.150678Z"
+        },
+        {
+            "timestamp": "2026-07-20T19:15:19.792904Z",
+            "type": "SELL",
+            "price": 77.29,
+            "amount_usd": 9.9562025522,
+            "amount_base": 0.12881618,
+            "fee_usd": 0.0597372153132,
+            "realized_pnl_usd": -0.1635347168335986,
+            "portfolio_value_usd": -1.787729176956617,
+            "entry_time": "2026-07-20T19:07:17.150678Z"
+        },
+        {
+            "timestamp": "2026-07-20T19:19:08.545716Z",
+            "type": "BUY",
+            "price": 77.49,
+            "amount_usd": 10.0000000359,
+            "amount_base": 0.12904891,
+            "fee_usd": 0.0600000002154,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -1.8477291771720186,
+            "entry_time": "2026-07-20T19:19:08.545716Z"
+        },
+        {
+            "timestamp": "2026-07-20T20:36:31.382969Z",
+            "type": "SELL",
+            "price": 77.99,
+            "amount_usd": 10.0645244909,
+            "amount_base": 0.12904891,
+            "fee_usd": 0.0603871469454,
+            "realized_pnl_usd": -0.055862692160800004,
+            "portfolio_value_usd": -1.8435918691174162,
+            "entry_time": "2026-07-20T19:19:08.545716Z"
+        },
+        {
+            "timestamp": "2026-07-20T20:48:07.235520Z",
+            "type": "BUY",
+            "price": 77.88,
+            "amount_usd": 9.9999999396,
+            "amount_base": 0.12840267,
+            "fee_usd": 0.0599999996376,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -1.9035918687550186,
+            "entry_time": "2026-07-20T20:48:07.235520Z"
+        },
+        {
+            "timestamp": "2026-07-20T22:18:04.281495Z",
+            "type": "SELL",
+            "price": 77.58,
+            "amount_usd": 9.9614791386,
+            "amount_base": 0.12840267,
+            "fee_usd": 0.0597688748316,
+            "realized_pnl_usd": -0.15828967546919964,
+            "portfolio_value_usd": -2.0018815445866167,
+            "entry_time": "2026-07-20T20:48:07.235520Z"
+        },
+        {
+            "timestamp": "2026-07-20T22:23:29.965948Z",
+            "type": "BUY",
+            "price": 77.65,
+            "amount_usd": 9.99999995,
+            "amount_base": 0.128783,
+            "fee_usd": 0.0599999997,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.0618815442866154,
+            "entry_time": "2026-07-20T22:23:29.965948Z"
+        },
+        {
+            "timestamp": "2026-07-21T00:40:39.976454Z",
+            "type": "SELL",
+            "price": 78.12,
+            "amount_usd": 10.06052796,
+            "amount_base": 0.128783,
+            "fee_usd": 0.06036316776,
+            "realized_pnl_usd": -0.05983515746000015,
+            "portfolio_value_usd": -2.061716702046617,
+            "entry_time": "2026-07-20T22:23:29.965948Z"
+        },
+        {
+            "timestamp": "2026-07-21T00:41:12.037801Z",
+            "type": "BUY",
+            "price": 78.1,
+            "amount_usd": 9.999999757,
+            "amount_base": 0.12804097,
+            "fee_usd": 0.059999998542,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.1217167005886175,
+            "entry_time": "2026-07-21T00:41:12.037801Z"
+        },
+        {
+            "timestamp": "2026-07-21T01:58:13.483193Z",
+            "type": "SELL",
+            "price": 77.8,
+            "amount_usd": 9.961587466,
+            "amount_base": 0.12804097,
+            "fee_usd": 0.059769524796,
+            "realized_pnl_usd": -0.15818181433799966,
+            "portfolio_value_usd": -2.2198985163846174,
+            "entry_time": "2026-07-21T00:41:12.037801Z"
+        },
+        {
+            "timestamp": "2026-07-21T02:03:13.477522Z",
+            "type": "BUY",
+            "price": 77.86,
+            "amount_usd": 9.999999709,
+            "amount_base": 0.12843565,
+            "fee_usd": 0.059999998254,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.2798985146386173,
+            "entry_time": "2026-07-21T02:03:13.477522Z"
+        },
+        {
+            "timestamp": "2026-07-21T03:07:59.399338Z",
+            "type": "SELL",
+            "price": 78.44,
+            "amount_usd": 10.074492386,
+            "amount_base": 0.12843565,
+            "fee_usd": 0.060446954316,
+            "realized_pnl_usd": -0.045954275570000216,
+            "portfolio_value_usd": -2.265852791954618,
+            "entry_time": "2026-07-21T02:03:13.477522Z"
+        },
+        {
+            "timestamp": "2026-07-21T03:55:16.305559Z",
+            "type": "BUY",
+            "price": 78.19,
+            "amount_usd": 9.9999998021,
+            "amount_base": 0.12789359,
+            "fee_usd": 0.0599999988126,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.325852790767218,
+            "entry_time": "2026-07-21T03:55:16.305559Z"
+        },
+        {
+            "timestamp": "2026-07-21T06:36:32.259353Z",
+            "type": "SELL",
+            "price": 78.76,
+            "amount_usd": 10.0728991484,
+            "amount_base": 0.12789359,
+            "fee_usd": 0.0604373948904,
+            "realized_pnl_usd": -0.04753804740299905,
+            "portfolio_value_usd": -2.313390839357618,
+            "entry_time": "2026-07-21T03:55:16.305559Z"
+        },
+        {
+            "timestamp": "2026-07-21T06:52:25.213697Z",
+            "type": "BUY",
+            "price": 78.56,
+            "amount_usd": 9.9999998144,
+            "amount_base": 0.12729124,
+            "fee_usd": 0.0599999988864,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.3733908382440188,
+            "entry_time": "2026-07-21T06:52:25.213697Z"
+        },
+        {
+            "timestamp": "2026-07-21T09:00:25.914494Z",
+            "type": "SELL",
+            "price": 78.24,
+            "amount_usd": 9.9592666176,
+            "amount_base": 0.12729124,
+            "fee_usd": 0.0597555997056,
+            "realized_pnl_usd": -0.16048879539200095,
+            "portfolio_value_usd": -2.4738796347496184,
+            "entry_time": "2026-07-21T06:52:25.213697Z"
+        },
+        {
+            "timestamp": "2026-07-21T09:13:17.165664Z",
+            "type": "BUY",
+            "price": 78.17,
+            "amount_usd": 9.9999996527,
+            "amount_base": 0.12792631,
+            "fee_usd": 0.0599999979162,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": -2.533879632665819,
+            "entry_time": "2026-07-21T09:13:17.165664Z"
+        }
+    ],
+    "entry_time": "2026-07-21T09:13:17.165664Z",
+    "entry_fee_usd": 0.0599999979162,
+    "highest_price_since_entry": 78.74,
+    "lowest_price_since_entry": 76.51,
+    "max_drawdown_since_entry": -2.8321056642113156,
+    "entry_reason": "SMA Bullish Cross",
+    "entry_indicators": {
+        "sma_short": 78.17,
+        "sma_long": 78.168,
+        "ema": null,
+        "rsi": null,
+        "spread": 0.0025585917510942313,
+        "atr": 0.047142857142856896
+    },
+    "version": 2,
+    "orders": {
+        "46ec33cb-d126-49b1-8798-f8954b9c68ae": {
+            "client_order_id": "46ec33cb-d126-49b1-8798-f8954b9c68ae",
+            "order_id": "687ed8b4-57e3-4ccc-9193-927466537fcb",
+            "product_id": "SOL-USDC",
+            "side": "SELL",
+            "status": "FILLED",
+            "size": "0.12792631",
+            "price": "76.55",
+            "filled_size": "0.12792631",
+            "filled_value": "9.7927590305",
+            "fee_usd": "0.058756554183",
+            "created_at": "2026-07-23T12:46:23.364439Z",
+            "updated_at": "2026-07-23T12:46:29.045441Z"
+        }
+    }
+}

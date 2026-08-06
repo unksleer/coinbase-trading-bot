@@ -16,7 +16,31 @@ fi
 COIN=$(echo "$1" | tr '[:lower:]' '[:upper:]')
 PAIR="${COIN}-USDC"
 BOT_NAME="${1,,}-bot"
-AMOUNT="${2:-10.0}"
+
+# Function to get value from .env
+get_env_val() {
+    local key="$1"
+    local default_val="$2"
+    if [ -f "$DIR/.env" ]; then
+        local val=$(grep -E "^[[:space:]]*${key}=" "$DIR/.env" | head -n 1 | cut -d'=' -f2- | sed -e 's/\r//g' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+        if [ -n "$val" ]; then
+            echo "$val"
+            return
+        fi
+    fi
+    echo "$default_val"
+}
+
+# Resolve defaults from .env
+ENV_DRY_RUN=$(get_env_val "DRY_RUN" "True")
+ENV_AMOUNT=$(get_env_val "${COIN}_TRADE_AMOUNT_USD" "")
+if [ -z "$ENV_AMOUNT" ]; then
+    ENV_AMOUNT=$(get_env_val "TRADE_AMOUNT_USD" "10.0")
+fi
+
+# Apply overrides from CLI arguments
+AMOUNT="${2:-$ENV_AMOUNT}"
+DRY_RUN="$ENV_DRY_RUN"
 
 # Parse --live flag
 IS_LIVE=false
@@ -24,9 +48,18 @@ if [ "${3:-}" = "--live" ] || [ "${2:-}" = "--live" ]; then
     IS_LIVE=true
 fi
 
-# Dry Run is default
-DRY_RUN=True
 if [ "$IS_LIVE" = true ]; then
+    DRY_RUN=False
+fi
+
+# Normalize DRY_RUN to True or False for Python settings compatibility
+if [[ "$DRY_RUN" =~ ^(false|f|no|0|False|FALSE)$ ]]; then
+    DRY_RUN=False
+else
+    DRY_RUN=True
+fi
+
+if [ "$DRY_RUN" = False ]; then
     echo "=================================================="
     echo "⚠️  WARNING: REQUESTING LIVE TRADING MODE ⚠️"
     echo "=================================================="
@@ -56,7 +89,6 @@ if [ "$IS_LIVE" = true ]; then
         exit 1
     fi
     
-    DRY_RUN=False
     echo "✅ Live trading confirmed!"
 else
     echo "=================================================="

@@ -396,7 +396,15 @@ class StateManager:
                                 amount_base, buy_fee, sell_fee, pnl_usd, highest_price, lowest_price, entry_indicators):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         suffix = "_dry" if self.dry_run else ""
-        csv_path = os.path.join(project_root, f"completed_trades{suffix}.csv")
+        # Per-coin file: COMPLETED_TRADES_FILE env var > auto per-coin name > shared fallback
+        custom_path = os.getenv("COMPLETED_TRADES_FILE")
+        if custom_path:
+            csv_path = custom_path if os.path.isabs(custom_path) else os.path.join(project_root, custom_path)
+        else:
+            # Auto-derive coin name from state file for per-coin tracking
+            basename = os.path.basename(self.state_file)
+            coin_name = basename.replace("state_", "").replace("_dry.json", "").replace(".json", "").lower()
+            csv_path = os.path.join(project_root, f"completed_trades_{coin_name}{suffix}.csv")
         file_exists = os.path.exists(csv_path)
         
         gross_pct = ((exit_price - entry_price) / entry_price) * 100.0 if entry_price > 0.0 else 0.0

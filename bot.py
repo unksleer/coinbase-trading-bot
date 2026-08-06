@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import uuid
+import json
 import logging
 import requests
 import pandas as pd
@@ -369,6 +370,30 @@ def main():
                 # Evaluate strategy
                 signal = strategy.evaluate(df_completed)
                 logger.info(f"Strategy evaluation signal (on closed candle): {signal} (Current Position: {state_manager.state['position']})")
+
+                # Log indicator values for real-time diagnostics
+                short_val = getattr(strategy, "last_short", None)
+                long_val = getattr(strategy, "last_long", None)
+                spread_val = getattr(strategy, "last_spread_percent", None)
+                rsi_val = getattr(strategy, "last_rsi", None)
+                ema_val = getattr(strategy, "last_ema", None)
+                if short_val is not None and long_val is not None:
+                    gap_pct = ((short_val - long_val) / long_val) * 100.0
+                    direction = "ABOVE" if short_val > long_val else "BELOW"
+                    indicator_parts = [
+                        f"SMA_short={short_val:.4f}",
+                        f"SMA_long={long_val:.4f}",
+                        f"short is {abs(gap_pct):.3f}% {direction} long (need crossover)",
+                    ]
+                    if spread_val is not None:
+                        indicator_parts.append(f"spread={spread_val:.3f}%")
+                    if rsi_val is not None:
+                        rsi_range = f"[{Settings.RSI_BUY_MIN:.0f}-{Settings.RSI_BUY_MAX:.0f}]" if Settings.RSI_FILTER_ENABLED else ""
+                        indicator_parts.append(f"RSI={rsi_val:.1f}{rsi_range}")
+                    if ema_val is not None:
+                        ema_pos = "above" if latest_price > ema_val else "below"
+                        indicator_parts.append(f"EMA{Settings.EMA_TREND_PERIOD}={ema_val:.4f} (price is {ema_pos})")
+                    logger.info(f"Indicators | {' | '.join(indicator_parts)}")
                 
                 # Risk Exits Check (Stops are mandatory and CANNOT be blocked by strategy filters)
                 sell_reason = "STRATEGY"
@@ -426,11 +451,7 @@ def main():
                 if state_manager.state["position"] == "LONG":
                     state_manager.update_position_metrics(latest_price)
 
-                short_val = getattr(strategy, "last_short", None)
-                long_val = getattr(strategy, "last_long", None)
-                spread_val = getattr(strategy, "last_spread_percent", None)
-                rsi_val = getattr(strategy, "last_rsi", None)
-                ema_val = getattr(strategy, "last_ema", None)
+                # (indicator values already retrieved above after strategy.evaluate())
 
                 # Process Actions
                 # BUY
