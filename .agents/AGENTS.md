@@ -135,3 +135,24 @@ STOCK_TICKER=LPL TRADE_AMOUNT_USD=10 ALPACA_PAPER=True pm2 start stock_bot.py --
 - Only then: set `ALPACA_PAPER=False` in `.env` and restart
 - **Never switch to live manually** — wait for learner alert
 
+---
+
+### Defensive Programming & Bug Prevention
+
+To stop introducing runtime crashes into the bots and cron jobs, ALWAYS adhere to the following rules when writing or modifying Python code in this workspace:
+
+1. **Pandas/Numpy JSON Serialization**: 
+   - Never pass raw Pandas or Numpy types (like `np.bool_`, `np.int64`, `np.float64`) directly to `json.dump()`. 
+   - They are NOT natively serializable and will cause a `TypeError` crash. 
+   - ALWAYS explicitly cast them using `bool(x)`, `float(x)`, `int(x)` or use a custom `json.JSONEncoder` class that handles Numpy types.
+
+2. **Fault Isolation in Cron Jobs (Auto-Learner)**:
+   - Non-critical operations (like saving a parameter history ledger) MUST be wrapped in their own `try...except` blocks.
+   - If a file save or minor calculation fails, it should log the error and *continue*, ensuring the primary function (like sending the daily email report) still executes.
+
+3. **Explicit Import Verification**:
+   - When adding new blocks of code (e.g., parsing JSON strings, checking dates), physically check the top of the file to confirm `import json`, `import datetime`, or `import re` exists. Do not assume it is already imported just because it is a standard library.
+
+4. **API Tier Awareness**:
+   - When integrating new APIs (like Alpaca), explicitly verify data feed endpoints against the free-tier limitations (e.g., strictly using `DataFeed.IEX` instead of default `SIP`).
+

@@ -1,1 +1,4 @@
 pair,entry_time,exit_time,entry_price,exit_price,entry_reason,exit_reason,gross_pct,net_pct,pnl_usd,fees_usd,mfe_pct,mae_pct,holding_time_hours,entry_sma_short,entry_sma_long,entry_ema,entry_rsi,entry_spread
+SUI-USDC,2026-08-08T02:00:43.971856Z,2026-08-09T12:00:38.035626Z,0.6782,0.692,SMA Bullish Cross,SMA Bearish Cross,2.0348,0.8141,0.0814,0.120854,4.0106,-0.3981,33.9984,0.673,0.6728,,58.11,0.0337
+SUI-USDC,2026-08-09T15:00:08.010296Z,2026-08-10T01:00:18.945114Z,0.6985,0.689,SMA Bullish Cross,SMA Bearish Cross,-1.3601,-2.5402,-0.254,0.118829,0.859,-2.0043,10.003,0.6935,0.6933,,63.71,0.0337
+SUI-USDC,2026-08-10T10:00:00.602560Z,2026-08-10T11:00:19.535716Z,0.6921,0.6925,SMA Bullish Cross,SMA Bearish Cross,0.0578,-1.1393,-0.1139,0.119674,0.13,-0.1445,1.0053,0.6943,0.6941,,48.24,0.0231

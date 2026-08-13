@@ -277,12 +277,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return pnl, fees
 
         sim_files = glob.glob(os.path.join(project_root, "completed_trades_*_dry.csv"))
+        sim_files.extend(glob.glob(os.path.join(project_root, "completed_trades_*_paper.csv")))
         shared_dry = os.path.join(project_root, "completed_trades_dry.csv")
         if os.path.exists(shared_dry) and shared_dry not in sim_files:
             sim_files.append(shared_dry)
 
         live_files = glob.glob(os.path.join(project_root, "completed_trades_*.csv"))
-        live_files = [f for f in live_files if not f.endswith("_dry.csv") and not f.endswith("_bak.csv")]
+        live_files = [f for f in live_files if not f.endswith("_dry.csv") and not f.endswith("_bak.csv") and not f.endswith("_paper.csv")]
         shared_live = os.path.join(project_root, "completed_trades.csv")
         if os.path.exists(shared_live) and shared_live not in live_files:
             live_files.append(shared_live)
@@ -322,7 +323,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                                     fees = 0.0
                                 
                                 completed_list.append({
-                                    "pair": row.get("pair", "UNKNOWN"),
+                                    "pair": row.get("pair") or row.get("ticker", "UNKNOWN"),
                                     "mode": mode,
                                     "entry_time": row.get("entry_time", ""),
                                     "exit_time": row.get("exit_time", ""),

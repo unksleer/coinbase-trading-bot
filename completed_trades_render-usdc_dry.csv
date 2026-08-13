@@ -1,0 +1,4 @@
+pair,entry_time,exit_time,entry_price,exit_price,entry_reason,exit_reason,gross_pct,net_pct,pnl_usd,fees_usd,mfe_pct,mae_pct,holding_time_hours,entry_sma_short,entry_sma_long,entry_ema,entry_rsi,entry_spread
+RENDER-USDC,2026-08-06T16:00:18.646675Z,2026-08-07T08:00:21.157631Z,1.344,1.326,SMA Bullish Cross,SMA Bearish Cross,-1.3393,-2.5197,-0.252,0.118841,0.6696,-1.3393,16.0007,1.335,1.3339,,57.39,0.08
+RENDER-USDC,2026-08-08T09:00:52.387061Z,2026-08-09T10:00:59.318264Z,1.326,1.327,SMA Bullish Cross,SMA Bearish Cross,0.0754,-1.1219,-0.1122,0.119685,1.2066,-0.7541,25.0019,1.3232,1.3227,,52.93,0.0378
+RENDER-USDC,2026-08-09T15:00:48.525241Z,2026-08-10T23:06:08.489496Z,1.328,1.26,SMA Bullish Cross,Stop Loss Triggered,-5.1205,-6.2556,-0.6256,0.116586,0.9036,-5.1205,32.0889,1.325,1.3249,,53.06,0.005

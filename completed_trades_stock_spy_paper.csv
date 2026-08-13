@@ -1,0 +1,2 @@
+ticker,entry_time,exit_time,entry_price,exit_price,entry_reason,exit_reason,gross_pct,net_pct,pnl_usd,shares,mode
+SPY,2026-08-07T19:01:46.089028+00:00,2026-08-12T13:30:45.070156+00:00,771.915,773.05,SMA Bullish Cross,SMA Bearish Cross,0.147,0.147,0.0147,0.012955,PAPER

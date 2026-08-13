@@ -246,8 +246,21 @@ def load_param_history() -> dict:
 
 def save_param_history(history: dict):
     """Write param history to disk."""
+    import numpy as np
+    class NpEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            return super(NpEncoder, self).default(obj)
+            
     with open(HISTORY_PATH, "w") as f:
-        json.dump(history, f, indent=2)
+        json.dump(history, f, indent=2, cls=NpEncoder)
 
 
 def record_param_trial(history: dict, pair: str, params: dict,

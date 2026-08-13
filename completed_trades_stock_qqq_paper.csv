@@ -1,0 +1,2 @@
+ticker,entry_time,exit_time,entry_price,exit_price,entry_reason,exit_reason,gross_pct,net_pct,pnl_usd,shares,mode
+QQQ,2026-08-07T19:01:10.314574+00:00,2026-08-11T19:01:53.639253+00:00,720.69,717.07,SMA Bullish Cross,SMA Bearish Cross,-0.5023,-0.5023,-0.0502,0.013876,PAPER
