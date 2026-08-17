@@ -32,6 +32,15 @@ This bot is engineered with strict production safety safeguards to protect capit
 * **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py)) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)).
 * **Email PnL Statements**: Integrated daily HTML report ([`daily_pnl_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_pnl_report.py)) summarizes realized and unrealized performance for all online bots.
 
+## 🧠 Auto-Learner Architecture (`auto_learner.py`)
+
+A core component of this system is the nightly auto-learner. Instead of guessing parameters, the bot uses a 4-phase data-driven loop to adapt to market conditions:
+
+1. **Diagnose**: Reads the actual sim trade history (`completed_trades_*_dry.csv`) and classifies a specific failure mode (e.g., `WHIPSAW`, `SL_TOO_TIGHT`, `TP_TOO_LOOSE`).
+2. **Adapt**: Adjusts the grid search parameter bounds specifically to fix the diagnosed failure mode (e.g., searching for much longer SMA windows if whipsawing). It skips any parameter combinations that historically failed.
+3. **Decide**: Runs a backtest and only updates the live `.env` configuration if the new parameters beat the current ones by ≥5% and are net profitable. 
+4. **Graduate**: Evaluates sim coins. A coin is only promoted to live trading when it meets strict criteria over ≥20 trades (Win rate ≥ 55%, Net PnL > $0, Worst trade ≥ -$2.50).
+
 ---
 
 ## 🛠️ Usage Instructions

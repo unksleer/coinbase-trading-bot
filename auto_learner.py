@@ -91,22 +91,14 @@ FM_NO_DATA      = "NO_DATA"       # Not enough real trades yet to diagnose
 def load_real_trades(pair: str) -> list:
     """
     Load all completed sim trades for this pair from CSV.
-    Also loads from the full history backup (completed_trades_bak.csv)
-    to ensure the learner sees all data across all historical eras.
+    Only loads current era trades to avoid poisoning the learner
+    with trades from old broken timeframes (like ONE_MINUTE).
     Returns list of dicts with parsed numeric fields.
     """
     coin_slug = pair.lower().replace("-", "-")
     csv_path  = os.path.join(DIR, f"completed_trades_{coin_slug}_dry.csv")
 
-    # Also scan archived pre-reset data for this pair
-    archive_dirs = glob.glob(os.path.join(DIR, "logs", "sim_archive_*"))
-    archive_files = []
-    for d in archive_dirs:
-        f = os.path.join(d, f"completed_trades_{coin_slug}_dry.csv")
-        if os.path.exists(f):
-            archive_files.append(f)
-
-    all_files = archive_files + ([csv_path] if os.path.exists(csv_path) else [])
+    all_files = [csv_path] if os.path.exists(csv_path) else []
 
     trades = []
     seen = set()  # deduplicate by (entry_time, exit_time)
@@ -259,8 +251,11 @@ def save_param_history(history: dict):
                 return bool(obj)
             return super(NpEncoder, self).default(obj)
             
-    with open(HISTORY_PATH, "w") as f:
-        json.dump(history, f, indent=2, cls=NpEncoder)
+    try:
+        with open(HISTORY_PATH, "w") as f:
+            json.dump(history, f, indent=2, cls=NpEncoder)
+    except Exception as e:
+        log.warning(f"Failed to save param history: {e}")
 
 
 def record_param_trial(history: dict, pair: str, params: dict,
@@ -773,12 +768,15 @@ def main():
     save_param_history(history)
     log.info(f"📚 Param history saved to {HISTORY_PATH}")
 
-    with open(BEST_PATH, "w") as f:
-        json.dump({
-            "timestamp":   datetime.now(timezone.utc).isoformat(),
-            "best_params": best_params_all,
-        }, f, indent=2)
-    log.info(f"📁 Best params saved to {BEST_PATH}")
+    try:
+        with open(BEST_PATH, "w") as f:
+            json.dump({
+                "timestamp":   datetime.now(timezone.utc).isoformat(),
+                "best_params": best_params_all,
+            }, f, indent=2)
+        log.info(f"📁 Best params saved to {BEST_PATH}")
+    except Exception as e:
+        log.warning(f"Failed to save best params: {e}")
 
     # ── Restart affected bots ─────────────────────────────────────────────────
     for bot_name, pair, amount in bots_to_restart:

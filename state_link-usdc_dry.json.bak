@@ -2,13 +2,13 @@
     "version": 2,
     "dry_run": true,
     "position": "LONG",
-    "entry_price": 8.764,
-    "entry_time": "2026-08-13T07:00:30.879414Z",
-    "highest_price_since_entry": 8.767,
-    "lowest_price_since_entry": 8.686,
-    "max_drawdown_since_entry": -0.9239192426143439,
-    "cash_usd": 89.45136217386681,
-    "holdings_base": 1.134185303514377,
+    "entry_price": 9.52,
+    "entry_time": "2026-08-17T03:00:11.202785Z",
+    "highest_price_since_entry": 9.565,
+    "lowest_price_since_entry": 9.362,
+    "max_drawdown_since_entry": -1.906957250628671,
+    "cash_usd": 89.79654447080547,
+    "holdings_base": 1.0441176470588236,
     "trades": [
         {
             "timestamp": "2026-08-06T16:00:18.061222Z",
@@ -152,17 +152,83 @@
             "realized_pnl_usd": 0.0,
             "portfolio_value_usd": 99.39136217386681,
             "entry_time": "2026-08-13T07:00:30.879414Z"
+        },
+        {
+            "timestamp": "2026-08-13T11:00:49.671210Z",
+            "type": "SELL",
+            "price": 8.735,
+            "amount_usd": 9.907108626198083,
+            "amount_base": 1.134185303514377,
+            "fee_usd": 0.0594426517571885,
+            "realized_pnl_usd": -0.15233402555910533,
+            "portfolio_value_usd": 99.29902814830771,
+            "entry_time": "2026-08-13T07:00:30.879414Z"
+        },
+        {
+            "timestamp": "2026-08-13T15:00:48.334063Z",
+            "type": "BUY",
+            "price": 8.853,
+            "amount_usd": 9.94,
+            "amount_base": 1.1227832373206823,
+            "fee_usd": 0.06,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 99.23902814830771,
+            "entry_time": "2026-08-13T15:00:48.334063Z"
+        },
+        {
+            "timestamp": "2026-08-14T09:00:11.583398Z",
+            "type": "SELL",
+            "price": 8.797,
+            "amount_usd": 9.877124138710043,
+            "amount_base": 1.1227832373206823,
+            "fee_usd": 0.05926274483226026,
+            "realized_pnl_usd": -0.18213860612221755,
+            "portfolio_value_usd": 99.11688954218549,
+            "entry_time": "2026-08-13T15:00:48.334063Z"
+        },
+        {
+            "timestamp": "2026-08-14T12:00:41.574822Z",
+            "type": "BUY",
+            "price": 8.826,
+            "amount_usd": 9.94,
+            "amount_base": 1.1262179922954905,
+            "fee_usd": 0.06,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 99.05688954218549,
+            "entry_time": "2026-08-14T12:00:41.574822Z"
+        },
+        {
+            "timestamp": "2026-08-15T02:18:10.927639Z",
+            "type": "SELL",
+            "price": 9.54,
+            "amount_usd": 10.744119646498978,
+            "amount_base": 1.1262179922954905,
+            "fee_usd": 0.06446471787899387,
+            "realized_pnl_usd": 0.6796549286199848,
+            "portfolio_value_usd": 99.79654447080547,
+            "entry_time": "2026-08-14T12:00:41.574822Z"
+        },
+        {
+            "timestamp": "2026-08-17T03:00:11.202785Z",
+            "type": "BUY",
+            "price": 9.52,
+            "amount_usd": 9.94,
+            "amount_base": 1.0441176470588236,
+            "fee_usd": 0.06,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 99.73654447080547,
+            "entry_time": "2026-08-17T03:00:11.202785Z"
         }
     ],
     "orders": {},
     "entry_fee_usd": 0.06,
     "entry_reason": "SMA Bullish Cross",
     "entry_indicators": {
-        "sma_short": 8.7404,
-        "sma_long": 8.738933333333334,
+        "sma_short": 9.4304,
+        "sma_long": 9.412633333333332,
         "ema": null,
-        "rsi": 56.014059916104785,
-        "spread": 0.016783131427164456,
-        "atr": 0.05657142857142831
+        "rsi": 61.58508642686075,
+        "spread": 0.188753412966281,
+        "atr": 0.07221428571428554
     }
 }

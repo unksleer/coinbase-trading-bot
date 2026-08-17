@@ -2,13 +2,13 @@
     "version": 2,
     "dry_run": true,
     "position": "LONG",
-    "entry_price": 0.18568,
-    "entry_time": "2026-08-13T08:00:29.222614Z",
-    "highest_price_since_entry": 0.18646,
-    "lowest_price_since_entry": 0.18278,
-    "max_drawdown_since_entry": -1.9736136436769223,
-    "cash_usd": 89.52199158295768,
-    "holdings_base": 53.53295993106419,
+    "entry_price": 0.17638,
+    "entry_time": "2026-08-17T06:00:41.213854Z",
+    "highest_price_since_entry": 0.17748,
+    "lowest_price_since_entry": 0.17495,
+    "max_drawdown_since_entry": -1.4255127338291662,
+    "cash_usd": 88.88885807800293,
+    "holdings_base": 56.3555958725479,
     "trades": [
         {
             "timestamp": "2026-08-08T00:00:32.495556Z",
@@ -86,17 +86,39 @@
             "realized_pnl_usd": 0.0,
             "portfolio_value_usd": 99.46199158295768,
             "entry_time": "2026-08-13T08:00:29.222614Z"
+        },
+        {
+            "timestamp": "2026-08-15T23:31:32.742247Z",
+            "type": "SELL",
+            "price": 0.17603,
+            "amount_usd": 9.423406936665229,
+            "amount_base": 53.53295993106419,
+            "fee_usd": 0.056540441619991375,
+            "realized_pnl_usd": -0.6331335049547618,
+            "portfolio_value_usd": 98.88885807800293,
+            "entry_time": "2026-08-13T08:00:29.222614Z"
+        },
+        {
+            "timestamp": "2026-08-17T06:00:41.213854Z",
+            "type": "BUY",
+            "price": 0.17638,
+            "amount_usd": 9.94,
+            "amount_base": 56.3555958725479,
+            "fee_usd": 0.06,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 98.82885807800292,
+            "entry_time": "2026-08-17T06:00:41.213854Z"
         }
     ],
     "orders": {},
     "entry_fee_usd": 0.06,
     "entry_reason": "SMA Bullish Cross",
     "entry_indicators": {
-        "sma_short": 0.184216,
-        "sma_long": 0.18402233333333337,
+        "sma_short": 0.17656,
+        "sma_long": 0.17649299999999998,
         "ema": null,
-        "rsi": 57.712564009552956,
-        "spread": 0.10524084938963194,
-        "atr": 0.0013442857142857145
+        "rsi": 48.45334148634202,
+        "spread": 0.037961845512293126,
+        "atr": 0.0014421428571428582
     }
 }

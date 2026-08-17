@@ -89,8 +89,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if not os.path.exists(lpath):
                     continue
                 try:
-                    with open(lpath, "r", errors="replace") as f:
-                        lines = f.readlines()[-300:]
+                    # Use tail to efficiently read the end of potentially massive log files
+                    result = subprocess.run(["tail", "-n", "300", lpath], capture_output=True, text=True, errors="replace")
+                    lines = result.stdout.splitlines()
                     for line in reversed(lines):
                         if "Indicators |" in line and indicator_line is None:
                             indicator_line = line
