@@ -87,6 +87,23 @@ Close an open position manually under lock safety. Targets dry-run files by defa
 .venv/bin/python view_analytics.py
 ```
 
+### Learner V2 review workflow
+
+The nightly learner defaults to `LEARNER_MODE=ADVISORY`. It can analyze and
+email recommendations, but it cannot edit `.env` or restart bots.
+
+```bash
+# List evidence-backed recommendations
+.venv/bin/python learner_review.py
+
+# Approve one exact recommendation for a later paper-only learner run
+.venv/bin/python learner_review.py --approve RECOMMENDATION_ID
+```
+
+Applying approvals additionally requires `LEARNER_MODE=APPLY_APPROVED`.
+Approvals never enable live trading and do not bypass the normal graduation
+criteria.
+
 ---
 
 ## ⚙️ Configuration (`.env` Parameters)

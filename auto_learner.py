@@ -13,9 +13,11 @@ Runs nightly (via PM2 cron). For each active sim coin:
     - Adjust SMA windows, SL%, TP% based on what the failure mode tells us
     - Run grid backtest on 1,500 real price candles
 
-  PHASE 3 — DECIDE (only update if genuinely better):
-    - New params must beat current by ≥5% AND have positive backtest profit
-    - Write to .env, restart bot, record trial in param_history.json
+  PHASE 3 — DECIDE (advisory by default):
+    - Require positive results in two unseen folds, cost-adjusted benchmark
+      outperformance, parameter-neighbor stability, and ≥20 paper trades
+    - Record an evidence-backed recommendation; only an exact manual approval
+      plus LEARNER_MODE=APPLY_APPROVED may update paper-bot settings
 
   PHASE 4 — GRADUATE (real sim performance):
     - If a coin has ≥20 sim trades, win rate ≥55%, net PnL > $0 → promote to live
@@ -25,6 +27,7 @@ PM2 registration (run once):
       --cron "0 4 * * *" --no-autorestart
 """
 import os
+import stat
 import sys
 import csv
 import time
@@ -36,12 +39,24 @@ from datetime import datetime, timezone
 from collections import Counter
 import pandas as pd
 import requests
+from utils.learner_policy import (
+    MODE_ADVISORY,
+    MODE_APPLY_APPROVED,
+    assess_candidate,
+    atomic_write_json,
+    load_approved_ids,
+    normalize_mode,
+    recommendation_id,
+    should_apply_recommendation,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 DIR           = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH      = os.path.join(DIR, "logs", "auto_learner.log")
 BEST_PATH     = os.path.join(DIR, "logs", "best_params.json")
 HISTORY_PATH  = os.path.join(DIR, "logs", "param_history.json")
+RECOMMENDATIONS_PATH = os.path.join(DIR, "logs", "learner_recommendations.json")
+APPROVALS_PATH = os.path.join(DIR, "logs", "learner_approvals.json")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,6 +84,10 @@ COINS = {
 MIN_IMPROVEMENT_PCT = 5.0   # New params must beat old by ≥5% net profit
 MIN_TRADES          = 5     # Optimizer result must have ≥5 backtest trades to count
 REAL_FEE_RATE       = 0.006 # Actual Coinbase Advanced Trade taker fee (0.60%)
+DEFAULT_SLIPPAGE_BPS = 10.0 # Conservative 0.10% adverse execution per side
+MIN_VALIDATION_TRADES = 4
+MIN_STABILITY_PASS_RATE = 0.60
+MIN_REAL_TRADES_FOR_RECOMMENDATION = 20
 
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
@@ -410,12 +429,17 @@ def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFram
 # ─────────────────────────────────────────────────────────────────────────────
 def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
                    fee_rate=REAL_FEE_RATE, trade_usd=10.0, start_cash=100.0,
-                   trailing_stop_pct=3.0, trailing_activation_pct=2.0):
+                   trailing_stop_pct=3.0, trailing_activation_pct=2.0,
+                   slippage_bps=DEFAULT_SLIPPAGE_BPS):
     cash, holdings, entry_price = start_cash, 0.0, 0.0
     position = "NONE"
     wins, losses, trades = 0, 0, 0
     gain_sum, loss_sum = 0.0, 0.0
     highest_price = 0.0
+    entry_cost = 0.0
+    peak_equity = start_cash
+    max_drawdown_pct = 0.0
+    slippage = slippage_bps / 10000.0
 
     for i in range(1, len(closes)):
         p = closes[i]
@@ -428,9 +452,11 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
             if pps < ppl and ps > pl:       # Bullish crossover → BUY
                 if cash >= trade_usd:
                     fee = trade_usd * fee_rate
-                    holdings = (trade_usd - fee) / p
-                    entry_price = p
-                    highest_price = p
+                    execution_price = p * (1.0 + slippage)
+                    holdings = (trade_usd - fee) / execution_price
+                    entry_price = execution_price
+                    entry_cost = trade_usd
+                    highest_price = execution_price
                     cash -= trade_usd
                     position = "LONG"
         elif position == "LONG":
@@ -450,38 +476,122 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
             elif pps > ppl and ps < pl:     # Bearish crossover → SELL
                 exit_now = True
             if exit_now:
-                proceeds = holdings * p
+                execution_price = p * (1.0 - slippage)
+                proceeds = holdings * execution_price
                 fee = proceeds * fee_rate
-                pnl = proceeds - fee - (entry_price * holdings + entry_price * holdings * fee_rate)
+                pnl = proceeds - fee - entry_cost
                 cash += proceeds - fee
                 if pnl > 0:
                     wins += 1; gain_sum += pnl
                 else:
                     losses += 1; loss_sum += abs(pnl)
                 trades += 1
-                holdings, entry_price, position, highest_price = 0.0, 0.0, "NONE", 0.0
+                holdings, entry_price, position, highest_price, entry_cost = 0.0, 0.0, "NONE", 0.0, 0.0
+
+        liquidation_value = holdings * p * (1.0 - slippage) * (1.0 - fee_rate)
+        equity = cash + liquidation_value
+        peak_equity = max(peak_equity, equity)
+        if peak_equity > 0:
+            max_drawdown_pct = min(max_drawdown_pct, (equity - peak_equity) / peak_equity * 100.0)
 
     # Close open position at last price
     if position == "LONG" and holdings > 0:
         p = closes[-1]
-        proceeds = holdings * p
+        execution_price = p * (1.0 - slippage)
+        proceeds = holdings * execution_price
         fee = proceeds * fee_rate
+        pnl = proceeds - fee - entry_cost
         cash += proceeds - fee
+        if pnl > 0:
+            wins += 1; gain_sum += pnl
+        else:
+            losses += 1; loss_sum += abs(pnl)
+        trades += 1
 
     win_rate = wins / trades * 100 if trades > 0 else 0.0
     pf = gain_sum / loss_sum if loss_sum > 0 else (999.0 if gain_sum > 0 else 1.0)
     return {"net_profit": cash - start_cash, "trades": trades,
-            "win_rate": win_rate, "profit_factor": pf, "wins": wins, "losses": losses}
+            "win_rate": win_rate, "profit_factor": pf, "wins": wins, "losses": losses,
+            "gross_profit": gain_sum, "gross_loss": loss_sum,
+            "max_drawdown_pct": max_drawdown_pct}
+
+
+def buy_and_hold_backtest(closes, fee_rate=REAL_FEE_RATE, trade_usd=10.0,
+                          slippage_bps=DEFAULT_SLIPPAGE_BPS):
+    """Cost-adjusted benchmark using the same capital as one strategy trade."""
+    if len(closes) < 2:
+        return {"net_profit": 0.0}
+    slippage = slippage_bps / 10000.0
+    buy_price = float(closes[0]) * (1.0 + slippage)
+    sell_price = float(closes[-1]) * (1.0 - slippage)
+    buy_fee = trade_usd * fee_rate
+    holdings = (trade_usd - buy_fee) / buy_price
+    proceeds = holdings * sell_price
+    sell_fee = proceeds * fee_rate
+    return {"net_profit": proceeds - sell_fee - trade_usd}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE 2/3: Adaptive optimizer
 # ─────────────────────────────────────────────────────────────────────────────
-def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dict:
+def _run_segment(closes, short_window, long_window, stop_loss, take_profit):
+    series = pd.Series(closes)
+    return quick_backtest(
+        series.to_numpy(),
+        series.rolling(short_window).mean().to_numpy(),
+        series.rolling(long_window).mean().to_numpy(),
+        stop_loss, take_profit,
+    )
+
+
+def _aggregate_results(results):
+    trades = sum(r["trades"] for r in results)
+    wins = sum(r["wins"] for r in results)
+    losses = sum(r["losses"] for r in results)
+    gross_profit = sum(r["gross_profit"] for r in results)
+    gross_loss = sum(r["gross_loss"] for r in results)
+    return {
+        "net_profit": sum(r["net_profit"] for r in results),
+        "trades": trades,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": wins / trades * 100 if trades else 0.0,
+        "profit_factor": (
+            gross_profit / gross_loss if gross_loss > 0
+            else (999.0 if gross_profit > 0 else 1.0)
+        ),
+        "max_drawdown_pct": min((r["max_drawdown_pct"] for r in results), default=0.0),
+    }
+
+
+def _stability_results(validation_segments, params):
+    neighbors = [
+        (max(2, params["short"] - 1), params["long"], params["stop_loss"], params["take_profit"]),
+        (params["short"] + 1, params["long"], params["stop_loss"], params["take_profit"]),
+        (params["short"], max(params["short"] + 2, params["long"] - 2), params["stop_loss"], params["take_profit"]),
+        (params["short"], params["long"] + 2, params["stop_loss"], params["take_profit"]),
+        (params["short"], params["long"], max(1.0, params["stop_loss"] - 0.5), params["take_profit"]),
+        (params["short"], params["long"], params["stop_loss"] + 0.5, params["take_profit"]),
+        (params["short"], params["long"], params["stop_loss"], max(2.0, params["take_profit"] - 1.0)),
+        (params["short"], params["long"], params["stop_loss"], params["take_profit"] + 1.0),
+    ]
+    results = []
+    for short, long, stop_loss, take_profit in neighbors:
+        if long <= short:
+            continue
+        aggregate = _aggregate_results([
+            _run_segment(segment, short, long, stop_loss, take_profit)
+            for segment in validation_segments
+        ])
+        results.append(aggregate)
+    return results
+
+
+def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
+                  current: dict) -> dict:
     """
-    Run grid search with walk-forward validation.
-    Train on first 67% of candles, validate on remaining 33%.
-    Only accepts parameters that perform well on both sets.
+    Run grid search with two chronological out-of-sample validation folds.
+    Candidates must pass profitability, benchmark, and stability gates.
     Returns best parameter set found, or {} if no valid result.
     """
     log.info(f"Optimizing {pair} ({granularity})...")
@@ -490,19 +600,16 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
         log.warning(f"  Not enough candle data for {pair}")
         return {}
 
-    closes_full = pd.to_numeric(df["close"])
-
-    # Walk-forward split: 67% train, 33% validate
-    split_idx = int(len(closes_full) * 0.67)
-    closes_train = closes_full.iloc[:split_idx]
-    closes_val   = closes_full.iloc[split_idx:]
-
-    log.info(f"  Walk-forward split: {len(closes_train)} train / {len(closes_val)} validate candles")
-
-    if len(closes_val) < 50:
-        log.warning(f"  Validation set too small ({len(closes_val)} candles), using full dataset")
-        closes_train = closes_full
-        closes_val = None
+    closes_full = pd.to_numeric(df["close"]).to_numpy()
+    split_1 = int(len(closes_full) * 0.60)
+    split_2 = int(len(closes_full) * 0.80)
+    closes_train = closes_full[:split_1]
+    validation_segments = [closes_full[split_1:split_2], closes_full[split_2:]]
+    log.info(
+        f"  Walk-forward windows: {len(closes_train)} train / "
+        f"{len(validation_segments[0])} validation-1 / "
+        f"{len(validation_segments[1])} validation-2 candles"
+    )
 
     bounds    = get_adaptive_search_bounds(diag, history, pair)
     SHORTS    = bounds["shorts"]
@@ -511,21 +618,28 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
     TPS       = bounds["tps"]
     blacklist = bounds["blacklist"]
 
-    # Pre-compute SMAs for train set
-    sma_cache_train = {}
-    for w in set(SHORTS + LONGS):
-        sma_cache_train[w] = closes_train.rolling(w).mean().to_numpy()
-    closes_train_np = closes_train.to_numpy()
+    train_series = pd.Series(closes_train)
+    sma_cache_train = {
+        w: train_series.rolling(w).mean().to_numpy()
+        for w in set(SHORTS + LONGS)
+    }
 
-    # Pre-compute SMAs for validation set (if available)
-    sma_cache_val = {}
-    closes_val_np = None
-    if closes_val is not None:
-        for w in set(SHORTS + LONGS):
-            sma_cache_val[w] = closes_val.rolling(w).mean().to_numpy()
-        closes_val_np = closes_val.to_numpy()
+    baseline_folds = [
+        _run_segment(segment, current["short"], current["long"],
+                     current["stop_loss"], current["take_profit"])
+        for segment in validation_segments
+    ]
+    baseline_train = _run_segment(
+        closes_train, current["short"], current["long"],
+        current["stop_loss"], current["take_profit"]
+    )
+    baseline_validation = _aggregate_results(baseline_folds)
+    benchmark_profit = sum(
+        buy_and_hold_backtest(segment)["net_profit"]
+        for segment in validation_segments
+    )
 
-    best, best_score = {}, -9999
+    candidates = []
     tested, skipped = 0, 0
 
     for s in SHORTS:
@@ -538,45 +652,65 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
                         skipped += 1
                         continue
                     tested += 1
-                    r_train = quick_backtest(closes_train_np, sma_cache_train[s], sma_cache_train[l], sl, tp)
+                    r_train = quick_backtest(closes_train, sma_cache_train[s], sma_cache_train[l], sl, tp)
                     if r_train["trades"] < MIN_TRADES:
                         continue
-
-                    # ── Composite score: quality > quantity ───────────────────
-                    pf_capped = min(r_train["profit_factor"], 5.0)
-                    train_score = (r_train["net_profit"] * 0.5
-                                   + pf_capped * 10 * 0.3
-                                   + r_train["win_rate"] * 0.2)
-
-                    # Walk-forward validation: check on unseen data
-                    if closes_val_np is not None and len(closes_val_np) >= l + 2:
-                        r_val = quick_backtest(closes_val_np, sma_cache_val[s], sma_cache_val[l], sl, tp)
-                        # Penalize if validation shows a loss
-                        if r_val["trades"] > 0 and r_val["net_profit"] < 0:
-                            train_score *= 0.5  # Heavy penalty for out-of-sample loss
-                        elif r_val["trades"] > 0 and r_val["net_profit"] > 0:
-                            train_score *= 1.2  # Bonus for out-of-sample profit
-
-                    if train_score > best_score:
-                        best_score = train_score
-                        best = {"short": s, "long": l, "stop_loss": sl,
-                                "take_profit": tp, **r_train}
-                        # Add validation results if available
-                        if closes_val_np is not None and len(closes_val_np) >= l + 2:
-                            r_val = quick_backtest(closes_val_np, sma_cache_val[s], sma_cache_val[l], sl, tp)
-                            best["val_net_profit"] = r_val["net_profit"]
-                            best["val_win_rate"] = r_val["win_rate"]
-                            best["val_trades"] = r_val["trades"]
+                    fold_results = [
+                        _run_segment(segment, s, l, sl, tp)
+                        for segment in validation_segments
+                    ]
+                    validation = _aggregate_results(fold_results)
+                    candidates.append({
+                        "short": s, "long": l, "stop_loss": sl,
+                        "take_profit": tp, **r_train,
+                        "val_net_profit": validation["net_profit"],
+                        "val_win_rate": validation["win_rate"],
+                        "val_profit_factor": validation["profit_factor"],
+                        "val_trades": validation["trades"],
+                        "val_max_drawdown_pct": validation["max_drawdown_pct"],
+                        "profitable_folds": sum(r["net_profit"] > 0 for r in fold_results),
+                        "validation_folds": len(fold_results),
+                    })
 
     log.info(f"  Grid search: {tested} combos tested, {skipped} skipped (previously failed)")
+    candidates.sort(
+        key=lambda item: (item["val_net_profit"], item["net_profit"], item["val_profit_factor"]),
+        reverse=True,
+    )
+    best = {}
+    for candidate in candidates[:25]:
+        neighbors = _stability_results(validation_segments, candidate)
+        candidate["stability_pass_rate"] = (
+            sum(r["net_profit"] >= 0 for r in neighbors) / len(neighbors)
+            if neighbors else 0.0
+        )
+        decision = assess_candidate(
+            candidate, {"val_net_profit": baseline_validation["net_profit"]},
+            benchmark_profit,
+            min_validation_trades=MIN_VALIDATION_TRADES,
+            min_stability_pass_rate=MIN_STABILITY_PASS_RATE,
+        )
+        candidate["eligible"] = decision["eligible"]
+        candidate["rejection_reasons"] = decision["reasons"]
+        if decision["eligible"]:
+            best = candidate
+            break
+
     if best:
-        val_info = ""
-        if "val_net_profit" in best:
-            val_info = f"  VAL: profit=${best['val_net_profit']:.2f} WR={best['val_win_rate']:.1f}% trades={best['val_trades']}"
         log.info(f"  Best: SMA {best['short']}/{best['long']}  SL={best['stop_loss']}%"
                  f"  TP={best['take_profit']}%  → profit=${best['net_profit']:.2f}"
                  f"  WR={best['win_rate']:.1f}%  PF={best['profit_factor']:.2f}  trades={best['trades']}"
-                 f"{val_info}")
+                 f"  VAL profit=${best['val_net_profit']:.2f} WR={best['val_win_rate']:.1f}%"
+                 f" trades={best['val_trades']} stability={best['stability_pass_rate']:.0%}")
+        best["baseline_val_net_profit"] = baseline_validation["net_profit"]
+        best["baseline_train_net_profit"] = baseline_train["net_profit"]
+        best["benchmark_net_profit"] = benchmark_profit
+    elif candidates:
+        top = candidates[0]
+        log.info(
+            "  No candidate passed Learner V2 hard gates. Top rejection: "
+            + "; ".join(top.get("rejection_reasons", ["not in stable top candidates"]))
+        )
     return best
 
 
@@ -596,7 +730,7 @@ def read_env() -> dict:
 
 
 def write_env_keys(updates: dict):
-    """Update specific keys in .env in-place, preserving all comments."""
+    """Atomically update specific keys in .env, preserving comments and mode."""
     env_path = os.path.join(DIR, ".env")
     with open(env_path) as f:
         lines = f.readlines()
@@ -614,8 +748,21 @@ def write_env_keys(updates: dict):
     for k, v in updates.items():
         if k not in updated:
             new_lines.append(f"{k}={v}\n")
-    with open(env_path, "w") as f:
-        f.writelines(new_lines)
+    env_mode = stat.S_IMODE(os.stat(env_path).st_mode)
+    temp_path = f"{env_path}.learner-{os.getpid()}.tmp"
+    try:
+        with open(temp_path, "w") as f:
+            f.writelines(new_lines)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(temp_path, env_mode)
+        os.replace(temp_path, env_path)
+    except Exception:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
     log.info(f"  Updated .env: {updates}")
 
 
@@ -711,11 +858,25 @@ def main():
     log.info("AUTO LEARNER starting")
     log.info("=" * 60)
 
+    runtime_env = read_env()
+    learner_mode = normalize_mode(runtime_env.get("LEARNER_MODE", MODE_ADVISORY))
+    recommendations_path = os.path.join(
+        DIR, runtime_env.get("LEARNER_RECOMMENDATIONS_PATH", "logs/learner_recommendations.json")
+    )
+    approvals_path = os.path.join(
+        DIR, runtime_env.get("LEARNER_APPROVALS_PATH", "logs/learner_approvals.json")
+    )
+    approved_ids = load_approved_ids(approvals_path)
+    log.info(f"Learner mode: {learner_mode}")
+    if learner_mode == MODE_ADVISORY:
+        log.info("Advisory-only safety is active: .env and PM2 will not be changed.")
+
     history       = load_param_history()
     best_params_all = {}
     param_updates   = {}
     bots_to_restart = []
     diag_summary    = {}
+    recommendations = []
 
     for pair, cfg in COINS.items():
         prefix = cfg["prefix"]
@@ -746,26 +907,21 @@ def main():
                  f"  SL={current['stop_loss']}%  TP={current['take_profit']}%")
 
         # ── PHASE 2/3: Adaptive grid search ──────────────────────────────────
-        best = optimize_coin(pair, cfg["gran"], diag, history)
+        best = optimize_coin(pair, cfg["gran"], diag, history, current)
         if not best:
             log.warning(f"  No valid optimizer result for {pair} — keeping current params")
             continue
 
         best_params_all[pair] = best
 
-        # ── Run current params on same candle data for comparison ─────────────
-        df = fetch_candles(pair, cfg["gran"], 1500)
-        if df.empty:
-            continue
-        closes   = pd.to_numeric(df["close"]).to_numpy()
-        closes_s = pd.to_numeric(df["close"])
-        sma_s    = closes_s.rolling(current["short"]).mean().to_numpy()
-        sma_l    = closes_s.rolling(current["long"]).mean().to_numpy()
-        baseline = quick_backtest(closes, sma_s, sma_l,
-                                  current["stop_loss"], current["take_profit"])
+        # Compare on the exact same training window used by the optimizer.
+        baseline = {"net_profit": best["baseline_train_net_profit"]}
 
-        log.info(f"  Baseline backtest: profit=${baseline['net_profit']:.2f}"
-                 f"  WR={baseline['win_rate']:.1f}%  trades={baseline['trades']}")
+        log.info(
+            f"  Baseline training profit=${baseline['net_profit']:.2f}; "
+            f"validation profit=${best['baseline_val_net_profit']:.2f}; "
+            f"buy-and-hold validation=${best['benchmark_net_profit']:.2f}"
+        )
 
         # ── Decide whether to update ──────────────────────────────────────────
         improvement    = best["net_profit"] - baseline["net_profit"]
@@ -776,24 +932,64 @@ def main():
                           abs(best["stop_loss"]   - current["stop_loss"])   > 0.01 or
                           abs(best["take_profit"] - current["take_profit"]) > 0.01)
 
-        # Require both: params changed AND improvement threshold AND positive backtest profit
-        should_update = (params_changed and
-                         pct_improve >= MIN_IMPROVEMENT_PCT and
-                         best["net_profit"] > 0)
+        # The optimizer already enforced hard out-of-sample, benchmark, and
+        # stability gates. This final gate requires a meaningful train-period gain.
+        should_recommend = (params_changed and
+                            pct_improve >= MIN_IMPROVEMENT_PCT and
+                            best["net_profit"] > 0 and
+                            best.get("eligible", False) and
+                            diag.get("n", 0) >= MIN_REAL_TRADES_FOR_RECOMMENDATION)
 
         # Record this trial in history (before deciding)
         record_param_trial(history, pair,
                            {"short": best["short"], "long": best["long"],
                             "stop_loss": best["stop_loss"], "take_profit": best["take_profit"]},
-                           best, diag, should_update)
+                           best, diag, should_recommend)
 
-        if should_update:
-            log.info(f"  🔄 IMPROVEMENT +{pct_improve:.1f}% with positive profit → updating params")
-            param_updates[f"{prefix}_SMA_SHORT_WINDOW"]   = best["short"]
-            param_updates[f"{prefix}_SMA_LONG_WINDOW"]    = best["long"]
-            param_updates[f"{prefix}_STOP_LOSS_PERCENT"]  = best["stop_loss"]
-            param_updates[f"{prefix}_TAKE_PROFIT_PERCENT"]= best["take_profit"]
-            bots_to_restart.append((cfg["bot"], pair, cfg["amount"]))
+        if should_recommend:
+            proposed = {
+                "short": best["short"], "long": best["long"],
+                "stop_loss": best["stop_loss"], "take_profit": best["take_profit"],
+            }
+            rec_id = recommendation_id(pair, proposed)
+            recommendation = {
+                "id": rec_id,
+                "pair": pair,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "current": current,
+                "proposed": proposed,
+                "evidence": {
+                    "train_net_profit": best["net_profit"],
+                    "validation_net_profit": best["val_net_profit"],
+                    "validation_trades": best["val_trades"],
+                    "validation_profit_factor": best["val_profit_factor"],
+                    "validation_max_drawdown_pct": best["val_max_drawdown_pct"],
+                    "profitable_folds": best["profitable_folds"],
+                    "validation_folds": best["validation_folds"],
+                    "stability_pass_rate": best["stability_pass_rate"],
+                    "baseline_validation_net_profit": best["baseline_val_net_profit"],
+                    "benchmark_net_profit": best["benchmark_net_profit"],
+                    "training_improvement_pct": pct_improve,
+                    "real_trade_diagnosis": diag,
+                },
+                "approved": rec_id in approved_ids,
+                "applied": False,
+            }
+            recommendations.append(recommendation)
+
+            if should_apply_recommendation(learner_mode, rec_id, approved_ids):
+                log.info(f"  ✅ Approved recommendation {rec_id} → staging paper parameter update")
+                param_updates[f"{prefix}_SMA_SHORT_WINDOW"] = best["short"]
+                param_updates[f"{prefix}_SMA_LONG_WINDOW"] = best["long"]
+                param_updates[f"{prefix}_STOP_LOSS_PERCENT"] = best["stop_loss"]
+                param_updates[f"{prefix}_TAKE_PROFIT_PERCENT"] = best["take_profit"]
+                bots_to_restart.append((cfg["bot"], pair, cfg["amount"]))
+                recommendation["applied"] = True
+            else:
+                log.info(
+                    f"  💡 Recommendation {rec_id} recorded for review; "
+                    "no settings changed."
+                )
         else:
             reason = []
             if not params_changed:
@@ -802,27 +998,41 @@ def main():
                 reason.append(f"improvement {pct_improve:.1f}% < {MIN_IMPROVEMENT_PCT}% threshold")
             if best["net_profit"] <= 0:
                 reason.append("backtest still negative — no update until profitable")
+            if diag.get("n", 0) < MIN_REAL_TRADES_FOR_RECOMMENDATION:
+                reason.append(
+                    f"real paper trades {diag.get('n', 0)} < "
+                    f"{MIN_REAL_TRADES_FOR_RECOMMENDATION} minimum"
+                )
             log.info(f"  ✓ Keeping current params ({'; '.join(reason)})")
 
         time.sleep(1)
 
     # ── Apply .env updates ────────────────────────────────────────────────────
-    if param_updates:
+    if param_updates and learner_mode == MODE_APPLY_APPROVED:
         write_env_keys({k: str(v) for k, v in param_updates.items()})
-        log.info(f"\n✅ Updated .env with {len(param_updates)} param changes")
+        log.info(f"\n✅ Applied approved paper-only changes: {len(param_updates)} settings")
     else:
-        log.info(f"\n✓ No .env changes — all coins keeping current params")
+        log.info(f"\n✓ No .env changes — learner remained advisory or had no approved recommendation")
+
+    try:
+        atomic_write_json(recommendations_path, {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": learner_mode,
+            "recommendations": recommendations,
+        })
+        log.info(f"📋 Recommendations saved to {recommendations_path}")
+    except Exception as e:
+        log.warning(f"Failed to save learner recommendations: {e}")
 
     # ── Save history and best params ──────────────────────────────────────────
     save_param_history(history)
     log.info(f"📚 Param history saved to {HISTORY_PATH}")
 
     try:
-        with open(BEST_PATH, "w") as f:
-            json.dump({
-                "timestamp":   datetime.now(timezone.utc).isoformat(),
-                "best_params": best_params_all,
-            }, f, indent=2)
+        atomic_write_json(BEST_PATH, {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "best_params": best_params_all,
+        })
         log.info(f"📁 Best params saved to {BEST_PATH}")
     except Exception as e:
         log.warning(f"Failed to save best params: {e}")
@@ -859,7 +1069,9 @@ def main():
 
     # ── Daily digest email ────────────────────────────────────────────────────
     digest = f"Auto-Learner Digest — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n\n"
-    digest += f"Param updates applied: {len(param_updates) // 4} coin(s)\n"
+    digest += f"Learner mode: {learner_mode}\n"
+    digest += f"Recommendations generated: {len(recommendations)}\n"
+    digest += f"Approved paper updates applied: {len(param_updates) // 4} coin(s)\n"
     digest += f"Bots restarted: {len(bots_to_restart)}\n\n"
     digest += "─── Failure Mode Summary ───\n"
     for pair, d in diag_summary.items():
