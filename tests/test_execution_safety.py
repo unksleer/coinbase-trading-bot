@@ -10,6 +10,7 @@ from pathlib import Path
 from utils.order_journal import OrderJournal, STATE_UNKNOWN
 from utils.risk_engine import RiskEngine, RiskLimitViolation
 from utils.state import StateManager
+from utils.manual_execution import execute_journaled_market_sell
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +70,25 @@ class OpenPartialFillClient:
                 "total_fees": "0.12",
             }
         }
+
+
+class FilledMarketSellClient:
+    def market_order_sell(self, **kwargs):
+        return {"success_response": {"order_id": "market-oid"}}
+
+    def get_order(self, order_id):
+        return {
+            "order": {
+                "order_id": order_id, "status": "FILLED",
+                "filled_size": "1", "filled_value": "110",
+                "total_fees": "0.66",
+            }
+        }
+
+
+class MissingFillFieldsClient(FilledMarketSellClient):
+    def get_order(self, order_id):
+        return {"order": {"order_id": order_id, "status": "FILLED"}}
 
 
 class ExecutionSafetyTests(unittest.TestCase):
@@ -257,6 +277,49 @@ class ExecutionSafetyTests(unittest.TestCase):
         source = (ROOT / "bot.py").read_text()
         self.assertGreaterEqual(source.count("if isinstance(inner_e, UnconfirmedCancellationError):"), 2)
         self.assertGreaterEqual(source.count("raise UnconfirmedCancellationError("), 2)
+
+    def prepare_long_position(self, manager):
+        manager.state.update({
+            "position": "LONG", "entry_price": 100.0,
+            "entry_time": "2026-01-01T00:00:00Z", "entry_fee_usd": 1.0,
+            "holdings_base": 1.0, "cash_usd": 0.0,
+            "highest_price_since_entry": 110.0,
+            "lowest_price_since_entry": 95.0,
+            "entry_reason": "TEST", "entry_indicators": {},
+        })
+        manager.log_completed_roundtrip = lambda **kwargs: None
+        manager.save_state()
+
+    def test_manual_market_sell_is_journaled_and_applied_atomically(self):
+        manager = self.make_state_manager()
+        self.prepare_long_position(manager)
+        journal = OrderJournal(manager)
+
+        tracked, trade = execute_journaled_market_sell(
+            FilledMarketSellClient(), journal, "BTC-USDC", 1.0, 109.0,
+            poll_attempts=1, poll_interval_seconds=0,
+        )
+
+        self.assertEqual(tracked["exchange_status"], "FILLED")
+        self.assertEqual(manager.state["position"], "NONE")
+        self.assertAlmostEqual(manager.state["cash_usd"], 109.34)
+        self.assertAlmostEqual(trade["realized_pnl_usd"], 8.34)
+        self.assertEqual(tracked["applied_filled_size"], "1")
+
+    def test_manual_market_sell_never_defaults_missing_fill_fields(self):
+        manager = self.make_state_manager()
+        self.prepare_long_position(manager)
+        journal = OrderJournal(manager)
+
+        with self.assertRaisesRegex(RuntimeError, "no confirmed terminal status"):
+            execute_journaled_market_sell(
+                MissingFillFieldsClient(), journal, "BTC-USDC", 1.0, 109.0,
+                poll_attempts=1, poll_interval_seconds=0,
+            )
+
+        self.assertEqual(manager.state["position"], "LONG")
+        self.assertAlmostEqual(manager.state["holdings_base"], 1.0)
+        self.assertEqual(len(manager.state["trades"]), 0)
 
     def test_disable_buys_does_not_guard_stop_losses(self):
         source = (ROOT / "bot.py").read_text()

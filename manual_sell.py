@@ -2,12 +2,14 @@
 import os
 import sys
 import json
-import time
-import uuid
+from decimal import Decimal
 
 from config.settings import Settings
 from utils.state import StateManager
 from utils.notifications import send_trade_notification
+from utils.order_journal import OrderJournal
+from utils.risk_engine import RiskEngine, RiskLimitViolation
+from utils.manual_execution import execute_journaled_market_sell
 
 def get_asset_balance(client, currency: str) -> float:
     try:
@@ -172,9 +174,18 @@ def main():
 
     # Initialize StateManager under safe locking
     state_manager = StateManager(state_file=state_file, dry_run=is_dry_run)
+
+    if not is_dry_run and not client:
+        print("Error: Coinbase API Client is required for live state reconciliation.")
+        return
     
     with state_manager.lock():
         state_manager.reload_state()
+
+        order_journal = OrderJournal(state_manager)
+        if not order_journal.reconcile_unresolved_orders(client if not is_dry_run else None):
+            print("Unresolved orders remain. Manual selling is blocked until reconciliation succeeds.")
+            return
         
         position = state_manager.state.get("position", "NONE")
         entry_price = state_manager.state.get("entry_price", 0.0)
@@ -278,42 +289,24 @@ def main():
             else:
                 sell_amount = holdings
 
-            client_order_id = str(uuid.uuid4())
             print(f"Placing live market SELL order for {sell_amount:.8f} {coin_symbol}...")
             
             try:
-                order = client.market_order_sell(
-                    client_order_id=client_order_id,
-                    product_id=product_id,
-                    base_size=str(sell_amount)
+                risk_engine = RiskEngine(Settings, state_manager)
+                risk_engine.validate_pre_flight(
+                    "SELL", Decimal(str(latest_price)),
+                    Decimal(str(sell_amount)), product_id
                 )
+
+                tracked_order, trade = execute_journaled_market_sell(
+                    client, order_journal, product_id, sell_amount, latest_price
+                )
+                filled_val_usd = float(tracked_order["filled_value"])
+                filled_size_base = float(tracked_order["filled_size"])
+                fee_usd = float(tracked_order["fee_usd"])
+                avg_price = filled_val_usd / filled_size_base if filled_size_base > 0 else 0.0
                 
-                order_dict = order.to_dict() if hasattr(order, 'to_dict') else (order if isinstance(order, dict) else {})
-                success_resp = order_dict.get('success_response') or {}
-                order_id = order_dict.get('order_id') or success_resp.get('order_id') or order_dict.get('id')
-                
-                print(f"Market SELL order successfully placed. Order ID: {order_id}")
-                print("Waiting for fill details...")
-                time.sleep(2.0)
-                
-                fill_details = client.get_order(order_id=order_id)
-                fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
-                order_info = fill_dict.get('order', {})
-                
-                filled_val_usd = float(order_info.get('filled_value', sell_amount * latest_price))
-                filled_size_base = float(order_info.get('filled_size', sell_amount))
-                fee_usd = float(order_info.get('total_fees', 0.0))
-                avg_price = float(order_info.get('avg_price', latest_price))
-                
-                if filled_size_base > 0:
-                    trade = state_manager.record_trade(
-                        trade_type="SELL",
-                        price=avg_price,
-                        amount_usd=filled_val_usd,
-                        amount_base=filled_size_base,
-                        fee_usd=fee_usd,
-                        reason="MANUAL_EXIT"
-                    )
+                if filled_size_base > 0 and trade:
                     print("\n" + "*"*40)
                     print("[LIVE ORDER EXECUTED & FILLED]")
                     print(f"Product:   {product_id}")
@@ -334,12 +327,22 @@ def main():
                         is_dry_run=False,
                         realized_pnl=trade.get("realized_pnl_usd", 0.0)
                     )
-                    print("\nLive trade recorded and position successfully closed out.")
+                    if state_manager.state.get("position") == "NONE":
+                        print("\nLive trade recorded and position successfully closed out.")
+                    else:
+                        remaining = state_manager.state.get("holdings_base", 0.0)
+                        print(
+                            f"\nPartial fill recorded. {remaining:.8f} {coin_symbol} "
+                            "remains; reconcile before submitting another order."
+                        )
                 else:
-                    print("Error: The filled size returned was 0.")
+                    print("Coinbase reported a terminal order with no filled quantity; local position is unchanged.")
                     
+            except RiskLimitViolation as e:
+                print(f"Manual sell blocked by safety validation: {e}")
             except Exception as e:
-                print(f"Error placing live market sell order: {e}")
+                print(f"Live market sell is incomplete or unresolved: {e}")
+                print("Do not submit another sell until order reconciliation succeeds.")
 
 if __name__ == "__main__":
     main()
