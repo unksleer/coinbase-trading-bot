@@ -58,6 +58,7 @@ HISTORY_PATH  = os.path.join(DIR, "logs", "param_history.json")
 RECOMMENDATIONS_PATH = os.path.join(DIR, "logs", "learner_recommendations.json")
 APPROVALS_PATH = os.path.join(DIR, "logs", "learner_approvals.json")
 
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [learner] %(levelname)s - %(message)s",
