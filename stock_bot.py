@@ -55,6 +55,10 @@ RSI_MIN         = float(os.getenv("STOCK_RSI_BUY_MIN", "40"))
 RSI_MAX         = float(os.getenv("STOCK_RSI_BUY_MAX", "70"))
 LOOP_INTERVAL   = int(os.getenv("STOCK_LOOP_INTERVAL_SEC", "60"))
 CANDLE_BARS     = int(os.getenv("STOCK_CANDLE_BARS", "100"))  # 1h bars to fetch
+TRAILING_STOP_PCT = float(os.getenv(f"{TICKER}_TRAILING_STOP_PERCENT", os.getenv("STOCK_TRAILING_STOP_PERCENT", "0.0")))
+TRAILING_ACTIVATION_PCT = float(os.getenv(f"{TICKER}_TRAILING_STOP_ACTIVATION_PERCENT", os.getenv("STOCK_TRAILING_STOP_ACTIVATION_PERCENT", "0.0")))
+MIN_VOLUME_RATIO = float(os.getenv(f"{TICKER}_MIN_VOLUME_RATIO", os.getenv("STOCK_MIN_VOLUME_RATIO", "0.0")))
+COOLDOWN_HOURS = float(os.getenv(f"{TICKER}_COOLDOWN_HOURS_AFTER_LOSS", os.getenv("STOCK_COOLDOWN_HOURS_AFTER_LOSS", "0.0")))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -128,6 +132,9 @@ def record_trade(state: dict, exit_price: float, exit_reason: str):
             writer.writeheader()
         writer.writerow(row)
     log.info(f"Trade recorded: {exit_reason}  PnL=${pnl_usd:+.4f}  gross={gross_pct:+.3f}%")
+    # Store exit info in state for cooldown filter
+    state["last_exit_time"] = row["exit_time"]
+    state["last_exit_pnl"] = float(pnl_usd)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -352,17 +359,44 @@ def main():
                 rsi_ok = RSI_MIN <= rsi <= RSI_MAX
 
                 if bullish_cross and rsi_ok:
-                    log.info(f"🟢 BUY SIGNAL — Bullish crossover confirmed | RSI={rsi:.1f}")
-                    shares = place_buy(price)
-                    if shares > 0:
-                        state.update({
-                            "position":     "LONG",
-                            "entry_price":  price,
-                            "shares":       shares,
-                            "entry_time":   datetime.now(timezone.utc).isoformat(),
-                            "entry_reason": "SMA Bullish Cross",
-                        })
-                        save_state(state)
+                    # Volume confirmation filter
+                    vol_ok = True
+                    if MIN_VOLUME_RATIO > 0.0:
+                        avg_vol = float(bars['volume'].rolling(window=20).mean().iloc[-1]) if len(bars) >= 20 else 0
+                        cur_vol = float(bars['volume'].iloc[-1])
+                        if avg_vol > 0:
+                            vol_ratio = cur_vol / avg_vol
+                            if vol_ratio < MIN_VOLUME_RATIO:
+                                log.info(f"⚠️  BUY blocked: volume ratio {vol_ratio:.2f} < {MIN_VOLUME_RATIO:.2f}")
+                                vol_ok = False
+
+                    # Cooldown after loss filter
+                    cooldown_ok = True
+                    if COOLDOWN_HOURS > 0.0 and state.get("last_exit_pnl", 0) < 0:
+                        last_exit_t = state.get("last_exit_time")
+                        if last_exit_t:
+                            try:
+                                exit_dt = datetime.fromisoformat(last_exit_t.replace('Z', '+00:00'))
+                                hours_since = (datetime.now(timezone.utc) - exit_dt).total_seconds() / 3600.0
+                                if hours_since < COOLDOWN_HOURS:
+                                    log.info(f"⚠️  BUY blocked: cooldown {hours_since:.1f}h / {COOLDOWN_HOURS:.0f}h after loss")
+                                    cooldown_ok = False
+                            except Exception:
+                                pass
+
+                    if vol_ok and cooldown_ok:
+                        log.info(f"🟢 BUY SIGNAL — Bullish crossover confirmed | RSI={rsi:.1f}")
+                        shares = place_buy(price)
+                        if shares > 0:
+                            state.update({
+                                "position":     "LONG",
+                                "entry_price":  price,
+                                "shares":       shares,
+                                "highest_price": price,
+                                "entry_time":   datetime.now(timezone.utc).isoformat(),
+                                "entry_reason": "SMA Bullish Cross",
+                            })
+                            save_state(state)
                 elif bullish_cross and not rsi_ok:
                     log.info(f"⚠️  Crossover detected but RSI={rsi:.1f} outside [{RSI_MIN}–{RSI_MAX}] — skipping")
 
@@ -375,7 +409,19 @@ def main():
                     exit_reason = "Stop Loss Triggered"
                 elif chg_pct >= TAKE_PROFIT_PCT:
                     exit_reason = "Take Profit Triggered"
-                elif prev_s > prev_l and sma_s < sma_l:
+                elif TRAILING_STOP_PCT > 0.0 and TRAILING_ACTIVATION_PCT > 0.0:
+                    highest = state.get("highest_price", entry_price)
+                    if price > highest:
+                        highest = price
+                        state["highest_price"] = highest
+                        save_state(state)
+                    if chg_pct >= TRAILING_ACTIVATION_PCT:
+                        trail_price = highest * (1.0 - TRAILING_STOP_PCT / 100.0)
+                        if price <= trail_price:
+                            exit_reason = f"Trailing Stop (peak=${highest:.4f}, trail={TRAILING_STOP_PCT}%)"
+                        else:
+                            log.info(f"Trailing stop active: peak=${highest:.4f}, stop=${trail_price:.4f}, current=${price:.4f}")
+                if exit_reason is None and prev_s > prev_l and sma_s < sma_l:
                     exit_reason = "SMA Bearish Cross"
 
                 if exit_reason:

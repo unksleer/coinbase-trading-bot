@@ -433,6 +433,15 @@ def main():
                     elif Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
+                    # Trailing stop: activates once price has risen enough, then sells if it drops back
+                    elif Settings.TRAILING_STOP_PERCENT > 0.0 and Settings.TRAILING_STOP_ACTIVATION_PERCENT > 0.0:
+                        if price_change_percent >= Settings.TRAILING_STOP_ACTIVATION_PERCENT:
+                            trailing_stop_price = highest_price * (1.0 - Settings.TRAILING_STOP_PERCENT / 100.0)
+                            if latest_price <= trailing_stop_price:
+                                signal = "SELL"
+                                sell_reason = f"TRAILING_STOP (Peak=${highest_price:.4f}, trail={Settings.TRAILING_STOP_PERCENT}%, trigger=${trailing_stop_price:.4f})"
+                            else:
+                                logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}")
                     elif Settings.DISABLE_BUYS and net_pl_pct >= 0.0:
                         signal = "SELL"
                         sell_reason = "EXIT_ONLY_BREAK_EVEN"
@@ -471,6 +480,30 @@ def main():
                                 logger.error(f"Error checking market breadth scoreboard: {e}. Falling back to default execution.")
 
                     if state_manager.state["position"] == "NONE":
+                        # Volume confirmation filter
+                        if Settings.MIN_VOLUME_RATIO > 0.0 and avg_volume_20 > 0:
+                            vol_ratio = latest_volume / avg_volume_20
+                            if vol_ratio < Settings.MIN_VOLUME_RATIO:
+                                logger.info(f"BUY signal blocked: volume ratio {vol_ratio:.2f} < required {Settings.MIN_VOLUME_RATIO:.2f}")
+                                signal = "HOLD"
+
+                        # Cooldown after loss filter
+                        if signal == "BUY" and Settings.COOLDOWN_HOURS_AFTER_LOSS > 0.0:
+                            last_exit = state_manager.state.get("last_exit_time")
+                            last_exit_pnl = state_manager.state.get("last_exit_pnl_usd", 0.0)
+                            if last_exit and last_exit_pnl < 0:
+                                try:
+                                    from datetime import datetime as dt_cls
+                                    exit_dt = dt_cls.fromisoformat(last_exit.replace('Z', '+00:00'))
+                                    now_dt = dt_cls.now(timezone.utc) if hasattr(timezone, 'utc') else dt_cls.utcnow().replace(tzinfo=None)
+                                    hours_since = (now_dt - exit_dt.replace(tzinfo=now_dt.tzinfo)).total_seconds() / 3600.0
+                                    if hours_since < Settings.COOLDOWN_HOURS_AFTER_LOSS:
+                                        logger.info(f"BUY signal blocked: cooldown active ({hours_since:.1f}h / {Settings.COOLDOWN_HOURS_AFTER_LOSS:.0f}h after loss)")
+                                        signal = "HOLD"
+                                except Exception as cd_err:
+                                    logger.warning(f"Cooldown check error: {cd_err}")
+
+                    if signal == "BUY" and state_manager.state["position"] == "NONE":
                         if Settings.DRY_RUN:
                             # Simulate BUY
                             cash = state_manager.state["cash_usd"]

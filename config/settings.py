@@ -138,6 +138,30 @@ class Settings:
     except ValueError:
         BREAK_EVEN_TRIGGER_PERCENT = 0.0
 
+    # Trailing stop: once price rises TRAILING_STOP_ACTIVATION_PERCENT above entry,
+    # a trailing stop at TRAILING_STOP_PERCENT below the highest price activates.
+    try:
+        TRAILING_STOP_PERCENT = float(get_env_with_profile("TRAILING_STOP_PERCENT", "0.0"))
+    except ValueError:
+        TRAILING_STOP_PERCENT = 0.0
+
+    try:
+        TRAILING_STOP_ACTIVATION_PERCENT = float(get_env_with_profile("TRAILING_STOP_ACTIVATION_PERCENT", "0.0"))
+    except ValueError:
+        TRAILING_STOP_ACTIVATION_PERCENT = 0.0
+
+    # Volume confirmation: only enter trades when current volume >= MIN_VOLUME_RATIO * avg_volume_20
+    try:
+        MIN_VOLUME_RATIO = float(get_env_with_profile("MIN_VOLUME_RATIO", "0.0"))
+    except ValueError:
+        MIN_VOLUME_RATIO = 0.0
+
+    # Cooldown: wait this many hours after a losing trade before accepting BUY again
+    try:
+        COOLDOWN_HOURS_AFTER_LOSS = float(get_env_with_profile("COOLDOWN_HOURS_AFTER_LOSS", "0.0"))
+    except ValueError:
+        COOLDOWN_HOURS_AFTER_LOSS = 0.0
+
     try:
         FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "1.20"))
     except ValueError:

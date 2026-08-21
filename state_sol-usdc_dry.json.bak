@@ -4,9 +4,9 @@
     "position": "LONG",
     "entry_price": 75.51,
     "entry_time": "2026-08-16T04:00:30.245001Z",
-    "highest_price_since_entry": 75.85,
+    "highest_price_since_entry": 86.91,
     "lowest_price_since_entry": 74.16,
-    "max_drawdown_since_entry": -1.9177357492395224,
+    "max_drawdown_since_entry": -2.1256038647342885,
     "cash_usd": 90.07150215201385,
     "holdings_base": 0.13163819361673948,
     "trades": [

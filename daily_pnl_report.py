@@ -107,12 +107,13 @@ def main():
 
     # Load all completed trades databases
     sim_files = glob.glob(os.path.join(PROJECT_ROOT, "completed_trades_*_dry.csv"))
+    sim_files.extend(glob.glob(os.path.join(PROJECT_ROOT, "completed_trades_*_paper.csv")))
     shared_dry = os.path.join(PROJECT_ROOT, "completed_trades_dry.csv")
     if os.path.exists(shared_dry) and shared_dry not in sim_files:
         sim_files.append(shared_dry)
         
     live_files = glob.glob(os.path.join(PROJECT_ROOT, "completed_trades_*.csv"))
-    live_files = [f for f in live_files if not f.endswith("_dry.csv") and not f.endswith("_bak.csv")]
+    live_files = [f for f in live_files if not f.endswith("_dry.csv") and not f.endswith("_bak.csv") and not f.endswith("_paper.csv")]
     shared_live = os.path.join(PROJECT_ROOT, "completed_trades.csv")
     if os.path.exists(shared_live) and shared_live not in live_files:
         live_files.append(shared_live)
@@ -151,7 +152,9 @@ def main():
         if status != "online" or name == "hgtv-automation":
             continue
             
-        pair = p_env.get("TRADING_PAIR", "SOL-USDC")
+        pair = p_env.get("TRADING_PAIR") or p_env.get("STOCK_TICKER")
+        if not pair:
+            continue
         state_file_name = p_env.get("STATE_FILE", "")
         dry_run = p_env.get("DRY_RUN", "True").lower() in ("true", "1", "t", "yes")
         is_dry_run_str = "Simulated" if dry_run else "Live"
@@ -196,7 +199,14 @@ def main():
                     csv_pair_name = f"{pair}-ATR"
             
             # Support matching both raw pair or name representation in CSV
-            bot_trades = df_target[df_target['pair'] == csv_pair_name]
+            if 'pair' in df_target.columns and 'ticker' in df_target.columns:
+                bot_trades = df_target[(df_target['pair'] == csv_pair_name) | (df_target['ticker'] == csv_pair_name)]
+            elif 'ticker' in df_target.columns:
+                bot_trades = df_target[df_target['ticker'] == csv_pair_name]
+            elif 'pair' in df_target.columns:
+                bot_trades = df_target[df_target['pair'] == csv_pair_name]
+            else:
+                bot_trades = pd.DataFrame()
             trades_count = len(bot_trades)
             if 'pnl_usd' in bot_trades.columns:
                 realized_pnl = float(bot_trades['pnl_usd'].sum())
@@ -216,15 +226,15 @@ def main():
             "unrealized": unrealized_pnl,
             "total": realized_pnl + unrealized_pnl
         })
-        time.sleep(0.1)
+        print(f"{name} ({pair}): {realized_pnl} USD"); print(f"{name} ({pair}): {realized_pnl} realized, {unrealized_pnl} unrealized"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); time.sleep(0.1)
 
     if not bot_reports:
         print("No active trading bots to report.")
         return
 
     table_rows = ""
-    total_live_pnl = 0.0
-    total_sim_pnl = 0.0
+    total_live_pnl = float(df_live['pnl_usd'].sum()) if 'pnl_usd' in df_live.columns else 0.0
+    total_sim_pnl = float(df_dry['pnl_usd'].sum()) if 'pnl_usd' in df_dry.columns else 0.0
     
     for r in bot_reports:
         color_r = "#34d399" if r["realized"] >= 0 else "#f87171"
@@ -235,9 +245,9 @@ def main():
         mode_badge = f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(239, 68, 68, 0.2); color: #f87171;">LIVE</span>""" if r["mode"] == "Live" else f"""<span style="padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; background-color: rgba(59, 130, 246, 0.2); color: #60a5fa;">SIM</span>"""
         
         if r["mode"] == "Live":
-            total_live_pnl += r["total"]
+            total_live_pnl += r["unrealized"]
         else:
-            total_sim_pnl += r["total"]
+            total_sim_pnl += r["unrealized"]
             
         entry_str = f"${r['entry']:,.2f}" if r["entry"] > 0 else "-"
         current_str = f"${r['current']:,.2f}" if r["current"] > 0 else "-"

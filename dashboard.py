@@ -346,6 +346,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Send last 30 completed trades
         data["completed_trades"] = completed_list[:30]
 
+        # 5. Read auto-learner report
+        best_params_path = os.path.join(project_root, "logs", "best_params.json")
+        data["auto_learner_report"] = None
+        if os.path.exists(best_params_path):
+            try:
+                with open(best_params_path, 'r') as f:
+                    data["auto_learner_report"] = json.load(f)
+            except Exception as e:
+                print(f"Error reading auto-learner report: {e}")
+
+
         return data
 
 def datetime_now_iso():

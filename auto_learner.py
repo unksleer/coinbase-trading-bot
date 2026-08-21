@@ -409,11 +409,13 @@ def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFram
 # Fast backtest
 # ─────────────────────────────────────────────────────────────────────────────
 def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
-                   fee_rate=REAL_FEE_RATE, trade_usd=10.0, start_cash=100.0):
+                   fee_rate=REAL_FEE_RATE, trade_usd=10.0, start_cash=100.0,
+                   trailing_stop_pct=3.0, trailing_activation_pct=2.0):
     cash, holdings, entry_price = start_cash, 0.0, 0.0
     position = "NONE"
     wins, losses, trades = 0, 0, 0
     gain_sum, loss_sum = 0.0, 0.0
+    highest_price = 0.0
 
     for i in range(1, len(closes)):
         p = closes[i]
@@ -428,15 +430,23 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
                     fee = trade_usd * fee_rate
                     holdings = (trade_usd - fee) / p
                     entry_price = p
+                    highest_price = p
                     cash -= trade_usd
                     position = "LONG"
         elif position == "LONG":
+            if p > highest_price:
+                highest_price = p
             chg = (p - entry_price) / entry_price * 100
             exit_now = False
             if stop_loss_pct > 0 and chg <= -stop_loss_pct:
                 exit_now = True
             elif take_profit_pct > 0 and chg >= take_profit_pct:
                 exit_now = True
+            # Trailing stop: activates once price rises enough, sells if it drops back
+            elif trailing_stop_pct > 0 and trailing_activation_pct > 0 and chg >= trailing_activation_pct:
+                trail_price = highest_price * (1.0 - trailing_stop_pct / 100.0)
+                if p <= trail_price:
+                    exit_now = True
             elif pps > ppl and ps < pl:     # Bearish crossover → SELL
                 exit_now = True
             if exit_now:
@@ -449,7 +459,7 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
                 else:
                     losses += 1; loss_sum += abs(pnl)
                 trades += 1
-                holdings, entry_price, position = 0.0, 0.0, "NONE"
+                holdings, entry_price, position, highest_price = 0.0, 0.0, "NONE", 0.0
 
     # Close open position at last price
     if position == "LONG" and holdings > 0:
@@ -469,7 +479,9 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
 # ─────────────────────────────────────────────────────────────────────────────
 def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dict:
     """
-    Run grid search with bounds adapted to the failure mode and param history.
+    Run grid search with walk-forward validation.
+    Train on first 67% of candles, validate on remaining 33%.
+    Only accepts parameters that perform well on both sets.
     Returns best parameter set found, or {} if no valid result.
     """
     log.info(f"Optimizing {pair} ({granularity})...")
@@ -478,8 +490,19 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
         log.warning(f"  Not enough candle data for {pair}")
         return {}
 
-    closes   = pd.to_numeric(df["close"]).to_numpy()
-    closes_s = pd.to_numeric(df["close"])
+    closes_full = pd.to_numeric(df["close"])
+
+    # Walk-forward split: 67% train, 33% validate
+    split_idx = int(len(closes_full) * 0.67)
+    closes_train = closes_full.iloc[:split_idx]
+    closes_val   = closes_full.iloc[split_idx:]
+
+    log.info(f"  Walk-forward split: {len(closes_train)} train / {len(closes_val)} validate candles")
+
+    if len(closes_val) < 50:
+        log.warning(f"  Validation set too small ({len(closes_val)} candles), using full dataset")
+        closes_train = closes_full
+        closes_val = None
 
     bounds    = get_adaptive_search_bounds(diag, history, pair)
     SHORTS    = bounds["shorts"]
@@ -488,10 +511,19 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
     TPS       = bounds["tps"]
     blacklist = bounds["blacklist"]
 
-    # Pre-compute SMAs for every unique window
-    sma_cache = {}
+    # Pre-compute SMAs for train set
+    sma_cache_train = {}
     for w in set(SHORTS + LONGS):
-        sma_cache[w] = closes_s.rolling(w).mean().to_numpy()
+        sma_cache_train[w] = closes_train.rolling(w).mean().to_numpy()
+    closes_train_np = closes_train.to_numpy()
+
+    # Pre-compute SMAs for validation set (if available)
+    sma_cache_val = {}
+    closes_val_np = None
+    if closes_val is not None:
+        for w in set(SHORTS + LONGS):
+            sma_cache_val[w] = closes_val.rolling(w).mean().to_numpy()
+        closes_val_np = closes_val.to_numpy()
 
     best, best_score = {}, -9999
     tested, skipped = 0, 0
@@ -506,28 +538,45 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict) -> dic
                         skipped += 1
                         continue
                     tested += 1
-                    r = quick_backtest(closes, sma_cache[s], sma_cache[l], sl, tp)
-                    if r["trades"] < MIN_TRADES:
+                    r_train = quick_backtest(closes_train_np, sma_cache_train[s], sma_cache_train[l], sl, tp)
+                    if r_train["trades"] < MIN_TRADES:
                         continue
 
                     # ── Composite score: quality > quantity ───────────────────
-                    # Profit factor (win size / loss size) is the primary signal.
-                    # Net profit breaks ties. Win rate is a sanity check.
-                    pf_capped = min(r["profit_factor"], 5.0)
-                    score = (r["net_profit"] * 0.5
-                             + pf_capped * 10 * 0.3
-                             + r["win_rate"] * 0.2)
+                    pf_capped = min(r_train["profit_factor"], 5.0)
+                    train_score = (r_train["net_profit"] * 0.5
+                                   + pf_capped * 10 * 0.3
+                                   + r_train["win_rate"] * 0.2)
 
-                    if score > best_score:
-                        best_score = score
+                    # Walk-forward validation: check on unseen data
+                    if closes_val_np is not None and len(closes_val_np) >= l + 2:
+                        r_val = quick_backtest(closes_val_np, sma_cache_val[s], sma_cache_val[l], sl, tp)
+                        # Penalize if validation shows a loss
+                        if r_val["trades"] > 0 and r_val["net_profit"] < 0:
+                            train_score *= 0.5  # Heavy penalty for out-of-sample loss
+                        elif r_val["trades"] > 0 and r_val["net_profit"] > 0:
+                            train_score *= 1.2  # Bonus for out-of-sample profit
+
+                    if train_score > best_score:
+                        best_score = train_score
                         best = {"short": s, "long": l, "stop_loss": sl,
-                                "take_profit": tp, **r}
+                                "take_profit": tp, **r_train}
+                        # Add validation results if available
+                        if closes_val_np is not None and len(closes_val_np) >= l + 2:
+                            r_val = quick_backtest(closes_val_np, sma_cache_val[s], sma_cache_val[l], sl, tp)
+                            best["val_net_profit"] = r_val["net_profit"]
+                            best["val_win_rate"] = r_val["win_rate"]
+                            best["val_trades"] = r_val["trades"]
 
     log.info(f"  Grid search: {tested} combos tested, {skipped} skipped (previously failed)")
     if best:
+        val_info = ""
+        if "val_net_profit" in best:
+            val_info = f"  VAL: profit=${best['val_net_profit']:.2f} WR={best['val_win_rate']:.1f}% trades={best['val_trades']}"
         log.info(f"  Best: SMA {best['short']}/{best['long']}  SL={best['stop_loss']}%"
                  f"  TP={best['take_profit']}%  → profit=${best['net_profit']:.2f}"
-                 f"  WR={best['win_rate']:.1f}%  PF={best['profit_factor']:.2f}  trades={best['trades']}")
+                 f"  WR={best['win_rate']:.1f}%  PF={best['profit_factor']:.2f}  trades={best['trades']}"
+                 f"{val_info}")
     return best
 
 

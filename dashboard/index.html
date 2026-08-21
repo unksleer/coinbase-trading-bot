@@ -567,6 +567,16 @@
                 <!-- Dynamically populated -->
             </div>
         </div>
+        <!-- --- Auto-Learner Report --- -->
+        <div class="scanner-panel" id="auto-learner-panel" style="display: none;">
+            <div class="panel-header">
+                <h2>🧠 Auto-Learner Nightly Report</h2>
+                <span class="card-subtext" id="learner-timestamp">Loading...</span>
+            </div>
+            <div class="scanner-grid" id="learner-cards">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
     </div>
 
     <!-- --- JS Orchestrator --- -->
@@ -779,6 +789,7 @@
                 completed.forEach(t => {
                     const modeClass = t.mode === "Live" ? "badge-live" : "badge-sim";
                     const pnlClass = t.pnl_usd >= 0 ? "val-up" : "val-down";
+                    const exitReasonStyle = t.pnl_usd < 0 ? "color: var(--accent-red); font-weight: 600;" : "color: var(--text-secondary); font-weight: 500;";
                     
                     html += `
                     <tr>
@@ -791,11 +802,55 @@
                         <td style="text-align: right; font-weight: 700;" class="${pnlClass}">${formatPnL(t.pnl_usd)}</td>
                         <td>${formatCurrency(t.fees_usd)}</td>
                         <td style="color: var(--text-secondary); font-size: 13px;">${t.entry_reason}</td>
-                        <td style="color: var(--text-secondary); font-size: 13px; font-weight: 500;">${t.exit_reason}</td>
+                        <td style="font-size: 13px; ${exitReasonStyle}">${t.exit_reason}</td>
                     </tr>
                     `;
                 });
                 completedBody.innerHTML = html;
+            }
+            // Update Auto-Learner Report
+            const learnerReport = data.auto_learner_report;
+            const learnerPanel = document.getElementById('auto-learner-panel');
+            if (learnerReport && learnerReport.best_params) {
+                learnerPanel.style.display = 'block';
+                if (learnerReport.timestamp) {
+                    const dt = new Date(learnerReport.timestamp);
+                    document.getElementById('learner-timestamp').textContent = "Last Run: " + dt.toLocaleDateString() + " at " + dt.toLocaleTimeString();
+                }
+                
+                const cardsContainer = document.getElementById('learner-cards');
+                let learnerHtml = "";
+                
+                for (const [coin, params] of Object.entries(learnerReport.best_params)) {
+                    const profitClass = params.net_profit >= 0 ? "val-up" : "val-down";
+                    const pnlStr = formatPnL(params.net_profit);
+                    
+                    learnerHtml += `
+                    <div class="coin-card">
+                        <div class="coin-header">
+                            <span class="coin-name">${coin}</span>
+                            <span class="coin-signal sig-buy" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-green);">SMA ${params.short}/${params.long}</span>
+                        </div>
+                        <div class="coin-metrics">
+                            <div class="coin-metric-item">
+                                <span>Net Profit</span>
+                                <span class="metric-val ${profitClass}" style="font-weight: 700;">${pnlStr}</span>
+                            </div>
+                            <div class="coin-metric-item">
+                                <span>Win Rate</span>
+                                <span class="metric-val">${params.win_rate.toFixed(1)}%</span>
+                            </div>
+                            <div class="coin-metric-item">
+                                <span>SL / TP</span>
+                                <span class="metric-val">${params.stop_loss}% / ${params.take_profit}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }
+                cardsContainer.innerHTML = learnerHtml;
+            } else {
+                learnerPanel.style.display = 'none';
             }
         }
 
