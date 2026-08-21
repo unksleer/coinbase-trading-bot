@@ -61,6 +61,21 @@ class RiskEngine:
         Raises RiskLimitViolation if any check fails.
         """
         state = self.state_manager.state
+        side = side.upper()
+        if side not in ("BUY", "SELL"):
+            raise RiskLimitViolation(f"Unsupported order side: {side}")
+        if price <= 0 or size <= 0:
+            raise RiskLimitViolation("Order price and size must be greater than zero.")
+
+        # Exposure-reducing exits must remain available during kill switches and
+        # entry-limit violations. Reject only a sell larger than local holdings.
+        if side == "SELL":
+            current_holdings = Decimal(str(state.get("holdings_base", 0.0)))
+            if size > current_holdings:
+                raise RiskLimitViolation(
+                    f"Sell size {size} exceeds tracked holdings {current_holdings}."
+                )
+            return
         
         # 1. Emergency Kill Switch
         if getattr(self.settings, "EMERGENCY_KILL_SWITCH", False):
@@ -90,7 +105,7 @@ class RiskEngine:
         current_holdings = Decimal(str(state.get("holdings_base", 0.0)))
         current_exposure = current_holdings * price
         
-        if side.upper() == "BUY":
+        if side == "BUY":
             projected_exposure = current_exposure + order_value
             max_exposure = Decimal(str(getattr(self.settings, "MAX_EXPOSURE_PER_PRODUCT", 1000.0)))
             if projected_exposure > max_exposure:

@@ -172,6 +172,55 @@ class Settings:
     DISABLE_STRATEGY_EXITS = get_env_with_profile("DISABLE_STRATEGY_EXITS", "False").lower() in ("true", "1", "t", "yes")
     DISABLE_BUYS = get_env_with_profile("DISABLE_BUYS", "False").lower() in ("true", "1", "t", "yes")
 
+    # Execution safety controls. These names intentionally match RiskEngine.
+    EMERGENCY_KILL_SWITCH = get_env_with_profile("EMERGENCY_KILL_SWITCH", "False").lower() in ("true", "1", "t", "yes")
+    APPROVED_PRODUCT_ALLOWLIST = get_env_with_profile("APPROVED_PRODUCT_ALLOWLIST", "")
+
+    try:
+        MAX_VAL_PER_ORDER = float(get_env_with_profile("MAX_VAL_PER_ORDER", "500.0"))
+    except ValueError:
+        MAX_VAL_PER_ORDER = 500.0
+
+    try:
+        MAX_EXPOSURE_PER_PRODUCT = float(get_env_with_profile("MAX_EXPOSURE_PER_PRODUCT", "1000.0"))
+    except ValueError:
+        MAX_EXPOSURE_PER_PRODUCT = 1000.0
+
+    try:
+        MIN_QUOTE_RESERVE = float(get_env_with_profile("MIN_QUOTE_RESERVE", "10.0"))
+    except ValueError:
+        MIN_QUOTE_RESERVE = 10.0
+
+    try:
+        MAX_TRADES_PER_DAY = int(get_env_with_profile("MAX_TRADES_PER_DAY", "20"))
+    except ValueError:
+        MAX_TRADES_PER_DAY = 20
+
+    try:
+        CONSECUTIVE_LOSS_COOLDOWN_TRADES = int(get_env_with_profile("CONSECUTIVE_LOSS_COOLDOWN_TRADES", "3"))
+    except ValueError:
+        CONSECUTIVE_LOSS_COOLDOWN_TRADES = 3
+
+    try:
+        CONSECUTIVE_LOSS_COOLDOWN_SECONDS = int(get_env_with_profile("CONSECUTIVE_LOSS_COOLDOWN_SECONDS", "3600"))
+    except ValueError:
+        CONSECUTIVE_LOSS_COOLDOWN_SECONDS = 3600
+
+    try:
+        STALE_MARKET_DATA_CUTOFF_SECONDS = int(get_env_with_profile("STALE_MARKET_DATA_CUTOFF_SECONDS", "300"))
+    except ValueError:
+        STALE_MARKET_DATA_CUTOFF_SECONDS = 300
+
+    try:
+        REPEATED_API_ERROR_LIMIT = int(get_env_with_profile("REPEATED_API_ERROR_LIMIT", "5"))
+    except ValueError:
+        REPEATED_API_ERROR_LIMIT = 5
+
+    try:
+        MAX_DAILY_LOSS = float(get_env_with_profile("MAX_DAILY_LOSS", "100.0"))
+    except ValueError:
+        MAX_DAILY_LOSS = 100.0
+
     try:
         RSI_OVERSOLD = float(get_env_with_profile("RSI_OVERSOLD", "30.0"))
     except ValueError:
@@ -232,6 +281,19 @@ class Settings:
 
         if cls.FEE_RATE_PERCENT < 0:
             errors.append("FEE_RATE_PERCENT must be greater than or equal to 0.")
+
+        for name in ("MAX_VAL_PER_ORDER", "MAX_EXPOSURE_PER_PRODUCT", "MIN_QUOTE_RESERVE", "MAX_DAILY_LOSS"):
+            if getattr(cls, name) < 0:
+                errors.append(f"{name} must be greater than or equal to 0.")
+
+        if cls.MAX_TRADES_PER_DAY <= 0:
+            errors.append("MAX_TRADES_PER_DAY must be greater than 0.")
+        if cls.REPEATED_API_ERROR_LIMIT <= 0:
+            errors.append("REPEATED_API_ERROR_LIMIT must be greater than 0.")
+        if cls.STALE_MARKET_DATA_CUTOFF_SECONDS <= 0:
+            errors.append("STALE_MARKET_DATA_CUTOFF_SECONDS must be greater than 0.")
+        if cls.CONSECUTIVE_LOSS_COOLDOWN_TRADES < 0 or cls.CONSECUTIVE_LOSS_COOLDOWN_SECONDS < 0:
+            errors.append("Consecutive-loss cooldown settings must be greater than or equal to 0.")
 
         if cls.RSI_FILTER_ENABLED:
             if cls.RSI_PERIOD <= 0:

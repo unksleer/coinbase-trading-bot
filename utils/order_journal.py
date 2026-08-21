@@ -63,11 +63,13 @@ class OrderJournal:
             "product_id": product_id,
             "side": side.upper(),
             "status": STATE_SUBMITTING,
+            "exchange_status": None,
             "size": str(size),
             "price": str(price),
             "filled_size": "0",
             "filled_value": "0",
             "fee_usd": "0",
+            "applied_filled_size": "0",
             "created_at": timestamp,
             "updated_at": timestamp
         }
@@ -160,6 +162,7 @@ class OrderJournal:
                     
             order["order_id"] = parsed["order_id"]
             order["status"] = new_state
+            order["exchange_status"] = cb_status
             order["filled_size"] = str(parsed["filled_size"])
             order["filled_value"] = str(parsed["filled_value"])
             order["fee_usd"] = str(parsed["fee_usd"])
@@ -172,21 +175,83 @@ class OrderJournal:
         self.state_manager.save_state()
         logger.info(f"Order status updated: {client_order_id} -> {order['status']} (filled: {order['filled_size']})")
 
+    def cancel_and_confirm(self, client, client_order_id: str, poll_attempts: int = 3,
+                           poll_interval_seconds: float = 1.0) -> bool:
+        """Cancel an order and verify Coinbase reports a terminal state.
+
+        A false result is fail-closed: callers must not submit a replacement or
+        market fallback because the original order may still be executable.
+        """
+        order = self.get_order(client_order_id)
+        if not order or not order.get("order_id"):
+            logger.error(f"Cannot cancel untracked order {client_order_id}.")
+            return False
+
+        order["status"] = STATE_CANCEL_PENDING
+        order["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        self.state_manager.save_state()
+
+        try:
+            client.cancel_orders(order_ids=[order["order_id"]])
+        except Exception as exc:
+            logger.error(f"Cancellation request failed for {order['order_id']}: {exc}")
+            order["status"] = STATE_UNKNOWN
+            self.state_manager.save_state()
+            return False
+
+        for _ in range(max(1, poll_attempts)):
+            if poll_interval_seconds > 0:
+                import time
+                time.sleep(poll_interval_seconds)
+            try:
+                response = client.get_order(order_id=order["order_id"])
+                response_dict = response.to_dict() if hasattr(response, "to_dict") else response
+                self.update_order_status(client_order_id, response_dict.get("order", {}))
+                tracked = self.get_order(client_order_id)
+                if tracked.get("exchange_status") in ("CANCELLED", "EXPIRED", "FAILED", "FILLED"):
+                    return True
+            except Exception as exc:
+                logger.error(f"Cancellation confirmation failed for {order['order_id']}: {exc}")
+
+        order = self.get_order(client_order_id)
+        order["status"] = STATE_UNKNOWN
+        order["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        self.state_manager.save_state()
+        logger.critical(
+            f"Cancellation was not confirmed for {order['order_id']}; replacement execution is blocked."
+        )
+        return False
+
+    def mark_fill_applied(self, client_order_id: str):
+        """Record that the current cumulative fill is reflected in portfolio state."""
+        order = self.get_order(client_order_id)
+        if not order:
+            raise ValueError(f"Cannot mark unknown order {client_order_id} as applied.")
+        order["applied_filled_size"] = order.get("filled_size", "0")
+        order["updated_at"] = datetime.utcnow().isoformat() + "Z"
+        self.state_manager.save_state()
+
+    def has_unapplied_fill(self, order: dict) -> bool:
+        return Decimal(str(order.get("filled_size", "0"))) > Decimal(
+            str(order.get("applied_filled_size", "0"))
+        )
+
     def reconcile_unresolved_orders(self, client):
         """
         Reconciles all open/submitting/unresolved orders against Coinbase.
         Must be run on startup before any trading loop executes.
         """
+        terminal_exchange_states = {"CANCELLED", "EXPIRED", "FAILED", "FILLED"}
         unresolved_ids = [
             cid for cid, o in self.state_manager.state["orders"].items()
             if o["status"] in (STATE_SUBMITTING, STATE_OPEN, STATE_PARTIALLY_FILLED, STATE_CANCEL_PENDING, STATE_UNKNOWN)
+            and o.get("exchange_status") not in terminal_exchange_states
         ]
         
         if not unresolved_ids:
             logger.info("No unresolved orders to reconcile.")
-            return True
-            
-        logger.info(f"Found {len(unresolved_ids)} unresolved orders to reconcile: {unresolved_ids}")
+        else:
+            logger.info(f"Found {len(unresolved_ids)} unresolved orders to reconcile: {unresolved_ids}")
         
         success = True
         for cid in unresolved_ids:
@@ -197,6 +262,7 @@ class OrderJournal:
                 # If client is None (dry-run mode), we mock resolve
                 logger.info(f"[Dry Run] Mock reconciling unresolved order: {cid}")
                 order["status"] = STATE_CANCELLED
+                order["exchange_status"] = "CANCELLED"
                 order["updated_at"] = datetime.utcnow().isoformat() + "Z"
                 self.state_manager.save_state()
                 continue
@@ -243,4 +309,22 @@ class OrderJournal:
                 self.state_manager.save_state()
                 success = False
                 
+        unsafe_orders = []
+        for cid, order in self.state_manager.state["orders"].items():
+            is_exchange_unresolved = (
+                order.get("status") in (
+                    STATE_SUBMITTING, STATE_OPEN, STATE_PARTIALLY_FILLED,
+                    STATE_CANCEL_PENDING, STATE_UNKNOWN,
+                )
+                and order.get("exchange_status") not in terminal_exchange_states
+            )
+            if is_exchange_unresolved or self.has_unapplied_fill(order):
+                unsafe_orders.append(cid)
+
+        if unsafe_orders:
+            logger.critical(
+                "Trading blocked: unresolved orders or unapplied fills remain: "
+                f"{unsafe_orders}"
+            )
+            return False
         return success
