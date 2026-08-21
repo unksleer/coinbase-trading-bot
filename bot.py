@@ -563,9 +563,18 @@ def main():
                                         break
                                         
                                     client_order_id = str(uuid.uuid4())
+                                    indicators_dict = {
+                                        "sma_short": short_val, "sma_long": long_val,
+                                        "ema": ema_val, "rsi": rsi_val,
+                                        "spread": spread_val, "atr": atr_val
+                                    }
                                     
                                     # Log order intent BEFORE submitting order
-                                    order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "BUY", d_base_size, d_limit_price)
+                                    order_journal.log_intent(
+                                        client_order_id, Settings.TRADING_PAIR, "BUY",
+                                        d_base_size, d_limit_price,
+                                        reason="SMA Bullish Cross", indicators=indicators_dict
+                                    )
                                     
                                     try:
                                         order = client.limit_order_gtc_buy(
@@ -617,16 +626,7 @@ def main():
                                         
                                         if filled_size > 0:
                                             filled = True
-                                            indicators_dict = {
-                                                "sma_short": short_val, "sma_long": long_val,
-                                                "ema": ema_val, "rsi": rsi_val, "spread": spread_val, "atr": atr_val
-                                            }
-                                            trade = state_manager.record_trade(
-                                                trade_type="BUY", price=float(d_limit_price),
-                                                amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                fee_usd=float(fee_usd), reason="SMA Bullish Cross", indicators=indicators_dict
-                                            )
-                                            order_journal.mark_fill_applied(client_order_id)
+                                            trade = order_journal.apply_fill_delta(client_order_id)
                                             logger.info(f"Live limit BUY filled: {filled_size} at average {d_limit_price}")
                                             send_trade_notification("BUY", Settings.TRADING_PAIR, float(d_limit_price), float(filled_val), float(filled_size), float(fee_usd), False)
                                         else:
@@ -702,7 +702,10 @@ def main():
                                             break
                                             
                                         client_order_id = str(uuid.uuid4())
-                                        order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "SELL", d_base_size, d_limit_price)
+                                        order_journal.log_intent(
+                                            client_order_id, Settings.TRADING_PAIR, "SELL",
+                                            d_base_size, d_limit_price, reason=sell_reason
+                                        )
                                         
                                         try:
                                             order = client.limit_order_gtc_sell(
@@ -750,12 +753,7 @@ def main():
                                             fee_usd = Decimal(tracked_order["fee_usd"])
                                             
                                             if filled_size > 0:
-                                                trade = state_manager.record_trade(
-                                                    trade_type="SELL", price=float(d_limit_price),
-                                                    amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                    fee_usd=float(fee_usd), reason=sell_reason
-                                                )
-                                                order_journal.mark_fill_applied(client_order_id)
+                                                trade = order_journal.apply_fill_delta(client_order_id)
                                                 remaining_holdings -= float(filled_size)
                                                 logger.info(f"Live Limit SELL partial/full fill: {filled_size} sold.")
                                                 send_trade_notification("SELL", Settings.TRADING_PAIR, float(d_limit_price), float(filled_val), float(filled_size), float(fee_usd), False, trade.get('realized_pnl_usd', 0.0))
@@ -775,7 +773,11 @@ def main():
                                         try:
                                             d_base_size = quantize_value(Decimal(str(remaining_holdings)), base_inc)
                                             client_order_id = str(uuid.uuid4())
-                                            order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "SELL", d_base_size, Decimal(str(latest_price)))
+                                            order_journal.log_intent(
+                                                client_order_id, Settings.TRADING_PAIR, "SELL",
+                                                d_base_size, Decimal(str(latest_price)),
+                                                reason=f"{sell_reason}_MARKET_FALLBACK"
+                                            )
                                             
                                             order = client.market_order_sell(
                                                 client_order_id=client_order_id,
@@ -802,12 +804,7 @@ def main():
                                                 avg_price = float(order_info.get('avg_price', latest_price))
                                                 
                                                 if filled_size > 0:
-                                                    trade = state_manager.record_trade(
-                                                        trade_type="SELL", price=avg_price,
-                                                        amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                        fee_usd=float(fee_usd), reason=f"{sell_reason}_MARKET_FALLBACK"
-                                                    )
-                                                    order_journal.mark_fill_applied(client_order_id)
+                                                    trade = order_journal.apply_fill_delta(client_order_id)
                                                     logger.info(f"Market SELL fallback executed successfully: Sold {filled_size}")
                                                     send_trade_notification("SELL", Settings.TRADING_PAIR, avg_price, float(filled_val), float(filled_size), float(fee_usd), False, trade.get('realized_pnl_usd', 0.0))
                                         except Exception as market_err:

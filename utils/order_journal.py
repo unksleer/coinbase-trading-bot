@@ -52,7 +52,9 @@ class OrderJournal:
     def get_order(self, client_order_id: str) -> dict:
         return self.state_manager.state["orders"].get(client_order_id)
 
-    def log_intent(self, client_order_id: str, product_id: str, side: str, size: Decimal, price: Decimal):
+    def log_intent(self, client_order_id: str, product_id: str, side: str,
+                   size: Decimal, price: Decimal, reason: str = None,
+                   indicators: dict = None):
         """
         Persists order intent and state to SUBMITTING before making the API call.
         """
@@ -70,6 +72,10 @@ class OrderJournal:
             "filled_value": "0",
             "fee_usd": "0",
             "applied_filled_size": "0",
+            "applied_filled_value": "0",
+            "applied_fee_usd": "0",
+            "reason": reason,
+            "indicators": indicators or {},
             "created_at": timestamp,
             "updated_at": timestamp
         }
@@ -222,18 +228,51 @@ class OrderJournal:
         )
         return False
 
-    def mark_fill_applied(self, client_order_id: str):
-        """Record that the current cumulative fill is reflected in portfolio state."""
-        order = self.get_order(client_order_id)
-        if not order:
-            raise ValueError(f"Cannot mark unknown order {client_order_id} as applied.")
-        order["applied_filled_size"] = order.get("filled_size", "0")
-        order["updated_at"] = datetime.utcnow().isoformat() + "Z"
-        self.state_manager.save_state()
-
     def has_unapplied_fill(self, order: dict) -> bool:
         return Decimal(str(order.get("filled_size", "0"))) > Decimal(
             str(order.get("applied_filled_size", "0"))
+        )
+
+    def apply_fill_delta(self, client_order_id: str):
+        """Atomically apply only the previously unseen cumulative fill delta."""
+        order = self.get_order(client_order_id)
+        if not order:
+            raise ValueError(f"Cannot apply fill for unknown order {client_order_id}.")
+
+        filled_size = Decimal(str(order.get("filled_size", "0")))
+        filled_value = Decimal(str(order.get("filled_value", "0")))
+        fee_usd = Decimal(str(order.get("fee_usd", "0")))
+        applied_size = Decimal(str(order.get("applied_filled_size", "0")))
+        applied_value = Decimal(str(order.get("applied_filled_value", "0")))
+        applied_fee = Decimal(str(order.get("applied_fee_usd", "0")))
+
+        delta_size = filled_size - applied_size
+        delta_value = filled_value - applied_value
+        delta_fee = fee_usd - applied_fee
+        if delta_size == 0 and delta_value == 0 and delta_fee == 0:
+            return None
+        if delta_size <= 0 or delta_value <= 0 or delta_fee < 0:
+            raise ValueError(
+                f"Non-monotonic cumulative fill for {client_order_id}: "
+                f"size={filled_size}/{applied_size}, value={filled_value}/{applied_value}, "
+                f"fee={fee_usd}/{applied_fee}"
+            )
+
+        average_price = delta_value / delta_size
+        return self.state_manager.record_trade(
+            trade_type=order["side"],
+            price=float(average_price),
+            amount_usd=float(delta_value),
+            amount_base=float(delta_size),
+            fee_usd=float(delta_fee),
+            reason=order.get("reason") or "RECOVERED_ORDER_FILL",
+            indicators=order.get("indicators") or {},
+            order_application={
+                "client_order_id": client_order_id,
+                "filled_size": filled_size,
+                "filled_value": filled_value,
+                "fee_usd": fee_usd,
+            },
         )
 
     def reconcile_unresolved_orders(self, client):
@@ -275,6 +314,7 @@ class OrderJournal:
                     order_info = fill_dict.get('order', {})
                     if order_info:
                         self.update_order_status(cid, order_info)
+                        self.apply_fill_delta(cid)
                     else:
                         logger.error(f"Order {order_id} not found on exchange. Marking UNKNOWN.")
                         order["status"] = STATE_UNKNOWN
@@ -293,6 +333,7 @@ class OrderJournal:
                         if o.get("client_order_id") == cid:
                             logger.info(f"Found match: client_order_id {cid} matches order_id {o.get('order_id')}")
                             self.update_order_status(cid, o)
+                            self.apply_fill_delta(cid)
                             found = True
                             break
                             
@@ -308,6 +349,16 @@ class OrderJournal:
                 order["status"] = STATE_UNKNOWN
                 self.state_manager.save_state()
                 success = False
+
+        # Terminal orders can still contain a fill that was persisted by the
+        # exchange immediately before this process crashed.
+        for cid, order in self.state_manager.state["orders"].items():
+            if self.has_unapplied_fill(order):
+                try:
+                    self.apply_fill_delta(cid)
+                except Exception as exc:
+                    logger.critical(f"Failed to apply recovered fill for {cid}: {exc}")
+                    success = False
                 
         unsafe_orders = []
         for cid, order in self.state_manager.state["orders"].items():
