@@ -417,12 +417,12 @@ def main():
                     if break_even_active and latest_price <= net_breakeven_price:
                         signal = "SELL"
                         sell_reason = f"BREAK_EVEN (Price fell to break-even price ${net_breakeven_price:.4f})"
-                    elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                    elif Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
                         sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
                         if latest_price <= sl_price:
                             signal = "SELL"
                             sell_reason = f"STOP_LOSS_ATR (Price fell below ${sl_price:.2f})"
-                    elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
+                    elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                         signal = "SELL"
                         sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
                     elif Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
@@ -464,7 +464,7 @@ def main():
 
                 # Process Actions
                 # BUY
-                if signal == "BUY" and not Settings.DISABLE_BUYS:
+                if signal == "BUY":
                     # Check market-wide bullish ratio regime filter
                     if Settings.MIN_BULLISH_MARKET_RATIO > 0.0:
                         metrics_path = "logs/market_metrics.json"
@@ -480,8 +480,35 @@ def main():
                                 logger.error(f"Error checking market breadth scoreboard: {e}. Falling back to default execution.")
 
                     if state_manager.state["position"] == "NONE":
+                        # ── Safety & Entry Validation Blocks ─────────────────────────
+                        if Settings.EMERGENCY_KILL_SWITCH:
+                            logger.info("BUY signal blocked: EMERGENCY_KILL_SWITCH is active.")
+                            signal = "HOLD"
+                        elif Settings.DISABLE_BUYS:
+                            logger.info("BUY signal blocked: DISABLE_BUYS is active.")
+                            signal = "HOLD"
+                        elif Settings.PRODUCT_ALLOWLIST and Settings.TRADING_PAIR not in Settings.PRODUCT_ALLOWLIST:
+                            logger.info(f"BUY signal blocked: {Settings.TRADING_PAIR} not in PRODUCT_ALLOWLIST.")
+                            signal = "HOLD"
+                        elif Settings.MAX_ORDER_VALUE_USD > 0 and Settings.TRADE_AMOUNT_USD > Settings.MAX_ORDER_VALUE_USD:
+                            logger.info(f"BUY signal blocked: TRADE_AMOUNT_USD ({Settings.TRADE_AMOUNT_USD}) > MAX_ORDER_VALUE_USD ({Settings.MAX_ORDER_VALUE_USD}).")
+                            signal = "HOLD"
+                        elif Settings.MAX_EXPOSURE_PER_PRODUCT_USD > 0 and Settings.TRADE_AMOUNT_USD > Settings.MAX_EXPOSURE_PER_PRODUCT_USD:
+                            logger.info(f"BUY signal blocked: Exposure would exceed MAX_EXPOSURE_PER_PRODUCT_USD ({Settings.MAX_EXPOSURE_PER_PRODUCT_USD}).")
+                            signal = "HOLD"
+                        elif Settings.MAX_TRADES_PER_DAY > 0 and state_manager.state.get("daily_trades_count", 0) >= Settings.MAX_TRADES_PER_DAY:
+                            logger.info(f"BUY signal blocked: Max daily trades ({Settings.MAX_TRADES_PER_DAY}) reached.")
+                            signal = "HOLD"
+                        elif Settings.MIN_QUOTE_RESERVE_USD > 0 and (state_manager.state.get("cash_usd", 0) - Settings.TRADE_AMOUNT_USD) < Settings.MIN_QUOTE_RESERVE_USD:
+                            logger.info(f"BUY signal blocked: Would breach MIN_QUOTE_RESERVE_USD ({Settings.MIN_QUOTE_RESERVE_USD}).")
+                            signal = "HOLD"
+                        
+                        if signal == "BUY" and Settings.MAX_DAILY_LOSS_USD > 0 and state_manager.state.get("daily_realized_pnl_usd", 0) <= -Settings.MAX_DAILY_LOSS_USD:
+                            logger.info(f"BUY signal blocked: Daily loss limit breached (-${Settings.MAX_DAILY_LOSS_USD}).")
+                            signal = "HOLD"
+
                         # Volume confirmation filter
-                        if Settings.MIN_VOLUME_RATIO > 0.0 and avg_volume_20 > 0:
+                        if signal == "BUY" and Settings.MIN_VOLUME_RATIO > 0.0 and avg_volume_20 > 0:
                             vol_ratio = latest_volume / avg_volume_20
                             if vol_ratio < Settings.MIN_VOLUME_RATIO:
                                 logger.info(f"BUY signal blocked: volume ratio {vol_ratio:.2f} < required {Settings.MIN_VOLUME_RATIO:.2f}")

@@ -60,6 +60,19 @@ TRAILING_ACTIVATION_PCT = float(os.getenv(f"{TICKER}_TRAILING_STOP_ACTIVATION_PE
 MIN_VOLUME_RATIO = float(os.getenv(f"{TICKER}_MIN_VOLUME_RATIO", os.getenv("STOCK_MIN_VOLUME_RATIO", "0.0")))
 COOLDOWN_HOURS = float(os.getenv(f"{TICKER}_COOLDOWN_HOURS_AFTER_LOSS", os.getenv("STOCK_COOLDOWN_HOURS_AFTER_LOSS", "0.0")))
 
+# ── Safety / Risk Management ──────────────────────────────────────────────────
+EMERGENCY_KILL_SWITCH = os.getenv("EMERGENCY_KILL_SWITCH", "False").lower() in ("true", "1", "t", "yes")
+DISABLE_BUYS          = os.getenv("DISABLE_BUYS", "False").lower() in ("true", "1", "t", "yes")
+_allowlist_raw        = os.getenv("PRODUCT_ALLOWLIST", "")
+PRODUCT_ALLOWLIST     = [p.strip().upper() for p in _allowlist_raw.split(",")] if _allowlist_raw else []
+MAX_ORDER_VALUE_USD   = float(os.getenv("MAX_ORDER_VALUE_USD", "0.0"))
+MAX_EXPOSURE_PER_PRODUCT_USD = float(os.getenv("MAX_EXPOSURE_PER_PRODUCT_USD", "0.0"))
+MIN_QUOTE_RESERVE_USD = float(os.getenv("MIN_QUOTE_RESERVE_USD", "0.0"))
+MAX_TRADES_PER_DAY    = int(os.getenv("MAX_TRADES_PER_DAY", "0"))
+STALE_DATA_CUTOFF_MINUTES = int(os.getenv("STALE_DATA_CUTOFF_MINUTES", "0"))
+API_ERROR_LIMIT       = int(os.getenv("API_ERROR_LIMIT", "0"))
+MAX_DAILY_LOSS_USD    = float(os.getenv("MAX_DAILY_LOSS_USD", "0.0"))
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 DIR = os.path.dirname(os.path.abspath(__file__))
 log_path = os.path.join(DIR, "logs", f"stock_{TICKER.lower()}.log")
@@ -354,6 +367,35 @@ def main():
 
             # ── Strategy logic ────────────────────────────────────────────────
             if state["position"] == "NONE":
+                
+                # ── Safety & Entry Validation Blocks ─────────────────────────
+                safety_ok = True
+                if EMERGENCY_KILL_SWITCH:
+                    log.info("⚠️  BUY blocked: EMERGENCY_KILL_SWITCH is active.")
+                    safety_ok = False
+                elif DISABLE_BUYS:
+                    log.info("⚠️  BUY blocked: DISABLE_BUYS is active.")
+                    safety_ok = False
+                elif PRODUCT_ALLOWLIST and TICKER not in PRODUCT_ALLOWLIST:
+                    log.info(f"⚠️  BUY blocked: {TICKER} not in PRODUCT_ALLOWLIST.")
+                    safety_ok = False
+                elif MAX_ORDER_VALUE_USD > 0 and TRADE_AMOUNT > MAX_ORDER_VALUE_USD:
+                    log.info(f"⚠️  BUY blocked: TRADE_AMOUNT ({TRADE_AMOUNT}) > MAX_ORDER_VALUE_USD ({MAX_ORDER_VALUE_USD}).")
+                    safety_ok = False
+                elif MAX_EXPOSURE_PER_PRODUCT_USD > 0 and TRADE_AMOUNT > MAX_EXPOSURE_PER_PRODUCT_USD:
+                    log.info(f"⚠️  BUY blocked: Exposure would exceed MAX_EXPOSURE_PER_PRODUCT_USD ({MAX_EXPOSURE_PER_PRODUCT_USD}).")
+                    safety_ok = False
+                elif MAX_TRADES_PER_DAY > 0 and state.get("daily_trades_count", 0) >= MAX_TRADES_PER_DAY:
+                    log.info(f"⚠️  BUY blocked: Max daily trades ({MAX_TRADES_PER_DAY}) reached.")
+                    safety_ok = False
+                # Note: MIN_QUOTE_RESERVE_USD would need cash balance logic here, assuming Alpaca buying power is sufficient for now but skipping explicit reserve block unless implemented.
+                elif MAX_DAILY_LOSS_USD > 0 and state.get("daily_realized_pnl_usd", 0) <= -MAX_DAILY_LOSS_USD:
+                    log.info(f"⚠️  BUY blocked: Daily loss limit breached (-${MAX_DAILY_LOSS_USD}).")
+                    safety_ok = False
+                
+                if not safety_ok:
+                    continue  # Skip evaluation this loop
+                
                 # Bullish crossover: short was below long, now above
                 bullish_cross = prev_s < prev_l and sma_s > sma_l
                 rsi_ok = RSI_MIN <= rsi <= RSI_MAX
@@ -449,5 +491,35 @@ def main():
         time.sleep(LOOP_INTERVAL)
 
 
+def validate_safety():
+    errors = []
+    if not IS_PAPER:
+        if not PRODUCT_ALLOWLIST:
+            errors.append("PRODUCT_ALLOWLIST is required in live mode.")
+        if TICKER not in PRODUCT_ALLOWLIST:
+            errors.append(f"TICKER '{TICKER}' is not in PRODUCT_ALLOWLIST.")
+        if MAX_ORDER_VALUE_USD <= 0:
+            errors.append("MAX_ORDER_VALUE_USD must be > 0 in live mode.")
+        if TRADE_AMOUNT > MAX_ORDER_VALUE_USD:
+            errors.append("TRADE_AMOUNT exceeds MAX_ORDER_VALUE_USD.")
+        if MAX_EXPOSURE_PER_PRODUCT_USD <= 0:
+            errors.append("MAX_EXPOSURE_PER_PRODUCT_USD must be > 0 in live mode.")
+        if MIN_QUOTE_RESERVE_USD < 0:
+            errors.append("MIN_QUOTE_RESERVE_USD must be >= 0.")
+        if MAX_TRADES_PER_DAY <= 0:
+            errors.append("MAX_TRADES_PER_DAY must be > 0 in live mode.")
+        if STALE_DATA_CUTOFF_MINUTES <= 0:
+            errors.append("STALE_DATA_CUTOFF_MINUTES must be > 0 in live mode.")
+        if API_ERROR_LIMIT <= 0:
+            errors.append("API_ERROR_LIMIT must be > 0 in live mode.")
+        if MAX_DAILY_LOSS_USD <= 0:
+            errors.append("MAX_DAILY_LOSS_USD must be > 0 in live mode.")
+            
+    if errors:
+        for err in errors:
+            print(f"CRITICAL ERROR: {err}")
+        sys.exit(1)
+
 if __name__ == "__main__":
+    validate_safety()
     main()

@@ -187,6 +187,47 @@ class Settings:
     except ValueError:
         MIN_BULLISH_MARKET_RATIO = 0.0
 
+    # ── Safety / Risk Management ──────────────────────────────────────────────
+    EMERGENCY_KILL_SWITCH = get_env_with_profile("EMERGENCY_KILL_SWITCH", "False").lower() in ("true", "1", "t", "yes")
+
+    _allowlist_raw = get_env_with_profile("PRODUCT_ALLOWLIST", "")
+    PRODUCT_ALLOWLIST = [p.strip().upper() for p in _allowlist_raw.split(",")] if _allowlist_raw else []
+
+    try:
+        MAX_ORDER_VALUE_USD = float(get_env_with_profile("MAX_ORDER_VALUE_USD", "0.0"))
+    except ValueError:
+        MAX_ORDER_VALUE_USD = 0.0
+
+    try:
+        MAX_EXPOSURE_PER_PRODUCT_USD = float(get_env_with_profile("MAX_EXPOSURE_PER_PRODUCT_USD", "0.0"))
+    except ValueError:
+        MAX_EXPOSURE_PER_PRODUCT_USD = 0.0
+
+    try:
+        MIN_QUOTE_RESERVE_USD = float(get_env_with_profile("MIN_QUOTE_RESERVE_USD", "0.0"))
+    except ValueError:
+        MIN_QUOTE_RESERVE_USD = 0.0
+
+    try:
+        MAX_TRADES_PER_DAY = int(get_env_with_profile("MAX_TRADES_PER_DAY", "0"))
+    except ValueError:
+        MAX_TRADES_PER_DAY = 0
+
+    try:
+        STALE_DATA_CUTOFF_MINUTES = int(get_env_with_profile("STALE_DATA_CUTOFF_MINUTES", "0"))
+    except ValueError:
+        STALE_DATA_CUTOFF_MINUTES = 0
+
+    try:
+        API_ERROR_LIMIT = int(get_env_with_profile("API_ERROR_LIMIT", "0"))
+    except ValueError:
+        API_ERROR_LIMIT = 0
+
+    try:
+        MAX_DAILY_LOSS_USD = float(get_env_with_profile("MAX_DAILY_LOSS_USD", "0.0"))
+    except ValueError:
+        MAX_DAILY_LOSS_USD = 0.0
+
     @classmethod
     def validate(cls):
         """
@@ -256,7 +297,31 @@ class Settings:
         if cls.GRANULARITY not in valid_granularities:
             errors.append(f"GRANULARITY must be one of: {', '.join(sorted(valid_granularities))}")
             
+            
         if not (0.0 <= cls.MIN_BULLISH_MARKET_RATIO <= 1.0):
             errors.append("MIN_BULLISH_MARKET_RATIO must be between 0.0 and 1.0.")
             
+        # Strict Safety Validations (Fail-closed in Live mode)
+        if not cls.DRY_RUN:
+            if not cls.PRODUCT_ALLOWLIST:
+                errors.append("PRODUCT_ALLOWLIST is required in live mode.")
+            if cls.TRADING_PAIR not in cls.PRODUCT_ALLOWLIST:
+                errors.append(f"TRADING_PAIR '{cls.TRADING_PAIR}' is not in PRODUCT_ALLOWLIST.")
+            if cls.MAX_ORDER_VALUE_USD <= 0:
+                errors.append("MAX_ORDER_VALUE_USD must be > 0 in live mode.")
+            if cls.TRADE_AMOUNT_USD > cls.MAX_ORDER_VALUE_USD:
+                errors.append("TRADE_AMOUNT_USD exceeds MAX_ORDER_VALUE_USD.")
+            if cls.MAX_EXPOSURE_PER_PRODUCT_USD <= 0:
+                errors.append("MAX_EXPOSURE_PER_PRODUCT_USD must be > 0 in live mode.")
+            if cls.MIN_QUOTE_RESERVE_USD < 0:
+                errors.append("MIN_QUOTE_RESERVE_USD must be >= 0.")
+            if cls.MAX_TRADES_PER_DAY <= 0:
+                errors.append("MAX_TRADES_PER_DAY must be > 0 in live mode.")
+            if cls.STALE_DATA_CUTOFF_MINUTES <= 0:
+                errors.append("STALE_DATA_CUTOFF_MINUTES must be > 0 in live mode.")
+            if cls.API_ERROR_LIMIT <= 0:
+                errors.append("API_ERROR_LIMIT must be > 0 in live mode.")
+            if cls.MAX_DAILY_LOSS_USD <= 0:
+                errors.append("MAX_DAILY_LOSS_USD must be > 0 in live mode.")
+
         return errors
