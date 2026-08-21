@@ -42,6 +42,10 @@ GRANULARITY_MAP = {
     'ONE_DAY': 86400
 }
 
+
+class UnconfirmedCancellationError(RuntimeError):
+    """Raised when replacing an order could create duplicate exposure."""
+
 def fetch_candles_public(product_id: str, granularity: str) -> pd.DataFrame:
     """
     Fallback method to fetch candle data from Coinbase Exchange's public API.
@@ -287,7 +291,10 @@ def main():
                 state_manager.reload_state()
                 
                 # Continuous reconciliation of unresolved orders
-                order_journal.reconcile_unresolved_orders(client)
+                if not order_journal.reconcile_unresolved_orders(client):
+                    logger.critical("Order reconciliation is incomplete; skipping all trading actions.")
+                    time.sleep(Settings.LOOP_INTERVAL_SECONDS)
+                    continue
                 
                 # Continuous daily drawdown checks
                 try:
@@ -417,12 +424,12 @@ def main():
                     if break_even_active and latest_price <= net_breakeven_price:
                         signal = "SELL"
                         sell_reason = f"BREAK_EVEN (Price fell to break-even price ${net_breakeven_price:.4f})"
-                    elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
+                    elif Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
                         sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
                         if latest_price <= sl_price:
                             signal = "SELL"
                             sell_reason = f"STOP_LOSS_ATR (Price fell below ${sl_price:.2f})"
-                    elif not Settings.DISABLE_BUYS and Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
+                    elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                         signal = "SELL"
                         sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
                     elif Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
@@ -556,9 +563,18 @@ def main():
                                         break
                                         
                                     client_order_id = str(uuid.uuid4())
+                                    indicators_dict = {
+                                        "sma_short": short_val, "sma_long": long_val,
+                                        "ema": ema_val, "rsi": rsi_val,
+                                        "spread": spread_val, "atr": atr_val
+                                    }
                                     
                                     # Log order intent BEFORE submitting order
-                                    order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "BUY", d_base_size, d_limit_price)
+                                    order_journal.log_intent(
+                                        client_order_id, Settings.TRADING_PAIR, "BUY",
+                                        d_base_size, d_limit_price,
+                                        reason="SMA Bullish Cross", indicators=indicators_dict
+                                    )
                                     
                                     try:
                                         order = client.limit_order_gtc_buy(
@@ -597,14 +613,10 @@ def main():
                                                 
                                         if not filled:
                                             logger.warning(f"Limit order {order_id} not filled completely. Cancelling.")
-                                            try:
-                                                client.cancel_orders(order_ids=[order_id])
-                                                time.sleep(2)
-                                                fill_details = client.get_order(order_id=order_id)
-                                                fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
-                                                order_journal.update_order_status(client_order_id, fill_dict.get('order', {}))
-                                            except Exception as cancel_err:
-                                                logger.error(f"Failed to cancel order: {cancel_err}")
+                                            if not order_journal.cancel_and_confirm(client, client_order_id):
+                                                raise UnconfirmedCancellationError(
+                                                    f"BUY order {order_id} cancellation is unconfirmed"
+                                                )
                                                 
                                         # Check final fill
                                         tracked_order = order_journal.get_order(client_order_id)
@@ -614,21 +626,15 @@ def main():
                                         
                                         if filled_size > 0:
                                             filled = True
-                                            indicators_dict = {
-                                                "sma_short": short_val, "sma_long": long_val,
-                                                "ema": ema_val, "rsi": rsi_val, "spread": spread_val, "atr": atr_val
-                                            }
-                                            trade = state_manager.record_trade(
-                                                trade_type="BUY", price=float(d_limit_price),
-                                                amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                fee_usd=float(fee_usd), reason="SMA Bullish Cross", indicators=indicators_dict
-                                            )
+                                            trade = order_journal.apply_fill_delta(client_order_id)
                                             logger.info(f"Live limit BUY filled: {filled_size} at average {d_limit_price}")
                                             send_trade_notification("BUY", Settings.TRADING_PAIR, float(d_limit_price), float(filled_val), float(filled_size), float(fee_usd), False)
                                         else:
                                             logger.error("Limit order cancelled with 0 filled.")
                                     except Exception as inner_e:
                                         logger.error(f"Error during live Limit BUY execution: {inner_e}")
+                                        if isinstance(inner_e, UnconfirmedCancellationError):
+                                            raise
                                         time.sleep(2)
                             except Exception as e:
                                 logger.error(f"Failed live Limit BUY execution block: {e}")
@@ -696,7 +702,10 @@ def main():
                                             break
                                             
                                         client_order_id = str(uuid.uuid4())
-                                        order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "SELL", d_base_size, d_limit_price)
+                                        order_journal.log_intent(
+                                            client_order_id, Settings.TRADING_PAIR, "SELL",
+                                            d_base_size, d_limit_price, reason=sell_reason
+                                        )
                                         
                                         try:
                                             order = client.limit_order_gtc_sell(
@@ -733,14 +742,10 @@ def main():
                                                     break
                                                     
                                             if not filled:
-                                                try:
-                                                    client.cancel_orders(order_ids=[order_id])
-                                                    time.sleep(2)
-                                                    fill_details = client.get_order(order_id=order_id)
-                                                    fill_dict = fill_details.to_dict() if hasattr(fill_details, 'to_dict') else fill_details
-                                                    order_journal.update_order_status(client_order_id, fill_dict.get('order', {}))
-                                                except Exception as cancel_err:
-                                                    logger.error(f"Failed to cancel order: {cancel_err}")
+                                                if not order_journal.cancel_and_confirm(client, client_order_id):
+                                                    raise UnconfirmedCancellationError(
+                                                        f"SELL order {order_id} cancellation is unconfirmed"
+                                                    )
                                                     
                                             tracked_order = order_journal.get_order(client_order_id)
                                             filled_size = Decimal(tracked_order["filled_size"])
@@ -748,11 +753,7 @@ def main():
                                             fee_usd = Decimal(tracked_order["fee_usd"])
                                             
                                             if filled_size > 0:
-                                                trade = state_manager.record_trade(
-                                                    trade_type="SELL", price=float(d_limit_price),
-                                                    amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                    fee_usd=float(fee_usd), reason=sell_reason
-                                                )
+                                                trade = order_journal.apply_fill_delta(client_order_id)
                                                 remaining_holdings -= float(filled_size)
                                                 logger.info(f"Live Limit SELL partial/full fill: {filled_size} sold.")
                                                 send_trade_notification("SELL", Settings.TRADING_PAIR, float(d_limit_price), float(filled_val), float(filled_size), float(fee_usd), False, trade.get('realized_pnl_usd', 0.0))
@@ -762,6 +763,8 @@ def main():
                                                 logger.error("Limit SELL order cancelled with 0 filled.")
                                         except Exception as inner_e:
                                             logger.error(f"Error during Live Limit SELL: {inner_e}")
+                                            if isinstance(inner_e, UnconfirmedCancellationError):
+                                                raise
                                             time.sleep(2)
 
                                     # Fallback: Market Sell if still not closed
@@ -770,7 +773,11 @@ def main():
                                         try:
                                             d_base_size = quantize_value(Decimal(str(remaining_holdings)), base_inc)
                                             client_order_id = str(uuid.uuid4())
-                                            order_journal.log_intent(client_order_id, Settings.TRADING_PAIR, "SELL", d_base_size, Decimal(str(latest_price)))
+                                            order_journal.log_intent(
+                                                client_order_id, Settings.TRADING_PAIR, "SELL",
+                                                d_base_size, Decimal(str(latest_price)),
+                                                reason=f"{sell_reason}_MARKET_FALLBACK"
+                                            )
                                             
                                             order = client.market_order_sell(
                                                 client_order_id=client_order_id,
@@ -797,11 +804,7 @@ def main():
                                                 avg_price = float(order_info.get('avg_price', latest_price))
                                                 
                                                 if filled_size > 0:
-                                                    trade = state_manager.record_trade(
-                                                        trade_type="SELL", price=avg_price,
-                                                        amount_usd=float(filled_val), amount_base=float(filled_size),
-                                                        fee_usd=float(fee_usd), reason=f"{sell_reason}_MARKET_FALLBACK"
-                                                    )
+                                                    trade = order_journal.apply_fill_delta(client_order_id)
                                                     logger.info(f"Market SELL fallback executed successfully: Sold {filled_size}")
                                                     send_trade_notification("SELL", Settings.TRADING_PAIR, avg_price, float(filled_val), float(filled_size), float(fee_usd), False, trade.get('realized_pnl_usd', 0.0))
                                         except Exception as market_err:

@@ -102,9 +102,10 @@ def migrate_state(state: dict) -> dict:
     return state
 
 class StateManager:
-    def __init__(self, state_file="state.json", dry_run=True):
+    def __init__(self, state_file="state.json", dry_run=True, persist_trade_csv=True):
         self.state_file = state_file
         self.dry_run = dry_run
+        self.persist_trade_csv = persist_trade_csv
         self._lock = StateLock(self.state_file + ".lock")
         self.state = self.load_state()
 
@@ -226,7 +227,10 @@ class StateManager:
             self.state = self.load_state()
             return self.state
 
-    def record_trade(self, trade_type: str, price: float, amount_usd: float, amount_base: float, fee_usd: float = 0.0, reason: str = None, indicators: dict = None):
+    def record_trade(self, trade_type: str, price: float, amount_usd: float,
+                     amount_base: float, fee_usd: float = 0.0,
+                     reason: str = None, indicators: dict = None,
+                     order_application: dict = None):
         """
         Records a trade and correctly handles partial fills for buys and sells.
         """
@@ -239,23 +243,47 @@ class StateManager:
                 
             entry_time_record = pos_entry_time if trade_type == "SELL" else timestamp
             
+            if amount_base <= 0 or amount_usd < 0 or fee_usd < 0 or price <= 0:
+                raise ValueError("Trade price/base must be positive and quote/fee must be non-negative.")
+
             pnl_usd = 0.0
+            allocated_entry_fee = 0.0
             if trade_type == "SELL" and self.state["position"] == "LONG" and self.state["entry_price"] > 0:
-                entry_fee = self.state.get("entry_fee_usd", 0.0)
-                pnl_usd = (price - self.state["entry_price"]) * amount_base - (entry_fee + fee_usd)
+                holdings_before = self.state.get("holdings_base", 0.0)
+                if amount_base > holdings_before + 1e-8:
+                    raise ValueError(
+                        f"Sell amount {amount_base} exceeds holdings {holdings_before}."
+                    )
+                total_entry_fee = self.state.get("entry_fee_usd", 0.0)
+                allocated_entry_fee = total_entry_fee * min(amount_base / holdings_before, 1.0)
+                pnl_usd = (price - self.state["entry_price"]) * amount_base - (allocated_entry_fee + fee_usd)
 
             if trade_type == "BUY":
-                self.state["position"] = "LONG"
-                self.state["entry_price"] = price
-                self.state["entry_time"] = timestamp
-                self.state["entry_fee_usd"] = fee_usd
-                self.state["highest_price_since_entry"] = price
-                self.state["lowest_price_since_entry"] = price
-                self.state["max_drawdown_since_entry"] = 0.0
+                holdings_before = self.state.get("holdings_base", 0.0)
+                if self.state.get("position") == "LONG" and holdings_before > 0:
+                    total_holdings = holdings_before + amount_base
+                    self.state["entry_price"] = (
+                        (self.state["entry_price"] * holdings_before) + (price * amount_base)
+                    ) / total_holdings
+                    self.state["entry_fee_usd"] = self.state.get("entry_fee_usd", 0.0) + fee_usd
+                    self.state["highest_price_since_entry"] = max(
+                        self.state.get("highest_price_since_entry", price), price
+                    )
+                    self.state["lowest_price_since_entry"] = min(
+                        self.state.get("lowest_price_since_entry", price), price
+                    )
+                else:
+                    self.state["position"] = "LONG"
+                    self.state["entry_price"] = price
+                    self.state["entry_time"] = timestamp
+                    self.state["entry_fee_usd"] = fee_usd
+                    self.state["highest_price_since_entry"] = price
+                    self.state["lowest_price_since_entry"] = price
+                    self.state["max_drawdown_since_entry"] = 0.0
+                    self.state["entry_reason"] = reason or "SMA Bullish Cross"
+                    self.state["entry_indicators"] = indicators or {}
                 self.state["cash_usd"] -= (amount_usd + fee_usd)
                 self.state["holdings_base"] += amount_base
-                self.state["entry_reason"] = reason or "SMA Bullish Cross"
-                self.state["entry_indicators"] = indicators or {}
             elif trade_type == "SELL":
                 try:
                     self.log_completed_roundtrip(
@@ -266,7 +294,7 @@ class StateManager:
                         entry_reason=self.state.get("entry_reason", "SMA Bullish Cross"),
                         exit_reason=reason or "SMA Bearish Cross",
                         amount_base=amount_base,
-                        buy_fee=self.state.get("entry_fee_usd", 0.0),
+                        buy_fee=allocated_entry_fee,
                         sell_fee=fee_usd,
                         pnl_usd=pnl_usd,
                         highest_price=self.state.get("highest_price_since_entry", self.state["entry_price"]),
@@ -291,6 +319,9 @@ class StateManager:
                     self.state["holdings_base"] = 0.0
                 else:
                     self.state["holdings_base"] = remaining
+                    self.state["entry_fee_usd"] = max(
+                        0.0, self.state.get("entry_fee_usd", 0.0) - allocated_entry_fee
+                    )
                     
                 self.state["cash_usd"] += (amount_usd - fee_usd)
 
@@ -307,7 +338,22 @@ class StateManager:
             }
             
             self.state["trades"].append(trade_record)
+
+            # Persist portfolio mutation and cumulative-fill checkpoint together.
+            # This makes replay after a crash idempotent.
+            if order_application:
+                client_order_id = order_application["client_order_id"]
+                order = self.state.get("orders", {}).get(client_order_id)
+                if not order:
+                    raise ValueError(f"Cannot apply fill for unknown order {client_order_id}.")
+                order["applied_filled_size"] = str(order_application["filled_size"])
+                order["applied_filled_value"] = str(order_application["filled_value"])
+                order["applied_fee_usd"] = str(order_application["fee_usd"])
+                order["updated_at"] = timestamp
             self.save_state()
+
+            if not self.persist_trade_csv:
+                return trade_record
 
             try:
                 # Dynamic root and mode suffix isolation
