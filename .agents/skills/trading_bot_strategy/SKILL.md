@@ -39,9 +39,9 @@ abandoned.
 
 | Bot | Profile | EMA Filter | RSI Band | Purpose |
 |---|---|---|---|---|
-| btc-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
-| eth-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
-| near-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
+| btc-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
+| eth-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
+| near-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
 | ada-bot | SIM | OFF | 30–55 | Data collection |
 | link-bot | SIM | OFF | 30–55 | Data collection |
 | render-bot | SIM | OFF | 30–55 | Data collection |
@@ -53,11 +53,12 @@ abandoned.
 > `etc-bot` no longer exists. The three stock bots trade a different venue with
 > no commission, so never average their results into crypto fee analysis.
 
-> **⚠ CONSERVATIVE cannot trade.** `CONSERVATIVE_SMA_MIN_SPREAD_PERCENT=0.25`
-> requires separation only 1 of 51 recorded entries ever reached, so btc/eth/near
-> almost never enter. The learner reports this explicitly when every parameter
-> combination yields too few trades to evaluate. Loosen it before reading
-> anything into those coins' results.
+> **⚠ CONSERVATIVE cannot trade as configured.** The 0.25% separation floor and
+> the EMA200 filter compound: btc/eth/near took 0, 0 and 1 entries per 1500
+> candles under it, and neither filter alone was the blocker — dropping both
+> raises them to 18, 21 and 23. All nine crypto bots now run SIM so their data is
+> comparable; CONSERVATIVE is reserved for live trading and needs both filters
+> loosened before anything points at it.
 
 ## Auto-Learner: How to Diagnose
 

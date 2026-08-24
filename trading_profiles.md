@@ -9,9 +9,17 @@ A profile is a named set of strategy parameters selected by `ACTIVE_PROFILE` in
 is a scalping experiment and `STOCK` applies to the Alpaca stock bots, which
 trade commission-free and therefore need different thresholds.
 
-**Current assignment:** `ACTIVE_PROFILE=CONSERVATIVE` is the default, used by
-BTC, ETH and NEAR. ADA, LINK, RENDER, SOL, SUI and XRP each set
-`<COIN>_ACTIVE_PROFILE=SIM`.
+**Current assignment:** all nine crypto bots run `SIM` via
+`<COIN>_ACTIVE_PROFILE=SIM`. `ACTIVE_PROFILE=CONSERVATIVE` remains the default
+for anything unassigned, and is the profile intended for live trading — it is
+deliberately left strict and is not currently driving any bot.
+
+BTC, ETH and NEAR were moved from `CONSERVATIVE` to `SIM` on 2026-08-24. Under
+`CONSERVATIVE` they were taking 0, 0 and 1 entries per 1500 candles: the 0.25%
+separation floor and the EMA200 trend filter compound, and neither alone was the
+blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
+three days. Their coin-specific SMA windows, stops and targets are unaffected,
+since coin keys outrank profile keys.
 
 ---
 
@@ -42,10 +50,12 @@ Values reflect [.env](file:///home/leeunks/coinbase-trading-bot/.env) as configu
 | **`STOP_LOSS_ATR_MULTIPLE`** | `—` | `—` | `—` | If > 0, replaces `STOP_LOSS_PERCENT` with `Entry − (Multiple × Entry ATR)`. |
 | **`TAKE_PROFIT_ATR_MULTIPLE`** | `—` | `—` | `—` | If > 0, replaces `TAKE_PROFIT_PERCENT` with `Entry + (Multiple × Entry ATR)`. |
 
-> **⚠ `CONSERVATIVE_SMA_MIN_SPREAD_PERCENT=0.25` is effectively a trading halt.**
-> Only 1 of 51 recorded sim entries ever had separation ≥ 0.25%, so BTC, ETH and
-> NEAR almost never enter. The nightly learner reports this explicitly when every
-> parameter combination yields too few trades to evaluate.
+> **⚠ `CONSERVATIVE` cannot trade as configured.** The 0.25% separation floor
+> combined with the EMA200 filter admits almost nothing — only 1 of 51 recorded
+> sim entries ever had separation ≥ 0.25%. No bot uses this profile now, but
+> loosen both before pointing anything at it. The nightly learner reports the
+> condition explicitly when every parameter combination yields too few trades to
+> evaluate.
 
 ---
 
