@@ -84,6 +84,12 @@ class Settings:
     except ValueError:
         SMA_MIN_SPREAD_PERCENT = 0.0
 
+    # Ceiling on crossover separation at entry. 0 disables the check.
+    try:
+        SMA_MAX_SPREAD_PERCENT = float(get_env_with_profile("SMA_MAX_SPREAD_PERCENT", "0.0"))
+    except ValueError:
+        SMA_MAX_SPREAD_PERCENT = 0.0
+
     try:
         STOP_LOSS_PERCENT = float(get_env_with_profile("STOP_LOSS_PERCENT", "0.0"))
     except ValueError:
@@ -231,10 +237,6 @@ class Settings:
     except ValueError:
         RSI_OVERBOUGHT = 70.0
 
-    try:
-        MIN_BULLISH_MARKET_RATIO = float(get_env_with_profile("MIN_BULLISH_MARKET_RATIO", "0.0"))
-    except ValueError:
-        MIN_BULLISH_MARKET_RATIO = 0.0
 
     @classmethod
     def validate(cls):
@@ -263,6 +265,16 @@ class Settings:
             
         if cls.SMA_MIN_SPREAD_PERCENT < 0:
             errors.append("SMA_MIN_SPREAD_PERCENT must be greater than or equal to 0.")
+
+        if cls.SMA_MAX_SPREAD_PERCENT < 0:
+            errors.append("SMA_MAX_SPREAD_PERCENT must be greater than or equal to 0.")
+
+        if (cls.SMA_MAX_SPREAD_PERCENT > 0
+                and cls.SMA_MAX_SPREAD_PERCENT <= cls.SMA_MIN_SPREAD_PERCENT):
+            errors.append(
+                "SMA_MAX_SPREAD_PERCENT must be greater than SMA_MIN_SPREAD_PERCENT "
+                "when set, otherwise no crossover can ever pass both."
+            )
 
         if cls.STOP_LOSS_PERCENT < 0:
             errors.append("STOP_LOSS_PERCENT must be greater than or equal to 0.")
@@ -318,7 +330,5 @@ class Settings:
         if cls.GRANULARITY not in valid_granularities:
             errors.append(f"GRANULARITY must be one of: {', '.join(sorted(valid_granularities))}")
             
-        if not (0.0 <= cls.MIN_BULLISH_MARKET_RATIO <= 1.0):
-            errors.append("MIN_BULLISH_MARKET_RATIO must be between 0.0 and 1.0.")
             
         return errors

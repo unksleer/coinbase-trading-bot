@@ -229,70 +229,14 @@
         .badge-sim { background: rgba(96, 165, 250, 0.15); color: var(--accent-blue); }
 
         /* --- Market Breadth Radial Gauge --- */
-        .gauge-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            padding: 20px 0;
-        }
 
-        .gauge {
-            position: relative;
-            width: 180px;
-            height: 180px;
-        }
 
-        .gauge-svg {
-            transform: rotate(-90deg);
-        }
 
-        .gauge-bg {
-            fill: none;
-            stroke: rgba(255, 255, 255, 0.03);
-            stroke-width: 12;
-        }
 
-        .gauge-fill {
-            fill: none;
-            stroke: url(#gauge-grad);
-            stroke-width: 12;
-            stroke-dasharray: 440;
-            stroke-dashoffset: 440;
-            stroke-linecap: round;
-            transition: stroke-dashoffset 1s ease;
-        }
 
-        .gauge-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-        }
 
-        .gauge-value {
-            font-size: 32px;
-            font-weight: 700;
-            color: #ffffff;
-        }
 
-        .gauge-label {
-            font-size: 11px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            margin-top: 4px;
-        }
 
-        .regime-text {
-            font-size: 14px;
-            font-weight: 600;
-            margin-top: 20px;
-            text-align: center;
-        }
 
         /* --- Scanner Grid Scoreboard --- */
         .scanner-panel {
@@ -377,6 +321,161 @@
 
         .val-up { color: var(--accent-green) !important; }
         .val-down { color: var(--accent-red) !important; }
+        /* A P&L computed from a non-live price is greyed rather than coloured,
+           so a stale reading never looks like a confirmed gain or loss. */
+        .val-stale { color: var(--text-secondary) !important; }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+        }
+
+        .waterfall {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr auto 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0 4px;
+        }
+        .wf-cell { text-align: center; }
+        .wf-val {
+            font-family: monospace;
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.1;
+            color: var(--text-primary);
+        }
+        .wf-sub {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .wf-op {
+            font-family: monospace;
+            font-size: 1.4rem;
+            color: var(--text-secondary);
+        }
+        .wf-note {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--glass-border);
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .bar-row {
+            display: grid;
+            grid-template-columns: 150px 1fr 74px;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .bar-name { font-size: 0.76rem; color: var(--text-secondary); }
+        .bar-track {
+            height: 18px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .bar-fill { height: 100%; border-radius: 4px; }
+        .bar-val {
+            font-family: monospace;
+            font-size: 0.74rem;
+            text-align: right;
+        }
+
+        .eq-bar {
+            position: relative;
+            height: 22px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 14px 0 6px;
+        }
+        .eq-fill { height: 100%; background: var(--accent-blue); opacity: 0.8; }
+        .eq-floor {
+            position: absolute; top: -4px; bottom: -4px;
+            width: 2px; background: var(--accent-red);
+        }
+        .eq-scale {
+            display: flex; justify-content: space-between;
+            font-family: monospace; font-size: 0.68rem;
+            color: var(--text-secondary);
+        }
+        .eq-stats {
+            margin-top: 12px; font-size: 0.78rem;
+            color: var(--text-secondary); line-height: 1.6;
+        }
+
+        .grad-head {
+            display: flex; justify-content: space-between;
+            align-items: baseline; margin-bottom: 8px;
+        }
+        .grad-coin { font-weight: 700; font-size: 0.9rem; }
+        .grad-score { font-family: monospace; font-size: 0.75rem; color: var(--text-secondary); }
+        .grad-track {
+            height: 5px; background: rgba(255,255,255,0.06);
+            border-radius: 3px; overflow: hidden; margin-bottom: 10px;
+        }
+        .grad-fill { height: 100%; }
+        .grad-check {
+            display: grid; grid-template-columns: 14px 1fr auto;
+            gap: 6px; font-size: 0.7rem; line-height: 1.9;
+        }
+        .grad-label { color: var(--text-secondary); }
+        .grad-detail { font-family: monospace; color: var(--text-primary); }
+
+        .fn-row {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 6px 0; font-size: 0.8rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+        .fn-row:last-child { border-bottom: none; }
+        .fn-head .fn-label { color: var(--text-primary); font-weight: 600; }
+        .fn-sub { padding-left: 8px; }
+        .fn-sub .fn-label { color: var(--text-secondary); font-size: 0.75rem; }
+        .fn-taken { border-top: 1px solid var(--glass-border); margin-top: 4px; }
+        .fn-taken .fn-label { color: var(--text-primary); font-weight: 600; }
+        .fn-label { line-height: 1.4; }
+        .fn-count { font-family: monospace; font-weight: 700; white-space: nowrap; }
+        .fn-pct {
+            font-weight: 400; font-size: 0.68rem;
+            color: var(--text-secondary); margin-left: 6px;
+        }
+        .fn-foot {
+            margin-top: 10px; padding-top: 8px;
+            border-top: 1px solid var(--glass-border);
+            font-size: 0.68rem; color: var(--text-secondary);
+        }
+        .funnel-empty {
+            font-size: 0.72rem; color: var(--text-secondary);
+            line-height: 1.5; padding: 10px 0;
+        }
+        .funnel-warn {
+            margin-top: 10px; font-size: 0.72rem; line-height: 1.5;
+            color: var(--accent-red);
+        }
+
+        .price-tag {
+            font-size: 0.62rem;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            margin-left: 0.35rem;
+            vertical-align: middle;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+        .tag-live  { background: var(--accent-glow-green); color: var(--accent-green); }
+        .tag-ok    { background: var(--accent-glow-blue);  color: var(--accent-blue); }
+        .tag-stale { background: var(--accent-glow-red);   color: var(--accent-red); }
+
+        .stale-note {
+            font-size: 0.7rem;
+            color: var(--accent-red);
+            margin-left: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -392,6 +491,66 @@
                 <span>SYSTEM ONLINE</span>
             </div>
         </header>
+
+
+        <!-- --- Edge Analysis: gross vs fees vs net --- -->
+        <div class="scanner-panel" id="edge-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>💵 Where the Money Goes</h2>
+                <span class="card-subtext" id="edge-subtext">Simulated crypto trades</span>
+            </div>
+            <div class="waterfall">
+                <div class="wf-cell">
+                    <div class="wf-val" id="wf-gross">—</div>
+                    <div class="wf-sub">gross edge</div>
+                </div>
+                <div class="wf-op">−</div>
+                <div class="wf-cell">
+                    <div class="wf-val val-down" id="wf-fees">—</div>
+                    <div class="wf-sub" id="wf-fee-floor">fees</div>
+                </div>
+                <div class="wf-op">=</div>
+                <div class="wf-cell">
+                    <div class="wf-val" id="wf-net">—</div>
+                    <div class="wf-sub" id="wf-net-sub">net</div>
+                </div>
+            </div>
+            <div class="wf-note" id="wf-note"></div>
+        </div>
+
+        <!-- --- Equity curve --- -->
+        <div class="scanner-panel" id="curve-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>📈 Cumulative Net P&amp;L</h2>
+                <span class="card-subtext" id="curve-subtext">—</span>
+            </div>
+            <div id="curve-wrap"><svg id="equity-curve" viewBox="0 0 900 200" preserveAspectRatio="none" style="width:100%;height:200px;"></svg></div>
+        </div>
+
+        <!-- --- Go-live readiness --- -->
+        <div class="scanner-panel" id="grad-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>🚀 Go-Live Readiness</h2>
+                <span class="card-subtext" id="grad-subtext">—</span>
+            </div>
+            <div class="scanner-grid" id="grad-cards"></div>
+        </div>
+
+        <!-- --- Exit reasons + entry quality --- -->
+        <div class="two-col" style="margin-bottom: 30px;">
+            <div class="scanner-panel">
+                <div class="panel-header">
+                    <h2>🚪 Exits by Reason</h2>
+                </div>
+                <div id="exit-reasons"></div>
+            </div>
+            <div class="scanner-panel">
+                <div class="panel-header">
+                    <h2>🎯 Entry Follow-Through</h2>
+                </div>
+                <div id="entry-quality"></div>
+            </div>
+        </div>
 
         <!-- --- Bot Signal Status Panel --- -->
         <div class="scanner-panel" id="bot-signal-panel" style="margin-bottom: 30px;">
@@ -499,31 +658,15 @@
                 </div>
             </div>
 
-            <!-- Market Regime Gauge Panel -->
+            <!-- Signal Funnel Panel -->
             <div class="panel">
                 <div class="panel-header">
-                    <h2>Market Regime Index</h2>
+                    <h2>Signal Funnel</h2>
+                    <span class="card-subtext" id="funnel-window">—</span>
                 </div>
-                <div class="gauge-container">
-                    <div class="gauge">
-                        <svg class="gauge-svg" width="180" height="180" viewBox="0 0 180 180">
-                            <defs>
-                                <linearGradient id="gauge-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stop-color="#3b82f6" />
-                                    <stop offset="100%" stop-color="#10b981" />
-                                </linearGradient>
-                            </defs>
-                            <circle class="gauge-bg" cx="90" cy="90" r="70" />
-                            <circle id="gauge-arc" class="gauge-fill" cx="90" cy="90" r="70" />
-                        </svg>
-                        <div class="gauge-text">
-                            <div class="gauge-value" id="gauge-pct">0%</div>
-                            <div class="gauge-label">Bullish</div>
-                        </div>
-                    </div>
-                    <div class="regime-text" id="regime-status" style="color: var(--text-secondary);">Analyzing...</div>
-                </div>
+                <div id="funnel-body"></div>
             </div>
+
         </div>
 
         <!-- --- Completed Trades Ledger Panel --- -->
@@ -561,7 +704,7 @@
         <div class="scanner-panel">
             <div class="panel-header">
                 <h2>Multi-Asset Screener Scoreboard</h2>
-                <span class="card-subtext">Hourly bars • Volatility Filters enabled</span>
+                <span class="card-subtext">Hourly bars • refreshed hourly<span id="scanner-age"></span></span>
             </div>
             <div class="scanner-grid" id="scanner-cards">
                 <!-- Dynamically populated -->
@@ -591,6 +734,244 @@
             } catch (err) {
                 console.error("Failed to load metrics scoreboard:", err);
             }
+        }
+
+
+        // ---- Edge analysis: the views that answer "is this working" ----
+
+        function renderAnalytics(a) {
+            if (!a || !a.waterfall) return;
+            const w = a.waterfall;
+            const floor = a.fee_floor_pct;
+
+            const gross = document.getElementById('wf-gross');
+            gross.textContent = formatPnL(w.gross);
+            gross.className = "wf-val " + (w.gross >= 0 ? "val-up" : "val-down");
+            document.getElementById('wf-fees').textContent = formatCurrency(w.fees);
+            document.getElementById('wf-fee-floor').textContent =
+                floor !== null ? `fees · ${floor.toFixed(2)}% per trade` : "fees";
+
+            const net = document.getElementById('wf-net');
+            net.textContent = formatPnL(w.net);
+            net.className = "wf-val " + (w.net >= 0 ? "val-up" : "val-down");
+            document.getElementById('wf-net-sub').textContent =
+                `net · ${a.trade_count} trades · ${w.win_rate.toFixed(0)}% win`;
+
+            // Say plainly which of the two possible problems this is.
+            const note = document.getElementById('wf-note');
+            if (w.gross > 0 && w.net < 0) {
+                note.innerHTML = `The strategy picks direction well enough to be <strong>${formatPnL(w.gross)} gross</strong>, ` +
+                    `but fees consume ${Math.round(100 * w.fees / w.gross)}% of that. ` +
+                    `This is a cost problem, not a signal problem.`;
+            } else if (w.gross <= 0) {
+                note.innerHTML = `Gross edge is <strong>${formatPnL(w.gross)}</strong> — negative before any fees. ` +
+                    `The entry signal itself needs work; tuning exits or costs will not fix this.`;
+            } else {
+                note.innerHTML = `Positive after costs. Edge survives the ${floor ? floor.toFixed(2) + '%' : ''} round trip.`;
+            }
+
+            renderGraduation(a.graduation);
+            renderExitReasons(a.exit_reasons, a.trade_count);
+            renderEntryQuality(a.entry_quality, floor);
+            renderEquityCurve(a.equity_curve);
+        }
+
+
+        // Human-readable names for the strategy's blocked_by codes.
+        const BLOCK_LABELS = {
+            "RSI": "RSI out of band",
+            "EMA": "below EMA trend",
+            "SPREAD": "separation too small",
+            "SPREAD_MAX": "crossover too extended",
+            "INSUFFICIENT_DATA": "not enough candles",
+        };
+
+        // Crossovers seen vs. taken. A filter tightened too far shows up here as
+        // blocks piling up; in the trade ledger it would look like a quiet market.
+        function renderFunnel(f) {
+            const body = document.getElementById('funnel-body');
+            const win = document.getElementById('funnel-window');
+            if (!body) return;
+            if (!f) { body.innerHTML = ""; return; }
+
+            win.textContent = `last ${f.window_days}d · ${f.pairs} pairs`;
+
+            if (!f.candles) {
+                body.innerHTML = `<div class="funnel-empty">No candle decisions logged yet.
+                    Bots write one row per closed candle, so this fills in as they run.</div>`;
+                return;
+            }
+
+            const rows = [];
+            rows.push(`<div class="fn-row fn-head">
+                <span class="fn-label">Candles evaluated</span>
+                <span class="fn-count">${f.candles.toLocaleString()}</span></div>`);
+            rows.push(`<div class="fn-row fn-head">
+                <span class="fn-label">Crossovers seen</span>
+                <span class="fn-count">${f.crossovers}</span></div>`);
+
+            if (f.crossovers === 0) {
+                rows.push(`<div class="funnel-empty">No crossover has fired yet in this
+                    window. Nothing is being filtered — the signal simply has not triggered.</div>`);
+            } else {
+                f.blocked.forEach(b => {
+                    const pct = Math.round(100 * b.count / f.crossovers);
+                    rows.push(`<div class="fn-row fn-sub">
+                        <span class="fn-label">↳ ${BLOCK_LABELS[b.reason] || b.reason}</span>
+                        <span class="fn-count val-down">${b.count}<span class="fn-pct">${pct}%</span></span>
+                    </div>`);
+                });
+                const takenPct = Math.round(100 * f.taken / f.crossovers);
+                rows.push(`<div class="fn-row fn-taken">
+                    <span class="fn-label">Entries taken</span>
+                    <span class="fn-count ${f.taken ? 'val-up' : 'val-down'}">${f.taken}<span class="fn-pct">${takenPct}%</span></span>
+                </div>`);
+
+                // Every crossover rejected is the failure mode this panel exists for.
+                if (f.blocked_total === f.crossovers && f.crossovers >= 3) {
+                    rows.push(`<div class="funnel-warn">⚠ Every crossover in this window was
+                        filtered out. Entry filters may be too tight.</div>`);
+                }
+            }
+
+            const foot = [];
+            if (f.last_crossover_age !== null && f.last_crossover_age !== undefined) {
+                foot.push(`last crossover ${formatAge(f.last_crossover_age)} ago`);
+            }
+            if (f.last_entry_age !== null && f.last_entry_age !== undefined) {
+                foot.push(`last entry ${formatAge(f.last_entry_age)} ago`);
+            }
+            if (foot.length) rows.push(`<div class="fn-foot">${foot.join(' · ')}</div>`);
+
+            body.innerHTML = rows.join('');
+        }
+
+        function renderGraduation(coins) {
+            const el = document.getElementById('grad-cards');
+            const sub = document.getElementById('grad-subtext');
+            if (!el) return;
+            if (!coins || !coins.length) {
+                el.innerHTML = '<p class="card-subtext">No simulated coins yet.</p>';
+                sub.textContent = "";
+                return;
+            }
+            const ready = coins.filter(c => c.ready).length;
+            sub.textContent = ready
+                ? `${ready} coin${ready > 1 ? 's' : ''} meeting all criteria`
+                : `No coins eligible yet — closest is ${coins[0].pair} at ${coins[0].passed}/${coins[0].total}`;
+
+            el.innerHTML = coins.map(c => {
+                const pct = (c.passed / c.total) * 100;
+                const bar = c.ready ? "var(--accent-green)" : "var(--accent-blue)";
+                const checks = c.checks.map(ck => `
+                    <div class="grad-check">
+                        <span class="${ck.passed ? 'val-up' : 'val-down'}">${ck.passed ? '✓' : '✗'}</span>
+                        <span class="grad-label">${ck.label}</span>
+                        <span class="grad-detail">${ck.detail}</span>
+                    </div>`).join('');
+                return `
+                <div class="scanner-card">
+                    <div class="grad-head">
+                        <span class="grad-coin">${c.pair}</span>
+                        <span class="grad-score">${c.passed}/${c.total}</span>
+                    </div>
+                    <div class="grad-track"><div class="grad-fill" style="width:${pct}%; background:${bar}"></div></div>
+                    ${checks}
+                </div>`;
+            }).join('');
+        }
+
+        function renderExitReasons(reasons, total) {
+            const el = document.getElementById('exit-reasons');
+            if (!reasons || !reasons.length) { el.innerHTML = '<p class="card-subtext">No completed trades yet.</p>'; return; }
+            let html = "";
+            reasons.forEach(r => {
+                const good = r.avg_net_pct >= 0;
+                const color = good ? "var(--accent-green)" : "var(--accent-red)";
+                html += `
+                <div class="bar-row" title="${r.count} of ${total} exits · total ${formatPnL(r.total_pnl)}">
+                    <div class="bar-name">${r.reason}</div>
+                    <div class="bar-track"><div class="bar-fill" style="width:${r.share}%; background:${color}"></div></div>
+                    <div class="bar-val ${good ? 'val-up' : 'val-down'}">${r.avg_net_pct >= 0 ? '+' : ''}${r.avg_net_pct.toFixed(2)}%</div>
+                </div>`;
+            });
+            const top = reasons[0];
+            if (top.share > 50 && top.avg_net_pct < 0) {
+                html += `<div class="wf-note"><strong>${top.share.toFixed(0)}% of exits are one reason, and it loses on average.</strong> ` +
+                        `That single exit path accounts for ${formatPnL(top.total_pnl)}.</div>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function renderEntryQuality(q, floor) {
+            const el = document.getElementById('entry-quality');
+            if (!q) { el.innerHTML = '<p class="card-subtext">No excursion data yet.</p>'; return; }
+            // Scale the bar to 5% MFE so the fee floor sits at a readable position.
+            const SCALE = 5.0;
+            const floorPos = Math.min(100, (floor / SCALE) * 100);
+            el.innerHTML = `
+                <div class="eq-bar">
+                    <div class="eq-fill" style="width:${q.cleared_pct}%"></div>
+                    <div class="eq-floor" style="left:${floorPos}%" title="Fee floor ${floor.toFixed(2)}%"></div>
+                </div>
+                <div class="eq-scale"><span>0%</span><span style="color:var(--accent-red)">↑ ${floor.toFixed(2)}% fee floor</span><span>${SCALE}% MFE</span></div>
+                <div class="eq-stats">
+                    <strong>${q.cleared_fee_floor} of ${q.measured}</strong> entries (${q.cleared_pct.toFixed(0)}%) ever moved far enough to cover the round trip.<br>
+                    Average best case <span class="val-up">+${q.avg_mfe.toFixed(2)}%</span> · average worst case <span class="val-down">${q.avg_mae.toFixed(2)}%</span>
+                </div>`;
+        }
+
+        function renderEquityCurve(points) {
+            const svg = document.getElementById('equity-curve');
+            const sub = document.getElementById('curve-subtext');
+            if (!points || points.length < 2) {
+                svg.innerHTML = '';
+                sub.textContent = "Not enough completed trades yet";
+                return;
+            }
+            const W = 900, H = 200, PAD = 12;
+            const vals = points.map(p => p.cumulative_pnl);
+            const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+            const span = (hi - lo) || 1;
+            const x = i => PAD + (i / (points.length - 1)) * (W - 2 * PAD);
+            const y = v => PAD + (1 - (v - lo) / span) * (H - 2 * PAD);
+
+            const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.cumulative_pnl).toFixed(1)}`).join(' ');
+            const last = vals[vals.length - 1];
+            const stroke = last >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+            const zeroY = y(0).toFixed(1);
+
+            svg.innerHTML = `
+                <line x1="${PAD}" y1="${zeroY}" x2="${W - PAD}" y2="${zeroY}"
+                      stroke="rgba(255,255,255,0.18)" stroke-width="1" stroke-dasharray="4 4"/>
+                <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2.5"
+                          vector-effect="non-scaling-stroke"/>`;
+            sub.textContent = `${points.length} trades · finishing at ${formatPnL(last)}`;
+        }
+
+        function formatAge(seconds) {
+            if (seconds === null || seconds === undefined) return "";
+            if (seconds < 90) return Math.round(seconds) + "s";
+            if (seconds < 5400) return Math.round(seconds / 60) + "m";
+            if (seconds < 172800) return Math.round(seconds / 3600) + "h";
+            return Math.round(seconds / 86400) + "d";
+        }
+
+        // Unrealized P&L is only as trustworthy as the price behind it. A price
+        // that is not live gets labelled here rather than presented as current.
+        function priceBadge(pos) {
+            if (pos.price_source === "live" && !pos.price_stale) {
+                return `<span class="price-tag tag-live" title="Live ticker">live</span>`;
+            }
+            if (pos.price_source === "candle") {
+                const age = formatAge(pos.price_age_seconds);
+                const cls = pos.price_stale ? "tag-stale" : "tag-ok";
+                return `<span class="price-tag ${cls}" title="Last closed candle the bot acted on">candle ${age}</span>`;
+            }
+            if (pos.price_source === "entry") {
+                return `<span class="price-tag tag-stale" title="No price available — showing entry price, so P&L reads as zero">no price</span>`;
+            }
+            return "";
         }
 
         function formatCurrency(val) {
@@ -632,6 +1013,9 @@
             document.getElementById('sim-fees-paid').textContent = "Fees paid: " + formatCurrency(perf.sim_fees);
 
             // Update Active Positions
+            renderAnalytics(data.analytics);
+            renderFunnel(data.signal_funnel);
+
             const positions = data.active_positions || [];
             document.getElementById('active-positions-count').textContent = positions.length + " active position" + (positions.length !== 1 ? "s" : "");
             
@@ -662,9 +1046,9 @@
                         <td style="font-weight: 700; color: #ffffff;">${pos.coin}</td>
                         <td><span class="badge-mode ${modeClass}">${pos.mode}</span></td>
                         <td>${formatCurrency(pos.entry_price)}</td>
-                        <td>${formatCurrency(pos.current_price)}</td>
+                        <td>${formatCurrency(pos.current_price)} ${priceBadge(pos)}</td>
                         <td style="font-family: monospace;">${pos.holdings.toFixed(6)}</td>
-                        <td style="text-align: right; font-weight: 700;" class="${pnlClass}">${formatPnL(pos.unrealized_pnl)}</td>
+                        <td style="text-align: right; font-weight: 700;" class="${pos.price_stale ? 'val-stale' : pnlClass}">${formatPnL(pos.unrealized_pnl)}</td>
                     </tr>
                     `;
                 });
@@ -707,29 +1091,25 @@
                 botsBody.innerHTML = html;
             }
 
-            // Update Market Breadth Radial Gauge
+            // Screener snapshot freshness
             const scanner = data.scanner || {};
-            const ratio = scanner.market_bullish_ratio || 0.0;
-            const pct = Math.round(ratio * 100);
-            
-            document.getElementById('gauge-pct').textContent = pct + "%";
-            
-            // stroke-dasharray is 440 (circumference). offset is 440 * (1 - ratio)
-            const arc = document.getElementById('gauge-arc');
-            const offset = 440 * (1 - ratio);
-            arc.style.strokeDashoffset = offset;
 
-            const regimeStatus = document.getElementById('regime-status');
-            if (pct >= 60) {
-                regimeStatus.textContent = "📈 STRONG BULLISH MARKET TREND";
-                regimeStatus.style.color = "var(--accent-green)";
-            } else if (pct >= 40) {
-                regimeStatus.textContent = "⚖️ NEUTRAL CONSOLIDATION TREND";
-                regimeStatus.style.color = "var(--accent-blue)";
-            } else {
-                regimeStatus.textContent = "📉 CRITICAL BEARISH MARKET DOWNTREND";
-                regimeStatus.style.color = "var(--accent-red)";
+            // The scanner runs hourly under PM2 cron. Anything much older than
+            // that means the job stopped, which is actionable — so the threshold
+            // tracks the cadence rather than sitting a day out.
+            const SCANNER_STALE_AFTER = 3 * 3600;   // three missed runs
+            const scannerAgeEl = document.getElementById('scanner-age');
+            if (scannerAgeEl) {
+                const age = data.scanner_age_seconds;
+                if (age === null || age === undefined) {
+                    scannerAgeEl.innerHTML = `<span class="stale-note">⚠ no screener data — has scanner ever run?</span>`;
+                } else if (age > SCANNER_STALE_AFTER) {
+                    scannerAgeEl.innerHTML = `<span class="stale-note">⚠ ${formatAge(age)} old — scanner may have stopped (pm2 status scanner)</span>`;
+                } else {
+                    scannerAgeEl.textContent = ` • updated ${formatAge(age)} ago`;
+                }
             }
+
 
             // Update Scanner Grid Scoreboard Cards
             const results = scanner.results || [];
