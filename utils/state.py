@@ -491,6 +491,8 @@ class StateManager:
             exit_reason_friendly = "Take Profit Triggered"
         elif "BREAK_EVEN" in exit_reason:
             exit_reason_friendly = "Break-even Stop Triggered"
+        elif "TRAILING_STOP" in exit_reason:
+            exit_reason_friendly = "Trailing Stop Triggered"
         elif exit_reason == "STRATEGY":
             from config.settings import Settings
             if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
