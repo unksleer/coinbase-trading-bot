@@ -10,11 +10,16 @@ class SMACrossoverStrategy(BaseStrategy):
     """
     def __init__(self, short_window: int = 10, long_window: int = 30, min_spread_percent: float = 0.0,
                  rsi_filter_enabled: bool = False, rsi_period: int = 14, rsi_buy_min: float = 0.0, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
-                 ema_filter_enabled: bool = False, ema_period: int = 200):
+                 ema_filter_enabled: bool = False, ema_period: int = 200,
+                 max_spread_percent: float = 0.0):
         super().__init__(name=f"SMA_Crossover_{short_window}_{long_window}")
         self.short_window = short_window
         self.long_window = long_window
         self.min_spread_percent = min_spread_percent
+        # Upper bound on crossover separation. A crossover that has already
+        # pulled far apart is a move that mostly happened, and entering it
+        # leaves too little travel left to clear the round-trip fee. 0 disables.
+        self.max_spread_percent = max_spread_percent
         self.rsi_filter_enabled = rsi_filter_enabled
         self.rsi_period = rsi_period
         self.rsi_buy_min = rsi_buy_min
@@ -109,12 +114,15 @@ class SMACrossoverStrategy(BaseStrategy):
             # 1. Spread filter
             if self.min_spread_percent > 0.0 and self.last_spread_percent < self.min_spread_percent:
                 signal, blocked_by = "HOLD", "SPREAD"
-            # 2. RSI filter
+            # 2. Spread ceiling — crossover already too extended to be worth entering
+            elif self.max_spread_percent > 0.0 and self.last_spread_percent > self.max_spread_percent:
+                signal, blocked_by = "HOLD", "SPREAD_MAX"
+            # 3. RSI filter
             elif self.rsi_filter_enabled and curr_rsi is not None and (
                 curr_rsi > self.rsi_buy_max or curr_rsi < self.rsi_buy_min
             ):
                 signal, blocked_by = "HOLD", "RSI"
-            # 3. EMA trend filter
+            # 4. EMA trend filter
             elif self.ema_filter_enabled and curr_ema is not None and closes.iloc[-1] <= curr_ema:
                 signal, blocked_by = "HOLD", "EMA"
 
