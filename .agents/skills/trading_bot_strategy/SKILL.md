@@ -19,27 +19,45 @@ description: >
 | Setting | Value | Reason |
 |---|---|---|
 | Granularity | ONE_HOUR | Only timeframe with moves large enough to clear fees |
-| Fee rate | 0.60% (FEE_RATE_PERCENT=0.60) | Actual Coinbase Advanced Trade taker fee |
-| Roundtrip cost | 1.20% | Need avg gross move ≥3.6% to be profitable |
+| Fee rate | 0.60%/side (`FEE_RATE_PERCENT=0.60`) | Coinbase tier-1 **maker** rate. The bot places `limit_order_gtc`, so this is the normal path. The market-order exit fallback pays the **taker** rate of 1.20%. |
+| Roundtrip cost | **1.207% measured** across 51 sim trades | A trade must clear this gross to net anything. Current average gross move is 0.861% — structurally underwater. |
 | SMA baseline | Short=5, Long=30 | 5h/30h crossover on hourly data |
 | BTC SMA | Short=8, Long=21 | Separately tuned via historical backtest |
 | Stop-loss | 5% | 3% too tight for 1h noise |
 | Take-profit | 8% (BTC: 10%) | Realistic 1h trend target clearing fees |
+| Trailing stop | 1.5% trail, arms at +1.5% | Was 3.0%/2.0%, which needed a ~4.3% peak to break even and never fired once in 51 trades. Hourly ATR is 1.4–2.2%, so the trail cannot go below that without firing on noise. |
 | EMA200 filter | ON for CONSERVATIVE, OFF for SIM | See Profiles section |
-| RSI range | [30-70] for SIM, [40-70] for CONSERVATIVE | |
+| RSI buy band | **[30-55] SIM, [40-55] CONSERVATIVE** | Ceiling lowered from 70 on 2026-08-24. RSI ≥55 entries lost $4.11 over 24 trades at a 12% win rate. |
+| Separation ceiling | `SMA_MAX_SPREAD_PERCENT`, unset (disabled) | Rejects a crossover that has already extended. BUY only. |
+
+**Hourly noise floor:** ATR is 1.4–2.2% of price per candle. Any threshold tighter
+than that fires on noise rather than signal. This is the constraint behind the
+trailing-stop and take-profit values, and the reason sub-hourly granularity was
+abandoned.
 
 ## Profile Assignments
 
-| Bot | Profile | EMA Filter | RSI Min | Purpose |
+| Bot | Profile | EMA Filter | RSI Band | Purpose |
 |---|---|---|---|---|
-| btc-bot | CONSERVATIVE | ON | 40 | Live-adjacent, full protection |
-| near-bot | CONSERVATIVE | ON | 40 | Closest sim to graduation |
-| sol-bot | SIM | OFF | 30 | Data collection |
-| sui-bot | SIM | OFF | 30 | Data collection |
-| xrp-bot | SIM | OFF | 30 | Data collection |
-| etc-bot | SIM | OFF | 30 | Data collection |
-| link-bot | SIM | OFF | 30 | Data collection |
-| render-bot | SIM | OFF | 30 | Data collection |
+| btc-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
+| eth-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
+| near-bot | CONSERVATIVE | ON | 40–55 | Live-adjacent, full protection |
+| ada-bot | SIM | OFF | 30–55 | Data collection |
+| link-bot | SIM | OFF | 30–55 | Data collection |
+| render-bot | SIM | OFF | 30–55 | Data collection |
+| sol-bot | SIM | OFF | 30–55 | Data collection |
+| sui-bot | SIM | OFF | 30–55 | Data collection |
+| xrp-bot | SIM | OFF | 30–55 | Data collection |
+| spy/qqq/lpl-bot | STOCK | — | 40–70 | Alpaca paper, commission-free |
+
+> `etc-bot` no longer exists. The three stock bots trade a different venue with
+> no commission, so never average their results into crypto fee analysis.
+
+> **⚠ CONSERVATIVE cannot trade.** `CONSERVATIVE_SMA_MIN_SPREAD_PERCENT=0.25`
+> requires separation only 1 of 51 recorded entries ever reached, so btc/eth/near
+> almost never enter. The learner reports this explicitly when every parameter
+> combination yields too few trades to evaluate. Loosen it before reading
+> anything into those coins' results.
 
 ## Auto-Learner: How to Diagnose
 
@@ -147,16 +165,60 @@ The learner checks this every night and sends an email alert if met. **Never man
 
 ### Fee rate bug
 - `FEE_RATE_PERCENT=1.20` was set to the old Coinbase Pro rate
-- Actual Coinbase Advanced Trade fee is 0.60% taker
+- Coinbase Advanced Trade tier-1 is 0.60% **maker** (the bot's normal path via
+  `limit_order_gtc`); 1.20% is the **taker** rate, paid only on the market-order
+  exit fallback
 - All backtests and sims ran against double the real cost for weeks
 - Fixed: `FEE_RATE_PERCENT=0.60`
+
+## Silent Failures Found 2026-08-24
+
+Four things were broken in ways that produced no error and looked like normal
+operation. Worth pattern-matching against before trusting any component.
+
+### The learner optimised a strategy the bot doesn't run
+`quick_backtest` modelled only crossover + SL/TP/trailing. The bot also applies
+RSI, separation and EMA filters. Every recommendation was scored against the
+wrong strategy. Fixed: the backtest now applies the full BUY chain, and config
+is threaded from `.env` instead of defaulted. A parity test asserts the two
+agree on every crossover candle.
+
+### BTC, ETH and ADA were never optimised
+Their `-USDC` products return HTTP 200 with an **empty candle list**, not 404,
+so the `-USD` fallback never fired. They were skipped every run, silently.
+Coverage was 6 coins, not 9. **Any Coinbase `-USDC` fetch needs the `-USD`
+fallback on empty-200 as well as 404.**
+
+### The dashboard reported a loss that did not exist
+Position P&L came from the scanner file, which had gone 34 days without an
+update because `scanner.py` was never scheduled. LINK showed −$2.56 against a
+live price making it −$0.22. Coins absent from the file fell back to entry price
+and showed exactly $0.00 unrealized. Fixed: live → candle → entry resolution
+with source and age attached to every price.
+
+### The market-regime filter had never fired
+`MIN_BULLISH_MARKET_RATIO=0.35` read that same dead file, so the ratio was
+pinned at 1.0 and the gate passed every time. **Removed**, along with the
+dashboard gauge showing "100% bullish". A risk control that cannot fire is worse
+than none, because it implies protection that is absent. If restored, it needs a
+staleness check that fails closed.
+
+## Instrumentation
+
+| Source | Use |
+|---|---|
+| `logs/signal_log_<pair>.csv` | Every candle decision incl. `blocked_by`. The only place an over-tight filter is visible — in the trade ledger it looks identical to a quiet market. |
+| `analyze_entries.py` | Which entry conditions produce follow-through vs the measured fee floor, per pair. |
+| Dashboard Signal Funnel | Crossovers seen → blocked by which filter → entries taken. |
+| Dashboard waterfall | Gross vs fees vs net. Distinguishes a cost problem from a signal problem. |
 
 ## PM2 Process Names
 
 | Process | Function |
 |---|---|
-| btc-bot | BTC-USDC live-adjacent sim |
-| sol-bot, sui-bot, xrp-bot | SIM profile altcoin bots |
-| etc-bot, link-bot, near-bot, render-bot | SIM profile altcoin bots |
-| learner | auto_learner.py — cron 0 4 * * * |
-| dashboard | Web dashboard server |
+| btc-bot, eth-bot, near-bot | CONSERVATIVE profile |
+| ada-bot, link-bot, render-bot, sol-bot, sui-bot, xrp-bot | SIM profile altcoin bots |
+| spy-bot, qqq-bot, lpl-bot | Alpaca stock paper bots |
+| learner | auto_learner.py — cron `0 4 * * *`, `--no-autorestart` |
+| scanner | scanner.py — cron `5 * * * *`, `--no-autorestart` |
+| dashboard | Web dashboard server, port 8080 |

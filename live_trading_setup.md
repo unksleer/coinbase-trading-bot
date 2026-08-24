@@ -29,12 +29,12 @@ COINBASE_API_SECRET="your_full_pem_private_key_here"
 # Live Trading Configuration
 DRY_RUN=False
 
-# Trade Amount (Safety margin: $95 or $98 to cover taker fees of ~0.6%)
+# Trade Amount (leave headroom for fees: 0.60% maker, 1.20% taker per side)
 TRADE_AMOUNT_USD=95.0
 ```
 
 > [!WARNING]
-> Keep `TRADE_AMOUNT_USD` slightly below your total cash balance (e.g. `$95.00` instead of exactly `$100.00`). If you set it to exactly `$100.00`, the order will fail if you do not have extra cash to cover Coinbase's execution fees (~$0.60).
+> Keep `TRADE_AMOUNT_USD` slightly below your total cash balance (e.g. `$95.00` instead of exactly `$100.00`). If you set it to exactly `$100.00`, the order will fail if you do not have extra cash to cover Coinbase's execution fee (0.60% maker, or 1.20% if the order fills as taker).
 
 ---
 

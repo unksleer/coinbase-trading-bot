@@ -29,8 +29,11 @@ This bot is engineered with strict production safety safeguards to protect capit
 * **Instant Trade Shortcut**: Launch live trading bots for any cryptocurrency instantly with a single command using the [`trade.sh`](file:///home/leeunks/coinbase-trading-bot/trade.sh) script.
 * **Coin-Specific Overrides**: Finetune trading settings per asset directly in [.env](file:///home/leeunks/coinbase-trading-bot/.env) (e.g. `SOL_SMA_SHORT_WINDOW=12`).
 * **ATR-Based Risk Management**: Set volatility-adapted stops (e.g., 3.0x ATR Stop Loss / 6.0x ATR Take Profit) instead of static percentages.
-* **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py)) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)).
+* **Stock & Crypto Screeners**: Run screeners for both crypto pairs ([`scanner.py`](file:///home/leeunks/coinbase-trading-bot/scanner.py), hourly under PM2 cron) and stocks ([`stock_scanner.py`](file:///home/leeunks/coinbase-trading-bot/stock_scanner.py)).
 * **Email PnL Statements**: Integrated daily HTML report ([`daily_pnl_report.py`](file:///home/leeunks/coinbase-trading-bot/daily_pnl_report.py)) summarizes realized and unrealized performance for all online bots.
+* **Full Signal Audit Trail**: Every candle decision — accepted, or rejected with the reason — is written to `logs/signal_log_<pair>.csv`. Filters that block good setups are invisible in the trade ledger; this is where they show up.
+* **Edge Analysis Dashboard**: Separates gross edge from fee drag, breaks exits down by reason, and measures how many entries ever travelled far enough to cover the round trip. See [Dashboard](#-dashboard) below.
+* **Entry Quality Tooling**: [`analyze_entries.py`](file:///home/leeunks/coinbase-trading-bot/analyze_entries.py) reports which entry conditions produce follow-through against the measured fee floor, with a per-pair breakdown so a result carried by one lucky coin is visible as such.
 
 ## 🧠 Auto-Learner Architecture (`auto_learner.py`)
 
@@ -38,8 +41,35 @@ A core component of this system is the nightly auto-learner. Instead of guessing
 
 1. **Diagnose**: Reads the actual sim trade history (`completed_trades_*_dry.csv`) and classifies a specific failure mode (e.g., `WHIPSAW`, `SL_TOO_TIGHT`, `TP_TOO_LOOSE`).
 2. **Adapt**: Adjusts the grid search parameter bounds specifically to fix the diagnosed failure mode (e.g., searching for much longer SMA windows if whipsawing). It skips any parameter combinations that historically failed.
-3. **Decide**: Runs a backtest and only updates the live `.env` configuration if the new parameters beat the current ones by ≥5% and are net profitable. 
+3. **Decide**: Backtests candidates across two unseen validation folds and records an evidence-backed recommendation. Under the default `LEARNER_MODE=ADVISORY` it **cannot** edit `.env` or restart bots — see the review workflow below.
 4. **Graduate**: Evaluates sim coins. A coin is only promoted to live trading when it meets strict criteria over ≥20 trades (Win rate ≥ 55%, Net PnL > $0, Worst trade ≥ -$2.50).
+
+### Backtest fidelity
+
+The learner's verdicts are only meaningful if it simulates the strategy the bot
+actually trades. `quick_backtest` applies the bot's full BUY filter chain —
+separation floor and ceiling, RSI band, EMA trend — in the same order and with
+the same RSI maths as [`strategies/simple_moving_average.py`](file:///home/leeunks/coinbase-trading-bot/strategies/simple_moving_average.py).
+Exit and filter settings are read from `.env` through the same
+coin → profile → base resolution the bot uses, and logged on every run:
+
+```
+Exit regime from .env: trailing 1.5% (arms at +1.5%)
+Entry filters from .env: RSI 30.0-55.0 (p14)
+```
+
+A parity test drives identical price data through both the live strategy and the
+backtest filter and asserts they agree on every crossover candle, so the two
+cannot drift apart silently.
+
+When entry filters block nearly every crossover, the learner says so directly
+rather than reporting an empty result:
+
+```
+All 480 combos produced <5 trades in the training window. The entry filters
+(sep>=0.25%, RSI 40.0-55.0 (p14), price>EMA200) are blocking nearly every
+crossover, so no parameter set can be evaluated.
+```
 
 ---
 
@@ -87,6 +117,45 @@ Close an open position manually under lock safety. Targets dry-run files by defa
 .venv/bin/python view_analytics.py
 ```
 
+### 5. Entry Quality Analysis (`analyze_entries.py`)
+
+Reports which entry conditions actually produce follow-through. Because every
+round trip costs a fixed percentage in fees, an entry whose price never travels
+further than that fee is a guaranteed loss regardless of how the exit is tuned.
+
+```bash
+.venv/bin/python analyze_entries.py
+
+# Evaluate a different candidate filter
+.venv/bin/python analyze_entries.py --rsi-low 45 --rsi-high 60 --max-sma-sep 0.15
+```
+
+Buckets entries by RSI and crossover separation, shows the share that cleared
+the fee floor, and breaks a candidate filter down per pair — a filter that looks
+profitable overall but is carried by one lucky coin is not a filter. It flags
+its own sample size when a result rests on too few trades to trust.
+
+### 6. Scheduled Jobs (PM2 cron)
+
+Both run once per firing and then stop; `--no-autorestart` is required or PM2
+will treat the exit as a crash and restart them in a loop.
+
+```bash
+# Nightly learner (04:00)
+pm2 start auto_learner.py --name learner --interpreter .venv/bin/python \
+    --cron "0 4 * * *" --no-autorestart
+
+# Hourly market screener (:05 past the hour)
+pm2 start scanner.py --name scanner --interpreter .venv/bin/python \
+    --cron "5 * * * *" --no-autorestart
+
+pm2 save    # persist across reboot
+```
+
+The screener writes `logs/market_metrics.json`, which backs the dashboard's
+Screener Scoreboard. The dashboard warns if that file goes more than three hours
+stale, since that means the job stopped.
+
 ### Learner V2 review workflow
 
 The nightly learner defaults to `LEARNER_MODE=ADVISORY`. It can analyze and
@@ -103,6 +172,37 @@ email recommendations, but it cannot edit `.env` or restart bots.
 Applying approvals additionally requires `LEARNER_MODE=APPLY_APPROVED`.
 Approvals never enable live trading and do not bypass the normal graduation
 criteria.
+
+---
+
+## 📊 Dashboard
+
+`pm2 start dashboard.py` serves on port 8080. Beyond live positions and process
+status, it answers whether the strategy is working — as opposed to what it is
+doing right now:
+
+| Panel | What it answers |
+| :--- | :--- |
+| **Where the Money Goes** | Gross edge − fees = net, with the measured per-trade fee floor. A strategy can pick direction well and still lose if the round trip costs more than the move it captures; shown as separate cards that subtraction is left to the reader. |
+| **Cumulative Net P&L** | The only view with a time axis. Mark `.env` changes against it to see whether a change helped. |
+| **Exits by Reason** | Count and average net per exit path. Warns when one reason dominates and loses. |
+| **Entry Follow-Through** | How many entries ever moved far enough to cover the round trip, against the fee floor. |
+| **Signal Funnel** | Crossovers seen → blocked by which filter → entries taken. An over-tight filter is invisible in the trade ledger, where it looks identical to a quiet market. |
+| **Go-Live Readiness** | Per-coin progress against all four graduation criteria, closest first. Thresholds are imported from `auto_learner.py` rather than restated, so the display cannot drift from the gate. |
+
+### Price provenance
+
+Position P&L is only as trustworthy as the price behind it. Prices resolve
+**live ticker → the bot's last closed candle → entry price**, and every price
+carries its source and age. Non-live prices are badged, and P&L derived from a
+stale price renders grey rather than red or green, so it is never mistaken for a
+confirmed gain or loss.
+
+This matters: prices previously came from the screener file, which had gone 34
+days without an update. An open LINK position was reported at a stale $8.68
+against a live $11.51 — a $2.56 loss that did not exist. Coins missing from that
+file fell back to entry price and showed exactly $0.00 unrealized, which reads
+as a real value rather than a missing one.
 
 ---
 
@@ -126,3 +226,15 @@ CONSECUTIVE_LOSS_COOLDOWN_SECONDS=3600 # Loss cooldown duration in seconds.
 STALE_MARKET_DATA_CUTOFF_SECONDS=300  # Cutoff age for stale market candles.
 REPEATED_API_ERROR_LIMIT=5            # Error limit before circuit breaker trips.
 ```
+
+Strategy parameters — SMA windows, the RSI band, separation bounds, stops and
+the trailing stop — are documented per profile in
+[`trading_profiles.md`](file:///home/leeunks/coinbase-trading-bot/trading_profiles.md),
+along with why the fee floor drives several of those values.
+
+> **Removed:** `MIN_BULLISH_MARKET_RATIO` gated buys on a market-breadth ratio
+> read from `logs/market_metrics.json`. That file had gone 34 days without an
+> update, pinning the ratio at `1.0` against a `0.35` threshold, so the gate had
+> never blocked a single trade. It was removed rather than left implying a
+> protection that was absent. The scanner now runs hourly (see §6 above); if you
+> want breadth gating back, restore it with a staleness check that fails closed.
