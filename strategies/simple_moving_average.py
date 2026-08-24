@@ -28,6 +28,7 @@ class SMACrossoverStrategy(BaseStrategy):
         self.last_spread_percent = None
         self.last_rsi = None
         self.last_ema = None
+        self.last_decision = {}
 
     def get_required_candles_count(self) -> int:
         required = self.long_window + 2
@@ -43,6 +44,7 @@ class SMACrossoverStrategy(BaseStrategy):
         Assumes the DataFrame is sorted by time in ascending order (oldest to newest).
         """
         if len(df) < self.get_required_candles_count():
+            self._record_decision("HOLD", "HOLD", "INSUFFICIENT_DATA", insufficient_data=True)
             return "HOLD"
 
         # Ensure 'close' column is numeric
@@ -61,6 +63,7 @@ class SMACrossoverStrategy(BaseStrategy):
 
         # Check if any values are NaN
         if pd.isna(prev_short) or pd.isna(curr_short) or pd.isna(prev_long) or pd.isna(curr_long):
+            self._record_decision("HOLD", "HOLD", "INSUFFICIENT_DATA", insufficient_data=True)
             return "HOLD"
 
         # Store basic SMA values for external access
@@ -98,34 +101,51 @@ class SMACrossoverStrategy(BaseStrategy):
         elif prev_short > prev_long and curr_short < curr_long:
             signal = "SELL"
 
+        raw_signal = signal
+        blocked_by = ""
+
         # Apply filters to signal
         if signal == "BUY":
             # 1. Spread filter
-            if self.min_spread_percent > 0.0:
-                if self.last_spread_percent < self.min_spread_percent:
-                    return "HOLD"
+            if self.min_spread_percent > 0.0 and self.last_spread_percent < self.min_spread_percent:
+                signal, blocked_by = "HOLD", "SPREAD"
             # 2. RSI filter
-            if self.rsi_filter_enabled and curr_rsi is not None:
-                if curr_rsi > self.rsi_buy_max or curr_rsi < self.rsi_buy_min:
-                    return "HOLD"
+            elif self.rsi_filter_enabled and curr_rsi is not None and (
+                curr_rsi > self.rsi_buy_max or curr_rsi < self.rsi_buy_min
+            ):
+                signal, blocked_by = "HOLD", "RSI"
             # 3. EMA trend filter
-            if self.ema_filter_enabled and curr_ema is not None:
-                if closes.iloc[-1] <= curr_ema:
-                    return "HOLD"
+            elif self.ema_filter_enabled and curr_ema is not None and closes.iloc[-1] <= curr_ema:
+                signal, blocked_by = "HOLD", "EMA"
 
         elif signal == "SELL":
             # 1. Spread filter
-            if self.min_spread_percent > 0.0:
-                if self.last_spread_percent < self.min_spread_percent:
-                    return "HOLD"
+            if self.min_spread_percent > 0.0 and self.last_spread_percent < self.min_spread_percent:
+                signal, blocked_by = "HOLD", "SPREAD"
             # 2. RSI filter
-            if self.rsi_filter_enabled and curr_rsi is not None:
-                if curr_rsi < self.rsi_sell_min:
-                    return "HOLD"
+            elif self.rsi_filter_enabled and curr_rsi is not None and curr_rsi < self.rsi_sell_min:
+                signal, blocked_by = "HOLD", "RSI"
             # 3. EMA trend filter
-            if self.ema_filter_enabled and curr_ema is not None:
-                if closes.iloc[-1] >= curr_ema:
-                    return "HOLD"
+            elif self.ema_filter_enabled and curr_ema is not None and closes.iloc[-1] >= curr_ema:
+                signal, blocked_by = "HOLD", "EMA"
 
+        self._record_decision(raw_signal, signal, blocked_by)
         return signal
 
+    def _record_decision(self, raw_signal: str, final_signal: str, blocked_by: str = "",
+                         insufficient_data: bool = False):
+        """
+        Store why this evaluation produced the signal it did, so the bot can log
+        rejected crossovers alongside accepted ones.
+        """
+        self.last_decision = {
+            "raw_signal": raw_signal,
+            "final_signal": final_signal,
+            "blocked_by": blocked_by,
+            "sma_short": self.last_short,
+            "sma_long": self.last_long,
+            "spread_pct": self.last_spread_percent,
+            "rsi": self.last_rsi,
+            "ema": self.last_ema,
+            "insufficient_data": insufficient_data,
+        }

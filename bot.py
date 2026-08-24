@@ -26,6 +26,7 @@ from utils.order_journal import (
     STATE_UNKNOWN
 )
 from utils.risk_engine import RiskEngine, RiskLimitViolation
+from utils.signal_log import SignalLogger
 
 # Initialize logger
 logger = setup_logger(name="coinbase_bot", log_file="logs/bot.log")
@@ -276,6 +277,8 @@ def main():
             ema_period=Settings.EMA_TREND_PERIOD
         )
     logger.info(f"Strategy initialized: {strategy.name}")
+    signal_logger = SignalLogger(Settings.TRADING_PAIR)
+    logger.info(f"Signal decisions logged to {signal_logger.path}")
     required_candles = strategy.get_required_candles_count()
     logger.info(f"Strategy requires at least {required_candles} historical candles.")
     
@@ -378,6 +381,26 @@ def main():
                 signal = strategy.evaluate(df_completed)
                 logger.info(f"Strategy evaluation signal (on closed candle): {signal} (Current Position: {state_manager.state['position']})")
 
+                # Record the decision, including crossovers the filters rejected.
+                # Accepted signals become trades and show up in completed_trades_*.csv;
+                # rejected ones are invisible without this log.
+                decision = getattr(strategy, "last_decision", {}) or {}
+                try:
+                    closed_candle = df_completed.iloc[-1]
+                    closed_candle_time = datetime.utcfromtimestamp(int(closed_candle['start'])).isoformat() + "Z"
+                    if signal_logger.record(
+                        candle_time=closed_candle_time,
+                        close=float(closed_candle['close']),
+                        position=state_manager.state["position"],
+                        decision=decision,
+                    ) and decision.get("blocked_by") not in ("", None, "INSUFFICIENT_DATA"):
+                        logger.info(
+                            f"Signal rejected by filter: {decision.get('raw_signal')} "
+                            f"blocked by {decision.get('blocked_by')} on candle {closed_candle_time}"
+                        )
+                except Exception as sig_err:
+                    logger.warning(f"Could not record signal decision: {sig_err}")
+
                 # Log indicator values for real-time diagnostics
                 short_val = getattr(strategy, "last_short", None)
                 long_val = getattr(strategy, "last_long", None)
@@ -420,38 +443,47 @@ def main():
                     entry_atr = state_manager.state.get("entry_indicators", {}).get("atr", None)
                     atr_threshold = entry_atr if entry_atr is not None else atr_val
 
-                    # Stops check
+                    # Stops check.
+                    # ATR stops replace their percentage equivalent when configured.
+                    # The price comparison belongs in the elif condition itself: if it
+                    # sits inside the branch body, an armed-but-untriggered ATR stop
+                    # consumes the chain and the later take-profit and trailing-stop
+                    # checks never run.
+                    use_atr_sl = Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None
+                    use_atr_tp = Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None
+                    atr_sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold) if use_atr_sl else None
+                    atr_tp_price = entry_price + (Settings.TAKE_PROFIT_ATR_MULTIPLE * atr_threshold) if use_atr_tp else None
+                    trailing_armed = (Settings.TRAILING_STOP_PERCENT > 0.0
+                                      and Settings.TRAILING_STOP_ACTIVATION_PERCENT > 0.0
+                                      and price_change_percent >= Settings.TRAILING_STOP_ACTIVATION_PERCENT)
+                    trailing_stop_price = (highest_price * (1.0 - Settings.TRAILING_STOP_PERCENT / 100.0)
+                                           if trailing_armed else None)
+
                     if break_even_active and latest_price <= net_breakeven_price:
                         signal = "SELL"
                         sell_reason = f"BREAK_EVEN (Price fell to break-even price ${net_breakeven_price:.4f})"
-                    elif Settings.STOP_LOSS_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
-                        sl_price = entry_price - (Settings.STOP_LOSS_ATR_MULTIPLE * atr_threshold)
-                        if latest_price <= sl_price:
-                            signal = "SELL"
-                            sell_reason = f"STOP_LOSS_ATR (Price fell below ${sl_price:.2f})"
-                    elif Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
+                    elif use_atr_sl and latest_price <= atr_sl_price:
+                        signal = "SELL"
+                        sell_reason = f"STOP_LOSS_ATR (Price fell below ${atr_sl_price:.2f})"
+                    elif (not use_atr_sl) and Settings.STOP_LOSS_PERCENT > 0.0 and price_change_percent <= -Settings.STOP_LOSS_PERCENT:
                         signal = "SELL"
                         sell_reason = f"STOP_LOSS (Price fell {price_change_percent:.2f}% below entry ${entry_price:.2f})"
-                    elif Settings.TAKE_PROFIT_ATR_MULTIPLE > 0.0 and atr_threshold is not None:
-                        tp_price = entry_price + (Settings.TAKE_PROFIT_ATR_MULTIPLE * atr_threshold)
-                        if latest_price >= tp_price:
-                            signal = "SELL"
-                            sell_reason = f"TAKE_PROFIT_ATR (Price rose above ${tp_price:.2f})"
-                    elif Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
+                    elif use_atr_tp and latest_price >= atr_tp_price:
+                        signal = "SELL"
+                        sell_reason = f"TAKE_PROFIT_ATR (Price rose above ${atr_tp_price:.2f})"
+                    elif (not use_atr_tp) and Settings.TAKE_PROFIT_PERCENT > 0.0 and price_change_percent >= Settings.TAKE_PROFIT_PERCENT:
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                     # Trailing stop: activates once price has risen enough, then sells if it drops back
-                    elif Settings.TRAILING_STOP_PERCENT > 0.0 and Settings.TRAILING_STOP_ACTIVATION_PERCENT > 0.0:
-                        if price_change_percent >= Settings.TRAILING_STOP_ACTIVATION_PERCENT:
-                            trailing_stop_price = highest_price * (1.0 - Settings.TRAILING_STOP_PERCENT / 100.0)
-                            if latest_price <= trailing_stop_price:
-                                signal = "SELL"
-                                sell_reason = f"TRAILING_STOP (Peak=${highest_price:.4f}, trail={Settings.TRAILING_STOP_PERCENT}%, trigger=${trailing_stop_price:.4f})"
-                            else:
-                                logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}")
+                    elif trailing_armed and latest_price <= trailing_stop_price:
+                        signal = "SELL"
+                        sell_reason = f"TRAILING_STOP (Peak=${highest_price:.4f}, trail={Settings.TRAILING_STOP_PERCENT}%, trigger=${trailing_stop_price:.4f})"
                     elif Settings.DISABLE_BUYS and net_pl_pct >= 0.0:
                         signal = "SELL"
                         sell_reason = "EXIT_ONLY_BREAK_EVEN"
+
+                    if trailing_armed and signal != "SELL":
+                        logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}")
 
                     # If strategy requested SELL, verify strategy exits aren't disabled
                     if signal == "SELL" and sell_reason == "STRATEGY":

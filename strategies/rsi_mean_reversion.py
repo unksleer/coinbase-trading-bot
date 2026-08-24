@@ -27,6 +27,8 @@ class RSIMeanReversionStrategy(BaseStrategy):
 
     def evaluate(self, df: pd.DataFrame) -> str:
         if len(df) < self.get_required_candles_count():
+            self.last_decision = {"raw_signal": "HOLD", "final_signal": "HOLD",
+                                  "blocked_by": "INSUFFICIENT_DATA", "insufficient_data": True}
             return "HOLD"
 
         closes = pd.to_numeric(df['close'])
@@ -54,5 +56,12 @@ class RSIMeanReversionStrategy(BaseStrategy):
         # SELL when RSI falls back below the overbought line (indicating downward momentum shift)
         elif prev_rsi > self.rsi_overbought and curr_rsi <= self.rsi_overbought:
             signal = "SELL"
-            
+
+        # This strategy has no post-crossover filters, so raw and final always agree.
+        self.last_decision = {
+            "raw_signal": signal,
+            "final_signal": signal,
+            "blocked_by": "",
+            "rsi": curr_rsi,
+        }
         return signal
