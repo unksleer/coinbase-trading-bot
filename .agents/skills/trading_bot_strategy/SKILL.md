@@ -21,10 +21,10 @@ description: >
 | Granularity | ONE_HOUR | Only timeframe with moves large enough to clear fees |
 | Fee rate | 0.60%/side (`FEE_RATE_PERCENT=0.60`) | Coinbase tier-1 **maker** rate. The bot places `limit_order_gtc`, so this is the normal path. The market-order exit fallback pays the **taker** rate of 1.20%. |
 | Roundtrip cost | **1.207% measured** across 51 sim trades | A trade must clear this gross to net anything. Current average gross move is 0.861% — structurally underwater. |
-| SMA baseline | Short=5, Long=30 | 5h/30h crossover on hourly data |
-| BTC SMA | Short=8, Long=21 | Separately tuned via historical backtest |
+| SMA | Short=5, Long=30, **all nine coins** | Per-coin overrides commented out 2026-08-24. They were hand-set, never learner-derived. Identical settings make coins comparable — otherwise you cannot tell a coin difference from a config difference. |
+| Trade size | $10, **all nine coins** | Equal weighting; no coin is privileged, BTC included. |
 | Stop-loss | 5% | 3% too tight for 1h noise |
-| Take-profit | 8% (BTC: 10%) | Realistic 1h trend target clearing fees |
+| Take-profit | 8% | Realistic 1h trend target clearing fees |
 | Trailing stop | 1.5% trail, arms at +1.5% | Was 3.0%/2.0%, which needed a ~4.3% peak to break even and never fired once in 51 trades. Hourly ATR is 1.4–2.2%, so the trail cannot go below that without firing on noise. |
 | EMA200 filter | ON for CONSERVATIVE, OFF for SIM | See Profiles section |
 | RSI buy band | **[30-55] SIM, [40-55] CONSERVATIVE** | Ceiling lowered from 70 on 2026-08-24. RSI ≥55 entries lost $4.11 over 24 trades at a 12% win rate. |
@@ -203,6 +203,27 @@ pinned at 1.0 and the gate passed every time. **Removed**, along with the
 dashboard gauge showing "100% bullish". A risk control that cannot fire is worse
 than none, because it implies protection that is absent. If restored, it needs a
 staleness check that fails closed.
+
+## Risk Model
+
+**All risk limits are per bot**, read from that bot's own state file. There is no
+cross-bot aggregation — portfolio exposure is the per-bot value × 9.
+
+| Setting | Per bot | × 9 |
+|---|---|---|
+| `MAX_VAL_PER_ORDER` | $15 | — |
+| `MAX_EXPOSURE_PER_PRODUCT` | $15 | $135 |
+| `MAX_DAILY_LOSS` | $3.00 | $27 |
+| `MAX_TRADES_PER_DAY` | 6 | 54 |
+
+At $10/trade, all nine holding deploys $90; all nine stopping out at once loses
+~$5.59. **Catastrophic loss is not the risk at this size — fee drag is.** 51
+trades have cost $6.13 in fees against a +$4.36 gross edge.
+
+**Never raise `TRADE_AMOUNT_USD` to chase returns.** Fees are a percentage, so
+scaling multiplies gross and fees equally; a negative-expectancy system just
+loses faster. Required before any increase: 30+ trades since the last change,
+positive net, positive on a majority of coins, and at least one graduated coin.
 
 ## Instrumentation
 

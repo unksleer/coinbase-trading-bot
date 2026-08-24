@@ -18,8 +18,24 @@ BTC, ETH and NEAR were moved from `CONSERVATIVE` to `SIM` on 2026-08-24. Under
 `CONSERVATIVE` they were taking 0, 0 and 1 entries per 1500 candles: the 0.25%
 separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
-three days. Their coin-specific SMA windows, stops and targets are unaffected,
-since coin keys outrank profile keys.
+three days.
+
+### All nine coins run identical parameters
+
+Per-coin overrides for `SMA_SHORT_WINDOW`, `SMA_LONG_WINDOW`, `STOP_LOSS_PERCENT`
+and `TAKE_PROFIT_PERCENT` were commented out on 2026-08-24. They were hand-set
+rather than learner-derived — the learner has never written to `.env`, having run
+in `ADVISORY` mode throughout.
+
+Nine coins on identical settings are nine clean samples of one strategy. Nine
+coins on different settings are one sample each of nine strategies: if SOL
+outperforms SUI you cannot tell whether that is the coin or the fact that SOL ran
+`15/60` while SUI ran `5/30`. During a learning phase, comparability is worth
+more than per-coin tuning fitted on a handful of trades.
+
+All nine now trade `$10` on `SMA 5/30`, `SL 5%`, `TP 8%`, `RSI 30–55`. The old
+values remain in `.env` as comments, and per-coin tuning is worth revisiting once
+the strategy has a proven edge to tune.
 
 ---
 
@@ -135,7 +151,46 @@ pm2 restart all
 
 ## 6. Hardened Risk Controls
 
-Available per profile and per coin prefix:
+**Every limit is enforced per bot**, against that bot's own state file
+([utils/risk_engine.py](file:///home/leeunks/coinbase-trading-bot/utils/risk_engine.py)
+reads `state["trades"]`). There is no cross-bot aggregation, so the portfolio
+figure is the per-bot value × the number of running bots — nine currently.
+
+| Setting | Per bot | × 9 bots | Rationale |
+| :--- | :---: | :---: | :--- |
+| `MAX_VAL_PER_ORDER` | `$15` | — | Above `TRADE_AMOUNT_USD=10` so it never binds, but a mistyped trade amount cannot place a large order. |
+| `MAX_EXPOSURE_PER_PRODUCT` | `$15` | `$135` | One position per coin at a time. |
+| `MAX_DAILY_LOSS` | `$3.00` | `$27` | Worst coin-day on record is −$0.63, so ~5× headroom. |
+| `MAX_TRADES_PER_DAY` | `6` | `54` | Churn circuit breaker. Busiest coin-day on record is 3 trades. |
+| `CONSECUTIVE_LOSS_COOLDOWN_TRADES` | `3` | — | Halts buying for 3 hours after three straight losses. |
+
+**Scale of risk at current sizing:** all nine holding simultaneously deploys
+`$90`. If every one stopped out at once — which has never happened — the loss is
+about `$5.59` (each position: `$0.50` stop + `$0.12` fees). Catastrophic loss is
+not the live risk at this size; fee drag is.
+
+### Scale-up rule
+
+Fees are a percentage of notional, so raising `TRADE_AMOUNT_USD` multiplies gross
+and fees equally. Scaling a negative-expectancy system loses money faster, not
+slower. Do not increase it until, on the **current** configuration:
+
+1. 30+ completed trades since the last parameter change
+2. Net P&L positive across those trades
+3. Positive on a majority of coins, not carried by one
+4. The learner graduates at least one coin
+
+Then raise in steps — `$10 → $25 → $50` — re-verifying all four at each step, and
+raise `MAX_VAL_PER_ORDER`, `MAX_EXPOSURE_PER_PRODUCT` and `MAX_DAILY_LOSS`
+alongside it.
+
+| Trade size | Fee/trade | 100 trades | Worst-case day (9 coins) |
+| :---: | :---: | :---: | :---: |
+| `$10` | `$0.12` | `$12` | `$5.59` |
+| `$50` | `$0.60` | `$60` | `$27.93` |
+| `$100` | `$1.21` | `$121` | `$55.86` |
+
+Other settings available per profile and per coin prefix:
 
 * **`MAX_VAL_PER_ORDER`** — maximum quote value per single order
 * **`MAX_EXPOSURE_PER_PRODUCT`** — maximum holding value per product
