@@ -42,7 +42,7 @@ A core component of this system is the nightly auto-learner. Instead of guessing
 1. **Diagnose**: Reads the actual sim trade history (`completed_trades_*_dry.csv`) and classifies a specific failure mode (e.g., `WHIPSAW`, `SL_TOO_TIGHT`, `TP_TOO_LOOSE`).
 2. **Adapt**: Adjusts the grid search parameter bounds specifically to fix the diagnosed failure mode (e.g., searching for much longer SMA windows if whipsawing). It skips any parameter combinations that historically failed.
 3. **Decide**: Backtests candidates across two unseen validation folds and records an evidence-backed recommendation. Under the default `LEARNER_MODE=ADVISORY` it **cannot** edit `.env` or restart bots — see the review workflow below.
-4. **Graduate**: Evaluates sim coins. A coin is only promoted to live trading when it meets strict criteria over ≥20 trades (Win rate ≥ 55%, Net PnL > $0, Worst trade ≥ -$2.50).
+4. **Graduate**: Evaluates sim coins against the five criteria in [`utils/graduation.py`](file:///home/leeunks/coinbase-trading-bot/utils/graduation.py) — ≥20 trades, win rate ≥55%, net P&L > $0, worst trade ≥ −$2.50, and per-trade Sharpe ≥ 0.35. Every criterion must pass; the weighted score out of 100 is for display only.
 
 ### Backtest fidelity
 
@@ -188,7 +188,7 @@ doing right now:
 | **Exits by Reason** | Count and average net per exit path. Warns when one reason dominates and loses. |
 | **Entry Follow-Through** | How many entries ever moved far enough to cover the round trip, against the fee floor. |
 | **Signal Funnel** | Crossovers seen → blocked by which filter → entries taken. An over-tight filter is invisible in the trade ledger, where it looks identical to a quiet market. |
-| **Go-Live Readiness** | Per-coin progress against all four graduation criteria, closest first. Thresholds are imported from `auto_learner.py` rather than restated, so the display cannot drift from the gate. |
+| **Go-Live Readiness** | Per-coin progress against all five graduation criteria, closest first. Evaluated by `utils/graduation.py` — the same code the nightly report renders and the promotion gate enforces, so one coin cannot show two readiness figures. |
 
 ### Price provenance
 

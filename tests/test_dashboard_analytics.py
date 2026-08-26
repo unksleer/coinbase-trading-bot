@@ -138,25 +138,67 @@ class GraduationTests(unittest.TestCase):
     def build(self, trades):
         return dashboard.DashboardHandler.build_graduation(trades)
 
-    def test_thresholds_come_from_the_learner_not_a_local_copy(self):
-        import auto_learner
+    def test_thresholds_come_from_the_shared_module(self):
+        from utils import graduation
         coins = self.build([trade(pnl_usd=1.0)])
         labels = " ".join(c["label"] for c in coins[0]["checks"])
-        self.assertIn(str(auto_learner.GRADUATION_MIN_TRADES), labels)
-        self.assertIn(f"{auto_learner.GRADUATION_MIN_WIN_RATE:.0f}", labels)
+        self.assertIn(str(graduation.MIN_TRADES), labels)
+        self.assertIn(f"{graduation.MIN_WIN_RATE:.0f}", labels)
+        self.assertIn(f"{graduation.MIN_SHARPE:.2f}", labels)
 
-    def test_all_four_criteria_are_reported(self):
+    def test_all_five_criteria_are_reported(self):
         coins = self.build([trade(pnl_usd=1.0)])
-        self.assertEqual(coins[0]["total"], 4)
-        self.assertEqual(len(coins[0]["checks"]), 4)
+        self.assertEqual(coins[0]["total"], 5)
+        self.assertEqual(len(coins[0]["checks"]), 5)
+
+    def test_dashboard_score_matches_the_nightly_report(self):
+        """
+        The bug this guards: the emailed report scored five criteria out of 100
+        while the dashboard counted four, so one coin showed two readiness
+        figures. Both must now render the same number.
+        """
+        import sim_report
+        pnls = [0.8, -0.2, 0.5, -0.1, 0.6]
+        trades = [trade(pnl_usd=p) for p in pnls]
+        report_score, _, report_ready = sim_report.graduation(
+            [{"pnl_usd": p} for p in pnls])
+        coin = self.build(trades)[0]
+        self.assertEqual(coin["score"], report_score)
+        self.assertEqual(coin["ready"], report_ready)
+
+    def test_promotion_gate_agrees_with_the_displayed_score(self):
+        """
+        check_graduation previously ignored Sharpe, so it could promote a coin
+        the emailed score showed as not ready.
+        """
+        from utils.graduation import evaluate
+        # Meets the four original criteria but returns are lumpy.
+        pnls = [2.40] * 12 + [-2.40] * 8
+        result = evaluate(pnls)
+        four_only = (len(pnls) >= 20
+                     and 100 * sum(1 for p in pnls if p > 0) / len(pnls) >= 55
+                     and sum(pnls) > 0 and min(pnls) >= -2.50)
+        self.assertTrue(four_only, "fixture should pass the four original checks")
+        self.assertFalse(result["criteria"][4]["passed"], "Sharpe should fail")
+        self.assertFalse(result["ready"], "gate must not promote on a failed criterion")
 
     def test_coin_meeting_every_criterion_is_ready(self):
-        import auto_learner
-        # 20 trades, 100% wins, positive net, no bad trade.
-        trades = [trade(pnl_usd=0.50) for _ in range(auto_learner.GRADUATION_MIN_TRADES)]
-        coin = self.build(trades)[0]
+        from utils import graduation
+        # 20 trades, 80% wins, positive net, consistent returns.
+        pnls = ([0.60, 0.55, 0.65, 0.50] * 4) + [-0.15] * 4
+        self.assertGreaterEqual(len(pnls), graduation.MIN_TRADES)
+        coin = self.build([trade(pnl_usd=p) for p in pnls])[0]
+        self.assertTrue(coin["ready"], coin["checks"])
+        self.assertEqual(coin["passed"], 5)
+        self.assertEqual(coin["score"], graduation.MAX_SCORE)
+
+    def test_identical_winning_trades_are_perfect_consistency_not_zero(self):
+        """Zero variance with a positive mean must not read as the worst case."""
+        from utils import graduation
+        self.assertEqual(graduation.per_trade_sharpe([0.5] * 20), float("inf"))
+        self.assertEqual(graduation.per_trade_sharpe([-0.5] * 20), float("-inf"))
+        coin = self.build([trade(pnl_usd=0.50) for _ in range(20)])[0]
         self.assertTrue(coin["ready"])
-        self.assertEqual(coin["passed"], 4)
 
     def test_too_few_trades_blocks_an_otherwise_perfect_coin(self):
         coin = self.build([trade(pnl_usd=0.50) for _ in range(3)])[0]

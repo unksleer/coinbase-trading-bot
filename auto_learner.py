@@ -90,13 +90,16 @@ MIN_VALIDATION_TRADES = 4
 MIN_STABILITY_PASS_RATE = 0.60
 MIN_REAL_TRADES_FOR_RECOMMENDATION = 20
 
-# Criteria a sim coin must meet before it is eligible for live trading.
-# Named so the dashboard can display progress against the same numbers the
-# learner gates on, rather than keeping a second copy that can drift.
-GRADUATION_MIN_TRADES = 20
-GRADUATION_MIN_WIN_RATE = 55.0
-GRADUATION_MIN_NET_PNL = 0.0
-GRADUATION_WORST_TRADE_FLOOR = -2.50
+# Graduation criteria live in utils/graduation.py. Re-exported here because
+# existing callers import them from this module.
+from utils.graduation import (
+    MIN_TRADES as GRADUATION_MIN_TRADES,
+    MIN_WIN_RATE as GRADUATION_MIN_WIN_RATE,
+    MIN_NET_PNL as GRADUATION_MIN_NET_PNL,
+    WORST_TRADE_FLOOR as GRADUATION_WORST_TRADE_FLOOR,
+    MIN_SHARPE as GRADUATION_MIN_SHARPE,
+    evaluate as evaluate_graduation,
+)
 
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
@@ -1020,21 +1023,18 @@ def check_graduation() -> list:
                         pass
         except Exception:
             continue
-        n = len(trades)
-        if n < GRADUATION_MIN_TRADES:
-            continue
-        wins     = sum(1 for p in trades if p > 0)
-        win_rate = wins / n * 100
-        net_pnl  = sum(trades)
-        worst    = min(trades)
-        if (win_rate >= GRADUATION_MIN_WIN_RATE
-                and net_pnl > GRADUATION_MIN_NET_PNL
-                and worst >= GRADUATION_WORST_TRADE_FLOOR):
+        # Same evaluation the nightly report and the dashboard display, so a
+        # coin cannot read "not ready" in the email while being promoted here.
+        result = evaluate_graduation(trades)
+        if result["ready"]:
             coin = (os.path.basename(fpath)
                     .replace("completed_trades_", "")
                     .replace("_dry.csv", ""))
-            ready.append({"coin": coin, "trades": n,
-                          "win_rate": win_rate, "net_pnl": net_pnl})
+            stats = result["stats"]
+            ready.append({"coin": coin, "trades": stats["trades"],
+                          "win_rate": stats["win_rate"],
+                          "net_pnl": stats["net_pnl"],
+                          "sharpe": stats["sharpe"]})
     return ready
 
 

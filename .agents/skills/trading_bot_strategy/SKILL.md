@@ -225,6 +225,35 @@ scaling multiplies gross and fees equally; a negative-expectancy system just
 loses faster. Required before any increase: 30+ trades since the last change,
 positive net, positive on a majority of coins, and at least one graduated coin.
 
+## Graduation (sim -> live)
+
+Defined once in `utils/graduation.py`. Five criteria, **all must pass**; the
+score out of 100 is display only.
+
+| Criterion | Threshold | Weight |
+|---|---|---|
+| Completed trades | ≥ 20 | 25 |
+| Win rate | ≥ 55% | 25 |
+| Net P&L | > $0 | 25 |
+| Worst single trade | ≥ −$2.50 | 15 |
+| Per-trade Sharpe | ≥ 0.35 | 10 |
+
+**This was three inconsistent implementations until 2026-08-26.**
+`check_graduation` gated promotion on four criteria, `sim_report.py` displayed a
+five-criterion score in the nightly email, and the dashboard counted four — so
+one coin showed two different readiness figures, and the gate that actually
+promotes was *weaker* than the score shown.
+
+The Sharpe check was also broken: it multiplied by `sqrt(252)`, the annualisation
+factor for daily returns, against per-trade P&L on positions held ~20 hours.
+That inflated every value 15.87x, so it passed whenever the mean was positive —
+duplicating the net-P&L criterion. The threshold of 0.35 is derived from the
+observed win/loss distributions: simulated 20-trade coins meeting the other four
+criteria have a median raw Sharpe of 0.515 and a 10th percentile of 0.270, so
+0.35 rejects the lumpiest fifth without blocking the median.
+
+**Never add a graduation criterion outside `utils/graduation.py`.**
+
 ## Instrumentation
 
 | Source | Use |

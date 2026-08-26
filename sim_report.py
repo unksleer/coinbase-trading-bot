@@ -16,11 +16,14 @@ import statistics
 from datetime import datetime
 
 # ── Graduation Criteria ────────────────────────────────────────────────────────
-MIN_TRADES      = 20      # Minimum completed round-trips
-MIN_WIN_RATE    = 55.0    # Win rate %
-MIN_NET_PNL     = 0.0     # Must be net profitable
-MAX_SINGLE_LOSS = -2.50   # No single trade worse than -$2.50
-MIN_SHARPE      = 0.5     # Sharpe ratio (rough estimate)
+# Defined once in utils/graduation.py so this report, the learner's promotion
+# gate and the dashboard cannot show different answers for the same coin.
+from utils.graduation import (
+    MIN_TRADES, MIN_WIN_RATE, MIN_NET_PNL, MIN_SHARPE, MAX_SCORE,
+    WORST_TRADE_FLOOR as MAX_SINGLE_LOSS,
+    evaluate as evaluate_graduation,
+    per_trade_sharpe,
+)
 
 # ── Compounding Stake Table ────────────────────────────────────────────────────
 STAKE_TABLE = [(0, 20, 10), (20, 50, 15), (50, 100, 20), (100, 200, 30), (200, float('inf'), 50)]
@@ -55,33 +58,12 @@ def load_trades(csv_path):
     return trades
 
 def compute_sharpe(pnls):
-    if len(pnls) < 2:
-        return 0.0
-    mean = statistics.mean(pnls)
-    std  = statistics.stdev(pnls)
-    return (mean / std) * (252 ** 0.5) if std > 0 else 0.0
+    """Per-trade risk-adjusted return. See utils.graduation.per_trade_sharpe."""
+    return per_trade_sharpe(pnls)
 
 def graduation(trades):
-    n = len(trades)
-    if n == 0:
-        return 0, ["No trades yet"], False
-    wins      = [t for t in trades if t["pnl_usd"] > 0]
-    net_pnl   = sum(t["pnl_usd"] for t in trades)
-    win_rate  = len(wins) / n * 100
-    worst     = min(t["pnl_usd"] for t in trades)
-    sharpe    = compute_sharpe([t["pnl_usd"] for t in trades])
-    score, reasons = 0, []
-    if n >= MIN_TRADES:              score += 25
-    else: reasons.append(f"Need {MIN_TRADES - n} more trades (have {n})")
-    if win_rate >= MIN_WIN_RATE:     score += 25
-    else: reasons.append(f"Win rate {win_rate:.1f}% < {MIN_WIN_RATE}% required")
-    if net_pnl > MIN_NET_PNL:        score += 25
-    else: reasons.append(f"Net P&L ${net_pnl:+.2f} not positive yet")
-    if worst >= MAX_SINGLE_LOSS:     score += 15
-    else: reasons.append(f"Worst trade ${worst:.2f} exceeds -$2.50 limit")
-    if sharpe >= MIN_SHARPE:         score += 10
-    else: reasons.append(f"Sharpe {sharpe:.2f} < {MIN_SHARPE} required")
-    return score, reasons, score >= 100
+    result = evaluate_graduation([t["pnl_usd"] for t in trades])
+    return result["score"], result["blockers"], result["ready"]
 
 def print_report(label, trades):
     n = len(trades)
@@ -127,7 +109,7 @@ def print_report(label, trades):
         stake = get_stake(max(net_pnl, 0))
         print(f"✅ READY FOR LIVE  →  ${stake}/trade next stake")
     else:
-        print(f"⏳ {score}/100 pts")
+        print(f"⏳ {score}/{MAX_SCORE} pts")
         for b in blockers:
             print(f"    ✗ {b}")
 
