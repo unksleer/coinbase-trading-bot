@@ -167,6 +167,34 @@ symbol, that enough history exists for the indicators, and a backtest of the
 configured strategy on that symbol against buy-and-hold. Registration starts the
 pm2 process, adds the ticker to `STOCK_WATCHLIST` and runs `pm2 save`.
 
+**Strategy selection.** `stock_bot.py` runs `STOCK_STRATEGY` (or
+`<TICKER>_STRATEGY`), one of:
+
+| value | entry | exit |
+| :--- | :--- | :--- |
+| `SMA_CROSSOVER` *(default)* | bullish SMA cross, RSI inside band | bearish SMA cross |
+| `RSI_MEAN_REVERSION` | RSI crosses **up** through `STOCK_RSI_OVERSOLD` | RSI crosses **down** through `STOCK_RSI_OVERBOUGHT` |
+
+Stops, targets, trailing stop and risk limits are shared, so the two differ only
+in entry and strategy exit. An unrecognised value refuses to start rather than
+falling back silently.
+
+Measured across 15 symbols out-of-sample, mean reversion was positive on both
+hourly and daily bars at every threshold tested (66–75% win rate) against
+crossover's 35–44%. Commission-free execution is why: it takes many small moves
+that a 1.2% fee would erase.
+
+**Nightly learning.** [`stock_learner.py`](file:///home/leeunks/coinbase-trading-bot/stock_learner.py)
+evaluates every watchlist ticker across both strategy classes, requires the
+winner to beat buy-and-hold and to be corroborated by its neighbouring settings,
+and is advisory only — it never edits `.env`. It runs as part of the nightly
+learner and its output is included in the emailed report.
+
+```bash
+.venv/bin/python stock_learner.py
+.venv/bin/python stock_learner.py --ticker NVDA --timeframe Day
+```
+
 Compare strategy classes across the watchlist with:
 
 ```bash

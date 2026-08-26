@@ -279,8 +279,19 @@ implement it; it is hardcoded to SMA crossover.
 Buy-and-hold still beats everything, but the sample covers a strong bull market
 (13/15 symbols positive holding).
 
+`stock_bot.py` supports both classes via `STOCK_STRATEGY` /
+`<TICKER>_STRATEGY`: `SMA_CROSSOVER` (default) or `RSI_MEAN_REVERSION`. Stops,
+targets, trailing and risk limits are shared; only entry and strategy-exit
+differ. An unknown value refuses to start rather than defaulting.
+
+`stock_learner.py` runs nightly inside auto_learner and is included in the
+emailed report. It evaluates both classes per ticker, requires the winner to
+beat buy-and-hold AND to be corroborated by neighbouring settings (the
+lucky-cell guard the crypto grid search lacked), and is advisory only.
+
 Add or remove tickers with `add_stock.py`; it validates tradability, checks
-history, and backtests before registering anything.
+history, and backtests before registering anything. Tickers live in
+`STOCK_WATCHLIST`.
 
 ## Graduation (sim -> live)
 

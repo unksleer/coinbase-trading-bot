@@ -232,3 +232,71 @@ class AddStockTests(unittest.TestCase):
             add_stock.watchlist({"STOCK_WATCHLIST": " spy , qqq ,, LPL "}),
             ["SPY", "QQQ", "LPL"])
         self.assertEqual(add_stock.watchlist({}), [])
+
+
+class StockStrategyTests(unittest.TestCase):
+    """
+    Both stock strategy classes share the exit, risk and execution path, so a
+    class is expressed only by its entry and strategy-exit predicates.
+    """
+
+    def _bot(self, **env):
+        """Import stock_bot with a given configuration."""
+        import importlib, sys
+        base = {"STOCK_TICKER": "SPY", "ALPACA_API_KEY": "x",
+                "ALPACA_SECRET_KEY": "y", "ALPACA_PAPER": "True"}
+        base.update(env)
+        with mock.patch.dict(os.environ, base, clear=False):
+            sys.modules.pop("stock_bot", None)
+            return importlib.import_module("stock_bot")
+
+    def test_crossover_is_the_default(self):
+        self.assertEqual(self._bot().STRATEGY, "SMA_CROSSOVER")
+
+    def test_mean_reversion_enters_only_on_an_upward_cross(self):
+        sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")
+        base = {"prev_sma_short": 1, "prev_sma_long": 2,
+                "sma_short": 1, "sma_long": 2, "price": 100}
+        self.assertTrue(sb.entry_signal(dict(base, prev_rsi=28, rsi=32))[0])
+        # Already above the level, no crossing
+        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=40, rsi=45))[0])
+        # Still below the level
+        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=25, rsi=28))[0])
+
+    def test_mean_reversion_ignores_sma_crosses(self):
+        """A bearish SMA cross must not exit a mean-reversion position."""
+        sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")
+        self.assertIsNone(sb.strategy_exit_reason({
+            "prev_sma_short": 3, "prev_sma_long": 2,
+            "sma_short": 1, "sma_long": 2, "prev_rsi": 50, "rsi": 50}))
+
+    def test_mean_reversion_exits_on_downward_cross_of_overbought(self):
+        sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")
+        base = {"prev_sma_short": 1, "prev_sma_long": 2, "sma_short": 1, "sma_long": 2}
+        self.assertIsNotNone(sb.strategy_exit_reason(dict(base, prev_rsi=72, rsi=68)))
+        self.assertIsNone(sb.strategy_exit_reason(dict(base, prev_rsi=50, rsi=48)))
+
+    def test_crossover_still_applies_the_rsi_band(self):
+        sb = self._bot(STOCK_STRATEGY="SMA_CROSSOVER")
+        base = {"prev_sma_short": 1, "prev_sma_long": 2,
+                "sma_short": 3, "sma_long": 2, "prev_rsi": 50, "price": 100}
+        self.assertTrue(sb.entry_signal(dict(base, rsi=50))[0])
+        allowed, why = sb.entry_signal(dict(base, rsi=95))
+        self.assertFalse(allowed)
+        self.assertIn("outside", why)
+
+    def test_thresholds_are_per_ticker_overridable(self):
+        sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION", SPY_RSI_OVERSOLD="22")
+        self.assertEqual(sb.RSI_OVERSOLD, 22.0)
+
+
+class StockReportTests(unittest.TestCase):
+    def test_stock_section_is_silent_when_there_are_no_trades(self):
+        out = render(sim_report.print_stocks, {})
+        self.assertEqual(out, "")
+
+    def test_stock_section_states_the_fee_difference(self):
+        rows = {"SPY": [{"pnl_usd": 0.5, "exit_reason": "TP", "gross_pct": 1.0}]}
+        out = render(sim_report.print_stocks, rows)
+        self.assertIn("commission-free", out.lower())
+        self.assertIn("not comparable", out.lower())

@@ -1305,6 +1305,24 @@ def main():
         report_text = f"sim_report failed: {e}"
         log.warning(report_text)
 
+    # ── Stock learner ─────────────────────────────────────────────────────────
+    # Run as a subprocess so a failure in the stock path — a data outage, a
+    # missing Alpaca key — cannot take down the crypto run that precedes it.
+    stock_text = ""
+    try:
+        stock_result = subprocess.run(
+            [sys.executable, os.path.join(DIR, "stock_learner.py")],
+            capture_output=True, text=True, cwd=DIR, timeout=900,
+        )
+        if stock_result.returncode == 0 and stock_result.stdout.strip():
+            stock_text = stock_result.stdout
+            log.info(stock_text)
+        else:
+            log.warning(f"stock_learner returned {stock_result.returncode}; "
+                        f"{stock_result.stderr.strip()[:200]}")
+    except Exception as e:
+        log.warning(f"stock_learner failed: {e}")
+
     # ── Graduation check ──────────────────────────────────────────────────────
     ready_coins = check_graduation()
     if ready_coins:
@@ -1333,6 +1351,8 @@ def main():
     # Previously truncated at 2500 chars, which cut the report mid-coin. The
     # full report is a few KB; email has no trouble with it.
     digest += "\n" + report_text
+    if stock_text:
+        digest += "\n" + stock_text
 
     html_body = None
     if report_html:

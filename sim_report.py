@@ -388,6 +388,68 @@ def render_html(results):
     )
 
 
+def load_stock_trades():
+    """
+    Completed stock paper trades, per ticker.
+
+    Kept separate from crypto throughout: equities are commission-free, so the
+    fee floor that dominates every crypto figure does not apply and averaging
+    the two together would understate crypto drag and overstate stock cost.
+    """
+    out = {}
+    for path in sorted(glob.glob(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "completed_trades_stock_*_paper.csv"))):
+        ticker = (os.path.basename(path)
+                  .replace("completed_trades_stock_", "")
+                  .replace("_paper.csv", "").upper())
+        rows = []
+        try:
+            with open(path, newline="") as handle:
+                for row in csv.DictReader(handle):
+                    try:
+                        rows.append({
+                            "pnl_usd": float(row.get("pnl_usd") or 0.0),
+                            "exit_reason": row.get("exit_reason", ""),
+                            "gross_pct": float(row.get("gross_pct") or 0.0),
+                        })
+                    except (TypeError, ValueError):
+                        continue
+        except (OSError, csv.Error):
+            continue
+        if rows:
+            out[ticker] = rows
+    return out
+
+
+def print_stocks(by_ticker):
+    """Stock section of the report. Silent when there is nothing to say."""
+    if not by_ticker:
+        return
+    trades = [t for rows in by_ticker.values() for t in rows]
+    n = len(trades)
+    net = sum(t["pnl_usd"] for t in trades)
+    wins = sum(1 for t in trades if t["pnl_usd"] > 0)
+
+    print(f"\n{RULE}")
+    print("  STOCKS (Alpaca paper · commission-free)")
+    print(RULE)
+    print(f"  {n} trades · {len(by_ticker)} tickers · "
+          f"{100*wins/n if n else 0:.1f}% win rate · net {signed(net)}")
+    print("  No fee floor here — round trip is slippage only, ~0.20%,")
+    print("  against 1.207% on crypto. The two are not comparable.\n")
+
+    for ticker, rows in sorted(by_ticker.items(),
+                               key=lambda kv: -sum(t["pnl_usd"] for t in kv[1])):
+        tn = len(rows)
+        tnet = sum(t["pnl_usd"] for t in rows)
+        tw = sum(1 for t in rows if t["pnl_usd"] > 0)
+        g = evaluate_graduation([t["pnl_usd"] for t in rows])
+        print(f"  {ticker:8}{tn:>4} trades{signed(tnet, 9)}"
+              f"{100*tw/tn:>6.0f}% win   {bar(g['score']/MAX_SCORE)} "
+              f"{g['score']:>3}/{MAX_SCORE}")
+
+
 def main():
     root = os.path.dirname(os.path.abspath(__file__))
     coin_filter = None
@@ -411,6 +473,10 @@ def main():
             results[label] = trades
 
     if not results:
+        stocks = load_stock_trades()
+        if stocks and not as_html:
+            print_stocks(stocks)
+            return
         if as_html:
             print(f'<html><body style="background:{_BG};color:{_MUTED};'
                   f'font-family:sans-serif;padding:20px">'
@@ -431,6 +497,7 @@ def main():
 
     print_portfolio(results)
     print_leaderboard(results)
+    print_stocks(load_stock_trades())
 
     ready = [l for l, t in results.items() if summarise(t)["grad"]["ready"]]
     for label, trades in sorted(results.items(),
