@@ -1140,7 +1140,13 @@ def main():
                  f"  SL={current['stop_loss']}%  TP={current['take_profit']}%")
 
         # ── PHASE 2/3: Adaptive grid search ──────────────────────────────────
-        best = optimize_coin(pair, cfg["gran"], diag, history, current)
+        # Granularity comes from .env, not the COINS table: the bot reads it
+        # there, so a hardcoded value here would backtest a different timeframe
+        # than the one being traded.
+        gran = _resolve_env(read_env(), cfg["prefix"], "GRANULARITY", cfg["gran"])
+        if gran != cfg["gran"]:
+            log.info(f"  Granularity from .env: {gran} (table default {cfg['gran']})")
+        best = optimize_coin(pair, gran, diag, history, current)
         if not best:
             log.warning(f"  No valid optimizer result for {pair} — keeping current params")
             continue

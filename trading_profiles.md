@@ -20,7 +20,39 @@ separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
 three days.
 
-### All nine coins run identical parameters
+### Six-hour experiment arm (2026-08-26)
+
+Four coins — **BTC, SOL, LINK, SUI** — run `SIX_HOUR` candles with `SMA 10/40`.
+The other five stay on `ONE_HOUR` with `SMA 5/30` as a control.
+
+Every hourly SMA window tested is negative out of sample. Six-hour shows a
+plateau — `8/30` through `15/45` all positive, peaking at `10/40`–`12/40` — and
+seven adjacent cells agreeing is structure rather than a lucky cell:
+
+```
+              5/30   8/30   8/35  10/35  10/40  12/40  12/45  15/45  20/60
+ONE_HOUR      -9.2   -2.4   -4.6   -3.0   -5.3   -5.7   -4.5   -2.2   -4.2
+SIX_HOUR      -0.3   +0.6   +1.1   +1.6   +3.8   +4.1   +3.4   +2.3   -1.9
+ONE_DAY       -0.9   -6.3   +2.2   -1.7   +2.8   +3.4   +0.4   -0.8   -0.2
+```
+
+Reproduce with
+[compare_strategies.py](file:///home/leeunks/coinbase-trading-bot/compare_strategies.py).
+
+**The arms are not directly comparable on trade count.** Six-hour produces
+roughly 0.23 entries/day against hourly's 3.24 — about 14× slower, which puts 20
+trades per coin at ~27 months rather than ~2. Judge this arm on per-trade
+quality and on whether net P&L turns positive, not on volume. The control arm
+exists so data keeps flowing while that plays out.
+
+Coins were assigned by market-cap tier, not by past performance — picking the
+better historical performers into the test arm would bias the result.
+
+> Six-hour buy-and-hold returned +$11.39 over the same window against the
+> strategy's +$4.35. Six-hour is where this strategy stops destroying value, not
+> yet where it beats doing nothing.
+
+### The other five run identical parameters
 
 Per-coin overrides for `SMA_SHORT_WINDOW`, `SMA_LONG_WINDOW`, `STOP_LOSS_PERCENT`
 and `TAKE_PROFIT_PERCENT` were commented out on 2026-08-24. They were hand-set

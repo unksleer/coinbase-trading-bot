@@ -225,6 +225,29 @@ scaling multiplies gross and fees equally; a negative-expectancy system just
 loses faster. Required before any increase: 30+ trades since the last change,
 positive net, positive on a majority of coins, and at least one graduated coin.
 
+## Six-Hour Experiment (started 2026-08-26)
+
+| Arm | Coins | Config |
+|---|---|---|
+| Test | BTC, SOL, LINK, SUI | `SIX_HOUR`, SMA 10/40 |
+| Control | ETH, ADA, XRP, NEAR, RENDER | `ONE_HOUR`, SMA 5/30 |
+
+**Every hourly SMA window is negative out-of-sample.** Six-hour shows a plateau
+(8/30 through 15/45 all positive, peak 10/40–12/40). Daily alternates sign =
+noise. RSI mean-reversion looked strong on hourly (67% win rate) but is the
+worst variant on daily — also noise. Run `compare_strategies.py` to reproduce.
+
+The learner **only ever searched inside the hourly row**: granularity is not in
+its parameter space, and `SIX_HOUR` was silently backtested as `ONE_HOUR` until
+the GRANULARITY_MAP fix. It could not have found this. When a search is
+exhaustive and finds nothing, question the box before questioning the contents.
+
+Six-hour is ~14× slower (0.23 vs 3.24 entries/day; ~27 months to 20 trades/coin).
+Judge that arm on per-trade quality, not volume.
+
+**Buy-and-hold still beats it** (+$11.39 vs +$4.35 over the same window). Six-hour
+is where this strategy stops destroying value, not where it wins.
+
 ## Graduation (sim -> live)
 
 Defined once in `utils/graduation.py`. Five criteria, **all must pass**; the
