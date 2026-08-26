@@ -202,7 +202,28 @@ Compare strategy classes across the watchlist with:
 .venv/bin/python compare_strategies.py --market stocks --granularity Day --lookback-days 1800
 ```
 
-### 8. Scheduled Jobs (PM2 cron)
+### 8. Candidate Screening (`screen_candidates.py`)
+
+Ranks symbols by whether they **suit the strategy**, not by recent returns.
+Mean reversion needs a symbol to reach oversold *and then recover*; one that
+dips repeatedly without recovering is a downtrend, and the strategy will buy it
+all the way down. That profile scores well on entry frequency and is exactly the
+failure mode, so it is called out explicitly rather than ranked highly.
+
+```bash
+.venv/bin/python screen_candidates.py --market stocks --json
+.venv/bin/python screen_candidates.py --market crypto --json
+.venv/bin/python screen_candidates.py --market stocks --universe AAPL,MSFT
+```
+
+Each market is screened under its own cost model — equities commission-free,
+Coinbase at 1.207% round trip — and results never transfer between them. Both
+run nightly under PM2 cron and appear on the dashboard.
+
+Verdicts: `check` clears every screen · `weak` marginal · `skip` too few entries
+· `avoid` dips without recovering.
+
+### 9. Scheduled Jobs (PM2 cron)
 
 Both run once per firing and then stop; `--no-autorestart` is required or PM2
 will treat the exit as a crash and restart them in a loop.
@@ -215,6 +236,12 @@ pm2 start auto_learner.py --name learner --interpreter .venv/bin/python \
 # Hourly market screener (:05 past the hour)
 pm2 start scanner.py --name scanner --interpreter .venv/bin/python \
     --cron "5 * * * *" --no-autorestart
+
+# Nightly candidate screens
+pm2 start screen_candidates.py --name screen-stocks --interpreter .venv/bin/python \
+    --cron "20 5 * * *" --no-autorestart -- --market stocks --json
+pm2 start screen_candidates.py --name screen-crypto --interpreter .venv/bin/python \
+    --cron "40 5 * * *" --no-autorestart -- --market crypto --json
 
 pm2 save    # persist across reboot
 ```

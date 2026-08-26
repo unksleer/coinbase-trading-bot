@@ -313,6 +313,25 @@ Add or remove tickers with `add_stock.py`; it validates tradability, checks
 history, and backtests before registering anything. Tickers live in
 `STOCK_WATCHLIST`.
 
+## Candidate Screening
+
+`screen_candidates.py --market {stocks,crypto} --json` ranks symbols on
+**mechanism fit**, not recent returns, and writes `logs/screen_<market>.json`
+for the dashboard. Runs nightly under PM2 cron.
+
+Mean reversion needs a symbol to reach oversold **and then recover**. One that
+dips often without recovering is a downtrend — high entry frequency, and the
+exact failure mode. That gets an explicit `avoid` verdict rather than a high rank.
+
+First run: **stocks 12/41 qualify, crypto 2/18.** Same screen, same strategy;
+the difference is the 1.207% fee against commission-free.
+
+Two currently-traded symbols land in `avoid`: **QQQ** (13 dips, −0.13) and
+**SUI-USDC** (−1.39). Worth reviewing before adding more of the same.
+
+Verdicts: `check` clears everything · `weak` marginal · `skip` too few entries ·
+`avoid` dips without recovering.
+
 ## Graduation (sim -> live)
 
 Defined once in `utils/graduation.py`. Five criteria, **all must pass**; the

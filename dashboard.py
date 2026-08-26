@@ -424,6 +424,46 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             logger.error(f"Error fetching PM2 status: {e}")
         return []
 
+    @staticmethod
+    def load_screens(log_dir=None):
+        """
+        Candidate screens written by screen_candidates.py, one per market.
+
+        Ranked on whether a symbol suits the strategy — does it reach oversold,
+        and does it then recover — rather than on recent returns. The two
+        markets are screened under their own cost model and are never merged:
+        equities are commission-free while Coinbase costs ~1.2% a round trip,
+        which alone decides whether a strategy is viable.
+        """
+        if log_dir is None:
+            log_dir = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "logs")
+        screens = {}
+        for market in ("stocks", "crypto"):
+            path = os.path.join(log_dir, f"screen_{market}.json")
+            try:
+                with open(path) as handle:
+                    payload = json.load(handle)
+            except (OSError, ValueError):
+                continue
+            rows = payload.get("results", [])
+            screens[market] = {
+                "strategy": payload.get("strategy", ""),
+                "timeframe": payload.get("timeframe", ""),
+                "cost_model": payload.get("cost_model", ""),
+                "universe_size": payload.get("universe_size", len(rows)),
+                "age_seconds": max(0.0, time.time() - payload.get("generated_at", 0)),
+                "counts": {
+                    v: sum(1 for r in rows if r.get("verdict") == v)
+                    for v in ("check", "weak", "skip", "avoid")
+                },
+                # Only the actionable ends: what to test, and what to stay away
+                # from. The middle is noise at these sample sizes.
+                "check": [r for r in rows if r.get("verdict") == "check"][:8],
+                "avoid": [r for r in rows if r.get("verdict") == "avoid"][:6],
+            }
+        return screens
+
     def build_signal_funnel(self, window_days=7, log_dir=None, now=None):
         """
         Where crossovers go: seen, rejected by which filter, or taken.
@@ -825,6 +865,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # 5. Derived analytics — the views that answer "is this working?"
         data["analytics"] = self.build_analytics(completed_list)
         data["signal_funnel"] = self.build_signal_funnel()
+        data["screens"] = self.load_screens()
 
         # 6. Read auto-learner report
         best_params_path = os.path.join(project_root, "logs", "best_params.json")

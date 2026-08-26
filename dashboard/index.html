@@ -458,6 +458,25 @@
             color: var(--accent-red);
         }
 
+        .scr-head { display:flex; justify-content:space-between; align-items:baseline; }
+        .scr-market { font-weight:700; text-transform:uppercase; font-size:0.78rem; letter-spacing:.05em; }
+        .scr-note { font-size:0.66rem; color:var(--text-secondary); }
+        .scr-cost { font-size:0.64rem; color:var(--text-secondary); margin:2px 0 8px; }
+        .scr-lbl {
+            font-size:0.62rem; text-transform:uppercase; letter-spacing:.06em;
+            color:var(--text-secondary); margin:10px 0 4px;
+            border-top:1px solid var(--glass-border); padding-top:8px;
+        }
+        .scr-row {
+            display:grid; grid-template-columns:16px 62px 62px 1fr;
+            align-items:baseline; font-size:0.74rem; padding:3px 0;
+        }
+        .scr-icon { font-size:0.7rem; }
+        .scr-sym { font-weight:600; }
+        .scr-net { font-family:monospace; font-size:0.72rem; }
+        .scr-meta { font-size:0.66rem; color:var(--text-secondary); text-align:right; }
+        .scr-empty { font-size:0.7rem; color:var(--text-secondary); padding:3px 0; }
+
         .price-tag {
             font-size: 0.62rem;
             padding: 0.1rem 0.35rem;
@@ -669,6 +688,15 @@
 
         </div>
 
+        <!-- --- Candidate Screens --- -->
+        <div class="scanner-panel" id="screens-panel" style="margin-bottom: 30px; display:none;">
+            <div class="panel-header">
+                <h2>🔎 Candidate Screens</h2>
+                <span class="card-subtext" id="screens-sub">—</span>
+            </div>
+            <div class="two-col" id="screens-body"></div>
+        </div>
+
         <!-- --- Completed Trades Ledger Panel --- -->
         <div class="panel" style="grid-column: span 3; margin-bottom: 30px;">
             <div class="panel-header">
@@ -788,6 +816,52 @@
 
         // Crossovers seen vs. taken. A filter tightened too far shows up here as
         // blocks piling up; in the trade ledger it would look like a quiet market.
+
+        // Symbols ranked by whether they suit the strategy, not by recent
+        // returns. Only the actionable ends are shown: worth testing, and
+        // actively avoid. The middle is noise at these sample sizes.
+        function renderScreens(screens) {
+            const panel = document.getElementById('screens-panel');
+            const body = document.getElementById('screens-body');
+            const sub = document.getElementById('screens-sub');
+            if (!panel || !body) return;
+            const markets = Object.keys(screens || {});
+            if (!markets.length) { panel.style.display = 'none'; return; }
+            panel.style.display = '';
+
+            const ages = markets.map(m => screens[m].age_seconds).filter(a => a != null);
+            sub.textContent = ages.length
+                ? `updated ${formatAge(Math.min(...ages))} ago`
+                : '';
+
+            body.innerHTML = markets.map(market => {
+                const s = screens[market];
+                const stale = s.age_seconds > 7 * 86400;
+                const rows = (list, cls, icon) => list.length
+                    ? list.map(r => `
+                        <div class="scr-row">
+                            <span class="scr-icon ${cls}">${icon}</span>
+                            <span class="scr-sym">${r.symbol}</span>
+                            <span class="scr-net ${r.net >= 0 ? 'val-up' : 'val-down'}">${formatPnL(r.net)}</span>
+                            <span class="scr-meta">${r.trades}t · ${Math.round(r.win_rate)}% · ${r.opportunities} dips</span>
+                        </div>`).join('')
+                    : `<div class="scr-empty">none</div>`;
+                return `
+                <div class="scanner-panel" style="margin:0">
+                    <div class="scr-head">
+                        <span class="scr-market">${market}</span>
+                        <span class="scr-note">${s.strategy} · ${s.timeframe}</span>
+                    </div>
+                    <div class="scr-cost">${s.cost_model}</div>
+                    ${stale ? `<div class="stale-note">⚠ ${formatAge(s.age_seconds)} old</div>` : ''}
+                    <div class="scr-lbl">worth testing (${s.counts.check})</div>
+                    ${rows(s.check, 'val-up', '✓')}
+                    <div class="scr-lbl">avoid — dips without recovering (${s.counts.avoid})</div>
+                    ${rows(s.avoid, 'val-down', '✗')}
+                </div>`;
+            }).join('');
+        }
+
         function renderFunnel(f) {
             const body = document.getElementById('funnel-body');
             const win = document.getElementById('funnel-window');
@@ -1016,6 +1090,7 @@
             // Update Active Positions
             renderAnalytics(data.analytics);
             renderFunnel(data.signal_funnel);
+            renderScreens(data.screens);
 
             const positions = data.active_positions || [];
             document.getElementById('active-positions-count').textContent = positions.length + " active position" + (positions.length !== 1 ? "s" : "");
