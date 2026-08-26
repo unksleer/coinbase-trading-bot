@@ -1041,7 +1041,7 @@ def check_graduation() -> list:
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification
 # ─────────────────────────────────────────────────────────────────────────────
-def send_notification(subject: str, body: str):
+def send_notification(subject: str, body: str, html: str = None):
     try:
         from dotenv import load_dotenv
         load_dotenv(os.path.join(DIR, ".env"))
@@ -1054,7 +1054,15 @@ def send_notification(subject: str, body: str):
         to_email  = os.getenv("NOTIFICATION_EMAIL", smtp_user)
         if not smtp_host or not smtp_user:
             return
-        msg = MIMEText(body)
+        if html:
+            # Multipart alternative: clients that cannot render HTML fall back
+            # to the plain-text part rather than showing raw markup.
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg.attach(MIMEText(body, "plain"))
+            msg.attach(MIMEText(html, "html"))
+        else:
+            msg = MIMEText(body)
         msg["Subject"] = f"[TradingBot] {subject}"
         msg["From"]    = smtp_user
         msg["To"]      = to_email
@@ -1259,6 +1267,7 @@ def main():
 
     # ── Run sim report ────────────────────────────────────────────────────────
     log.info("\nRunning sim_report...")
+    report_html = None
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(DIR, "sim_report.py")],
@@ -1266,6 +1275,17 @@ def main():
         )
         report_text = result.stdout
         log.info(report_text)
+
+        # HTML for the email; the text form stays the plain-text alternative
+        # and is what appears in this log.
+        html_result = subprocess.run(
+            [sys.executable, os.path.join(DIR, "sim_report.py"), "--html"],
+            capture_output=True, text=True, cwd=DIR
+        )
+        if html_result.returncode == 0 and html_result.stdout.strip():
+            report_html = html_result.stdout
+        else:
+            log.warning("HTML report unavailable; sending plain text only")
     except Exception as e:
         report_text = f"sim_report failed: {e}"
         log.warning(report_text)
@@ -1295,8 +1315,21 @@ def main():
         wr   = d.get("win_rate", "N/A")
         n    = d.get("n", 0)
         digest += f"  {pair:<14}: {mode:<16} WR={wr}%  ({n} real trades)\n"
-    digest += "\n" + report_text[:2500]
-    send_notification("Daily Learning Report", digest)
+    # Previously truncated at 2500 chars, which cut the report mid-coin. The
+    # full report is a few KB; email has no trouble with it.
+    digest += "\n" + report_text
+
+    html_body = None
+    if report_html:
+        preamble = "".join(
+            f'<div style="color:#8b96ad;font-size:12px;padding:2px 0">{line}</div>'
+            for line in digest.split(report_text)[0].strip().splitlines() if line.strip())
+        html_body = report_html.replace(
+            "<tr><td style=\"padding:0 0 6px\">",
+            f'<tr><td style="padding:0 0 14px">{preamble}</td></tr>'
+            f'<tr><td style="padding:0 0 6px">', 1)
+
+    send_notification("Daily Learning Report", digest, html=html_body)
 
     log.info("\n" + "=" * 60)
     log.info("AUTO LEARNER complete")

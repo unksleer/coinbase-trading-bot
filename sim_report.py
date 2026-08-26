@@ -199,9 +199,199 @@ def print_report(label, trades):
             print(f"    ✗ {blocker}")
 
 
+
+
+# ── HTML rendering ────────────────────────────────────────────────────────────
+# The learner emails this report. Plain text stays the terminal path; --html
+# produces the emailed version. Table layout and inline styles only — email
+# clients strip <style> blocks and do not support flex or grid.
+
+_BG      = "#0b0f19"
+_CARD    = "#151b2b"
+_LINE    = "#252d40"
+_TEXT    = "#e6ebf5"
+_MUTED   = "#8b96ad"
+_UP      = "#34d399"
+_DOWN    = "#f87171"
+_ACCENT  = "#60a5fa"
+
+
+def _esc(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _money_html(value):
+    colour = _UP if value >= 0 else _DOWN
+    return f'<span style="color:{colour};font-weight:600">{signed(value)}</span>'
+
+
+def _meter(fraction, colour=_ACCENT, width=110):
+    """Bar as a nested table — the only construct every email client renders."""
+    filled = max(0, min(width, int(round(fraction * width))))
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" '
+        f'style="display:inline-block;vertical-align:middle"><tr>'
+        f'<td style="width:{filled}px;height:8px;background:{colour};'
+        f'border-radius:4px 0 0 4px;font-size:0;line-height:0">&nbsp;</td>'
+        f'<td style="width:{width - filled}px;height:8px;background:{_LINE};'
+        f'border-radius:0 4px 4px 0;font-size:0;line-height:0">&nbsp;</td>'
+        f'</tr></table>'
+    )
+
+
+def render_html(results):
+    """Full HTML email body for the nightly report."""
+    trades = [t for group in results.values() for t in group]
+    n = len(trades)
+    net = sum(t["pnl_usd"] for t in trades)
+    fees = sum(t["fees_usd"] for t in trades)
+    gross = net + fees
+    wins = sum(1 for t in trades if t["pnl_usd"] > 0)
+    wr = 100.0 * wins / n if n else 0.0
+
+    if gross > 0 and net < 0:
+        verdict = (f"Direction is right — {signed(gross)} gross. "
+                   f"Fees of {money(fees)} erase it. This is a cost problem.")
+        verdict_colour = _DOWN
+    elif gross <= 0:
+        verdict = "Negative before fees. The entry signal is the problem."
+        verdict_colour = _DOWN
+    else:
+        verdict = "Profitable after costs."
+        verdict_colour = _UP
+
+    rows = sorted(((label, summarise(t)) for label, t in results.items() if t),
+                  key=lambda kv: (-kv[1]["grad"]["score"], -kv[1]["n"]))
+
+    head = (
+        f'<tr><td style="padding:0 0 6px"><div style="font-size:11px;'
+        f'letter-spacing:.09em;text-transform:uppercase;color:{_MUTED}">'
+        f'Sim Trading Report</div>'
+        f'<div style="font-size:13px;color:{_MUTED};padding-top:2px">'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M")} &middot; {n} trades &middot; '
+        f'{len(results)} coin{"" if len(results) == 1 else "s"} &middot; '
+        f'{wr:.1f}% win rate</div></td></tr>'
+    )
+
+    money_row = (
+        f'<tr><td style="padding:14px 0 4px">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        + "".join(
+            f'<td style="width:33%;padding:10px 0">'
+            f'<div style="font-size:11px;color:{_MUTED};text-transform:uppercase;'
+            f'letter-spacing:.07em">{lbl}</div>'
+            f'<div style="font-size:24px;font-weight:700;color:{col};'
+            f'padding-top:3px;font-family:ui-monospace,Menlo,Consolas,monospace">'
+            f'{val}</div></td>'
+            for lbl, val, col in (
+                ("gross", signed(gross), _UP if gross >= 0 else _DOWN),
+                ("fees", money(-fees), _DOWN),
+                ("net", signed(net), _UP if net >= 0 else _DOWN),
+            ))
+        + '</tr></table></td></tr>'
+        f'<tr><td style="padding:2px 0 4px;font-size:13px;color:{verdict_colour}">'
+        f'{_esc(verdict)}</td></tr>'
+    )
+
+    board = [
+        f'<tr><td style="padding:20px 0 8px;font-size:11px;letter-spacing:.09em;'
+        f'text-transform:uppercase;color:{_MUTED}">Readiness</td></tr>'
+        f'<tr><td><table role="presentation" width="100%" cellpadding="0" '
+        f'cellspacing="0" style="font-size:13px">'
+    ]
+    for label, s in rows:
+        g = s["grad"]
+        name = _esc(label.upper()) + (" ✅" if g["ready"] else "")
+        board.append(
+            f'<tr>'
+            f'<td style="padding:7px 0;border-bottom:1px solid {_LINE};color:{_TEXT};'
+            f'font-weight:600;white-space:nowrap">{name}</td>'
+            f'<td style="padding:7px 8px;border-bottom:1px solid {_LINE};'
+            f'color:{_MUTED};text-align:right;white-space:nowrap">{s["n"]} trades</td>'
+            f'<td style="padding:7px 8px;border-bottom:1px solid {_LINE};'
+            f'text-align:right;white-space:nowrap">{_money_html(s["net"])}</td>'
+            f'<td style="padding:7px 0 7px 10px;border-bottom:1px solid {_LINE};'
+            f'width:120px">{_meter(g["score"] / MAX_SCORE, _UP if g["ready"] else _ACCENT)}</td>'
+            f'<td style="padding:7px 0 7px 8px;border-bottom:1px solid {_LINE};'
+            f'color:{_MUTED};text-align:right;white-space:nowrap;'
+            f'font-family:ui-monospace,Menlo,Consolas,monospace">'
+            f'{g["score"]}/{MAX_SCORE}</td></tr>'
+        )
+    board.append('</table></td></tr>')
+
+    detail = []
+    for label, s in rows:
+        g = s["grad"]
+        pf = "∞" if s["profit_factor"] == float("inf") else f'{s["profit_factor"]:.2f}x'
+        stats = "".join(
+            f'<td style="padding:4px 12px 4px 0;white-space:nowrap">'
+            f'<span style="color:{_MUTED}">{lbl}</span> {val}</td>'
+            for lbl, val in (
+                ("win", f'{s["win_rate"]:.0f}% ({s["wins"]}W/{s["losses"]}L)'),
+                ("net", _money_html(s["net"])),
+                ("fees", money(s["fees"])),
+                ("PF", pf),
+                ("hold", f'{s["avg_hold"]:.0f}h'),
+            ))
+        exits = {}
+        for t in results[label]:
+            exits[t["exit_reason"]] = exits.get(t["exit_reason"], 0) + 1
+        exit_rows = "".join(
+            f'<tr><td style="padding:3px 0;color:{_MUTED};white-space:nowrap">'
+            f'{_esc(reason)}</td>'
+            f'<td style="padding:3px 0 3px 10px;width:90px">'
+            f'{_meter(count / s["n"], _MUTED, 80)}</td>'
+            f'<td style="padding:3px 0 3px 8px;color:{_MUTED};text-align:right">'
+            f'{count} &middot; {100 * count / s["n"]:.0f}%</td></tr>'
+            for reason, count in sorted(exits.items(), key=lambda kv: -kv[1]))
+
+        if g["ready"]:
+            status = (f'<div style="color:{_UP};padding-top:8px;font-weight:600">'
+                      f'✅ Ready for live → ${get_stake(max(s["net"], 0))}/trade next stake</div>')
+        else:
+            items = "".join(
+                f'<div style="color:{_MUTED};padding-top:3px">✗ {_esc(b)}</div>'
+                for b in g["blockers"])
+            status = (f'<div style="padding-top:10px"><div style="font-size:11px;'
+                      f'letter-spacing:.07em;text-transform:uppercase;color:{_MUTED}">'
+                      f'Still needed</div>{items}</div>')
+
+        detail.append(
+            f'<tr><td style="padding:10px 0 0"><table role="presentation" width="100%" '
+            f'cellpadding="0" cellspacing="0" style="background:{_CARD};'
+            f'border:1px solid {_LINE};border-radius:10px;font-size:13px">'
+            f'<tr><td style="padding:14px 16px">'
+            f'<div style="font-size:15px;font-weight:700;color:{_TEXT}">'
+            f'{_esc(label.upper())} '
+            f'<span style="color:{_MUTED};font-weight:400;font-size:13px">'
+            f'&middot; {g["score"]}/{MAX_SCORE} &middot; {s["n"]} trades</span></div>'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="font-size:13px;color:{_TEXT};padding-top:8px"><tr>{stats}</tr></table>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="font-size:12px;padding-top:10px">{exit_rows}</table>'
+            f'{status}</td></tr></table></td></tr>'
+        )
+
+    return (
+        f'<!DOCTYPE html><html><body style="margin:0;padding:0;background:{_BG}">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="background:{_BG};padding:22px 0">'
+        f'<tr><td align="center">'
+        f'<table role="presentation" width="620" cellpadding="0" cellspacing="0" '
+        f'style="width:620px;max-width:94%;font-family:-apple-system,BlinkMacSystemFont,'
+        f'\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:{_TEXT}">'
+        + head + money_row + "".join(board) + "".join(detail) +
+        f'<tr><td style="padding:18px 0 0;font-size:11px;color:{_MUTED}">'
+        f'All five criteria must pass to graduate. Score is for display only.'
+        f'</td></tr>'
+        f'</table></td></tr></table></body></html>'
+    )
+
+
 def main():
     root = os.path.dirname(os.path.abspath(__file__))
     coin_filter = None
+    as_html = "--html" in sys.argv
     for i, a in enumerate(sys.argv):
         if a == "--coin" and i + 1 < len(sys.argv):
             coin_filter = sys.argv[i + 1].upper()
@@ -221,6 +411,11 @@ def main():
             results[label] = trades
 
     if not results:
+        if as_html:
+            print(f'<html><body style="background:{_BG};color:{_MUTED};'
+                  f'font-family:sans-serif;padding:20px">'
+                  f'No completed sim trades yet.</body></html>')
+            return
         print(f"\n{RULE}")
         if coin_filter:
             print(f"  No completed sim trades for {coin_filter} yet.")
@@ -228,6 +423,10 @@ def main():
             print("  No completed sim trades yet.")
             print(f"  Files appear here once bots close their first position.")
         print(RULE)
+        return
+
+    if as_html:
+        print(render_html(results))
         return
 
     print_portfolio(results)

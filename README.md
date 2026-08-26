@@ -117,7 +117,20 @@ Close an open position manually under lock safety. Targets dry-run files by defa
 .venv/bin/python view_analytics.py
 ```
 
-### 5. Entry Quality Analysis (`analyze_entries.py`)
+### 5. Sim Performance Report (`sim_report.py`)
+
+```bash
+.venv/bin/python sim_report.py              # terminal (plain text)
+.venv/bin/python sim_report.py --coin LINK  # one coin
+.venv/bin/python sim_report.py --html       # the emailed HTML body
+```
+
+Summary-first: portfolio gross/fees/net with a one-line diagnosis of *which*
+problem it is, a readiness leaderboard ranked by graduation score, then per-coin
+detail in the same order. The nightly learner emails this as
+`multipart/alternative` — HTML with the plain-text version as fallback.
+
+### 6. Entry Quality Analysis (`analyze_entries.py`)
 
 Reports which entry conditions actually produce follow-through. Because every
 round trip costs a fixed percentage in fees, an entry whose price never travels
@@ -135,7 +148,7 @@ the fee floor, and breaks a candidate filter down per pair — a filter that loo
 profitable overall but is carried by one lucky coin is not a filter. It flags
 its own sample size when a result rests on too few trades to trust.
 
-### 6. Scheduled Jobs (PM2 cron)
+### 7. Scheduled Jobs (PM2 cron)
 
 Both run once per firing and then stop; `--no-autorestart` is required or PM2
 will treat the exit as a crash and restart them in a loop.

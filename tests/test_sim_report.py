@@ -116,3 +116,80 @@ class LegacyFileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HtmlTests(unittest.TestCase):
+    """
+    The HTML body is emailed. Clients strip <style> blocks and do not support
+    flex or grid, so the layout must be tables with inline styles only.
+    """
+
+    def html(self, results=None):
+        if results is None:
+            results = {"sui-usdc": trades([0.5, -0.2, 0.9]),
+                       "link-usdc": trades([-0.3, -0.1])}
+        return sim_report.render_html(results)
+
+    def test_markup_is_well_formed(self):
+        from html.parser import HTMLParser
+
+        class Check(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.stack, self.bad = [], []
+
+            def handle_starttag(self, tag, attrs):
+                if tag not in ("br", "img", "meta", "hr", "input"):
+                    self.stack.append(tag)
+
+            def handle_endtag(self, tag):
+                if self.stack and self.stack[-1] == tag:
+                    self.stack.pop()
+                else:
+                    self.bad.append(tag)
+
+        checker = Check()
+        checker.feed(self.html())
+        self.assertEqual(checker.stack, [], "unclosed tags")
+        self.assertEqual(checker.bad, [], "mismatched closing tags")
+
+    def test_avoids_constructs_email_clients_break_on(self):
+        out = self.html()
+        self.assertNotIn("<style", out.lower(), "clients strip <style> blocks")
+        self.assertNotIn("display:flex", out)
+        self.assertNotIn("display:grid", out)
+
+    def test_loads_no_external_resources(self):
+        """Remote assets are blocked by default and would render as gaps."""
+        out = self.html()
+        self.assertNotIn("http://", out)
+        self.assertNotIn("https://", out)
+
+    def test_meter_is_fixed_total_width(self):
+        for fraction in (0.0, 0.15, 0.5, 1.0, 2.0, -1.0):
+            bar = sim_report._meter(fraction, width=100)
+            widths = [int(w) for w in
+                      __import__("re").findall(r"width:(\d+)px", bar)]
+            self.assertEqual(sum(widths), 100, f"fraction {fraction}")
+
+    def test_coin_names_are_escaped(self):
+        """Labels come from filenames; markup in one must not reach the email."""
+        out = sim_report.render_html({"<script>x</script>": trades([0.5, -0.2])})
+        self.assertNotIn("<script>", out.lower())
+        self.assertIn("&lt;script&gt;", out.lower())
+
+    def test_states_the_same_verdict_as_the_text_report(self):
+        cost = {"a": trades([-0.10, -0.10, -0.10], fees=0.20)}
+        self.assertIn("cost problem", self.html(cost))
+        signal = {"a": trades([-0.90, -0.80], fees=0.01)}
+        self.assertIn("entry signal is the problem", self.html(signal))
+
+    def test_scores_match_the_text_report(self):
+        from utils.graduation import evaluate, MAX_SCORE
+        pnls = [0.5, -0.2, 0.9]
+        out = self.html({"sui-usdc": trades(pnls)})
+        self.assertIn(f'{evaluate(pnls)["score"]}/{MAX_SCORE}', out)
+
+    def test_infinite_profit_factor_renders(self):
+        out = self.html({"sui-usdc": trades([0.5, 0.6])})
+        self.assertIn("∞", out)
