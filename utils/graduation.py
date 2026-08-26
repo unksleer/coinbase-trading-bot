@@ -127,8 +127,8 @@ def evaluate(pnls):
             "key": "sharpe", "label": f"Sharpe ≥ {MIN_SHARPE:.2f}",
             "passed": sharpe >= MIN_SHARPE,
             "detail": f"{sharpe:.2f}",
-            "blocker": f"Sharpe {sharpe:.2f} < {MIN_SHARPE} required "
-                       f"(returns too uneven — profit resting on a few large wins)",
+            # Kept short: the report wraps at 66 columns.
+            "blocker": f"Sharpe {sharpe:.2f} < {MIN_SHARPE} — returns too uneven",
         },
     ]
     for item in criteria:
