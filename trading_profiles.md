@@ -53,7 +53,7 @@ Values reflect [.env](file:///home/leeunks/coinbase-trading-bot/.env) as configu
 | **`RSI_FILTER_ENABLED`** | `True` | `True` | `False` | Activates the RSI band filter. |
 | **`RSI_PERIOD`** | `14` | `14` | `14` | RSI lookback window. |
 | **`RSI_BUY_MIN`** | `40` | `30` | `45` | Blocks a BUY when RSI is below this. |
-| **`RSI_BUY_MAX`** | `55` | `55` | `60` | Blocks a BUY when RSI is above this. Lowered from `70` to `55` on 2026-08-24; see §7. |
+| **`RSI_BUY_MAX`** | `57` | `57` | `60` | Blocks a BUY when RSI is above this. `70` → `55` on 2026-08-24, relaxed to `57` on 2026-08-26; see §7. |
 | **`RSI_SELL_MIN`** | `40` | `40` | `40` | Blocks a SELL when RSI is below this, to avoid selling into an oversold dip. |
 | **`EMA_TREND_FILTER_ENABLED`** | `True` | `False` | `False` | When `True`, a BUY requires price above the long-term EMA. |
 | **`EMA_TREND_PERIOD`** | `200` | `200` | `200` | EMA trend filter window. |
@@ -218,10 +218,24 @@ scaling up multiplies gross and fees equally.
 
 Two parameter choices follow directly:
 
-**`RSI_BUY_MAX` is 55, not 70.** Entries above RSI 55 lost $4.11 across 24
+**`RSI_BUY_MAX` is 57, not 70.** Entries above RSI 55 lost $4.11 across 24
 trades at a 12% win rate, and follow-through fell monotonically as entry RSI
 rose. `RSI_BUY_MIN` was deliberately left alone — the evidence for an upper
 bound is 24 trades, for a lower bound only 6.
+
+The ceiling was first set to 55, then relaxed to 57 two days later. Live
+crossovers cluster tightly around the threshold — of six observed, the RSI
+values were 54.5, 54.9, 55.1, 56.0, 56.7 and 57.03 — so a cut at 55 rejected
+four of six, including one by a tenth of a point. Entry rate fell from ~3.1 to
+~1.2 per day, pushing time-to-graduation from 1.9 to 5.2 months.
+
+On the 51-trade history, ceilings of 55 and 57 are statistically
+indistinguishable (net +$2.15 vs +$2.23) while 57 keeps 25% more trades. Paying
+a 3× slowdown in data collection for a threshold difference the evidence cannot
+resolve was the wrong trade. 57 admits five of the six observed crossovers.
+
+Bands above 57 are progressively worse per trade — 58-60 at −$0.22 and 60-65 at
+−$0.25 — so do not relax further without new evidence.
 
 **The trailing stop must exceed one candle of noise.** Hourly ATR runs 1.4–2.2%
 of price, so a trail tighter than that fires on noise, while a wider one needs

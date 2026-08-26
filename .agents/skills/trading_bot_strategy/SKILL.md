@@ -27,7 +27,7 @@ description: >
 | Take-profit | 8% | Realistic 1h trend target clearing fees |
 | Trailing stop | 1.5% trail, arms at +1.5% | Was 3.0%/2.0%, which needed a ~4.3% peak to break even and never fired once in 51 trades. Hourly ATR is 1.4–2.2%, so the trail cannot go below that without firing on noise. |
 | EMA200 filter | ON for CONSERVATIVE, OFF for SIM | See Profiles section |
-| RSI buy band | **[30-55] SIM, [40-55] CONSERVATIVE** | Ceiling lowered from 70 on 2026-08-24. RSI ≥55 entries lost $4.11 over 24 trades at a 12% win rate. |
+| RSI buy band | **[30-57] SIM, [40-57] CONSERVATIVE** | 70 → 55 on 2026-08-24, relaxed to 57 on 2026-08-26. RSI ≥55 entries lost $4.11 over 24 trades, but live crossovers cluster at 54.5–57.0, so a cut at 55 rejected 4 of 6 and tripled time-to-graduation. 55 vs 57 is indistinguishable on 51 trades (+$2.15 vs +$2.23) while 57 keeps 25% more. **Do not relax past 57** — 58-60 is −$0.22/trade, 60-65 is −$0.25. |
 | Separation ceiling | `SMA_MAX_SPREAD_PERCENT`, unset (disabled) | Rejects a crossover that has already extended. BUY only. |
 
 **Hourly noise floor:** ATR is 1.4–2.2% of price per candle. Any threshold tighter
