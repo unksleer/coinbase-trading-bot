@@ -250,8 +250,28 @@ class StockStrategyTests(unittest.TestCase):
             sys.modules.pop("stock_bot", None)
             return importlib.import_module("stock_bot")
 
-    def test_crossover_is_the_default(self):
-        self.assertEqual(self._bot().STRATEGY, "SMA_CROSSOVER")
+    def test_crossover_is_the_code_default(self):
+        """
+        The fallback when nothing is configured. .env now sets
+        RSI_MEAN_REVERSION, so the value must be cleared to test the default
+        rather than what this deployment happens to run.
+        """
+        import importlib, sys
+        env = {"STOCK_TICKER": "SPY", "ALPACA_API_KEY": "x", "ALPACA_SECRET_KEY": "y"}
+        # stock_bot calls load_dotenv at import, which would repopulate
+        # STOCK_STRATEGY from .env even into a cleared environment.
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch("dotenv.load_dotenv", lambda *a, **k: None):
+            sys.modules.pop("stock_bot", None)
+            self.assertEqual(importlib.import_module("stock_bot").STRATEGY,
+                             "SMA_CROSSOVER")
+        sys.modules.pop("stock_bot", None)
+
+    def test_configured_strategy_is_what_this_deployment_runs(self):
+        """Guards the switch itself: .env must select mean reversion."""
+        import add_stock
+        values = add_stock.load_env()
+        self.assertEqual(values.get("STOCK_STRATEGY"), "RSI_MEAN_REVERSION")
 
     def test_mean_reversion_enters_only_on_an_upward_cross(self):
         sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")

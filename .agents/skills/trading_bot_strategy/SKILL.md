@@ -279,8 +279,28 @@ implement it; it is hardcoded to SMA crossover.
 Buy-and-hold still beats everything, but the sample covers a strong bull market
 (13/15 symbols positive holding).
 
+**Live config: `STOCK_STRATEGY=RSI_MEAN_REVERSION` 30/70, SL 5% / TP 8%,
+all three tickers.** Switched 2026-08-26.
+
+**Stops must be wide for mean reversion.** Its premise is that the dip
+finishes and reverses, so a tight stop exits before that happens. Measured
+across 15 symbols out-of-sample:
+
+| SL / TP | net | win% |
+|---|---|---|
+| 2.0 / 4.0 (SPY's old setting) | +0.49 | 44% |
+| 3.0 / 6.0 | +6.22 | 58% |
+| 5.0 / 8.0 (chosen) | +8.47 | 64% |
+| 6.0 / 10.0 | +8.66 | 67% |
+| 8.0 / 12.0 | +7.30 | 68% |
+
+Plateau from 4.0 to 8.0; 5.0/8.0 sits inside it rather than on the peak. The
+old per-ticker stops were tuned for crossover and are commented out, not
+deleted. **A stop tuned for one strategy class can be actively harmful to
+another — re-derive it when changing class.**
+
 `stock_bot.py` supports both classes via `STOCK_STRATEGY` /
-`<TICKER>_STRATEGY`: `SMA_CROSSOVER` (default) or `RSI_MEAN_REVERSION`. Stops,
+`<TICKER>_STRATEGY`: `SMA_CROSSOVER` (code default) or `RSI_MEAN_REVERSION`. Stops,
 targets, trailing and risk limits are shared; only entry and strategy-exit
 differ. An unknown value refuses to start rather than defaulting.
 
