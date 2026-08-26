@@ -101,9 +101,15 @@ from utils.graduation import (
     evaluate as evaluate_graduation,
 )
 
+# Must cover every granularity the bot can be configured with, or a coin set to
+# an unlisted one is silently backtested as ONE_HOUR — optimising the wrong
+# timeframe with no error. Mirrors scanner.py's map.
+# Only the granularities the Exchange candles endpoint accepts. THIRTY_MINUTE
+# (1800s) and TWO_HOUR (7200s) appear in scanner.py's map but are rejected with
+# a 400, so they are deliberately absent here rather than silently falling back.
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
-    "ONE_HOUR": 3600, "ONE_DAY": 86400
+    "ONE_HOUR": 3600, "SIX_HOUR": 21600, "ONE_DAY": 86400,
 }
 
 # Failure mode constants
@@ -405,6 +411,9 @@ def get_adaptive_search_bounds(diag: dict, history: dict, pair: str) -> dict:
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFrame:
+    if granularity not in GRANULARITY_MAP:
+        log.warning(f"Unknown granularity {granularity!r}; backtesting as ONE_HOUR. "
+                    f"Results will not describe the configured timeframe.")
     gran_sec = GRANULARITY_MAP.get(granularity, 3600)
     all_candles, end_time = [], datetime.utcnow()
     pid = pair
