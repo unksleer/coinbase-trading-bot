@@ -1343,18 +1343,35 @@
                 return;
             }
 
-            // Sort: IN TRADE first, READY second, CLOSE third, WAITING last
-            const order = { 'IN TRADE': 0, 'READY': 1, 'CLOSE': 2, 'WAITING': 3 };
+            // Most actionable first. BLOCKED outranks NO CROSS because a
+            // blocked crossover is a filter decision worth reviewing, while
+            // NO CROSS is simply the absence of a setup.
+            const order = { 'IN TRADE': 0, 'ENTERING': 1, 'BLOCKED': 2,
+                            'NO SETUP': 3, 'NO CROSS': 3, 'BELOW': 4,
+                            'CLOSED': 5 };
             signals.sort((a, b) => (order[a.signal] ?? 9) - (order[b.signal] ?? 9));
 
             let html = '';
             signals.forEach(s => {
+                // Labels state what the bot is doing. The strategy enters on the
+                // crossing itself — one candle — so a pair already above its long
+                // SMA has missed the entry, not approached one. The old "CLOSE"
+                // implied the opposite.
                 const signalConfig = {
                     'IN TRADE': { cls: 'sig-buy',  label: '🟢 IN TRADE',  glow: 'var(--accent-green)' },
-                    'READY':    { cls: 'sig-buy',  label: '⚡ READY',     glow: 'var(--accent-green)' },
-                    'CLOSE':    { cls: 'sig-hold', label: '🟡 CLOSE',     glow: 'none' },
-                    'WAITING':  { cls: 'sig-hold', label: '⏳ WAITING',   glow: 'none' },
+                    'ENTERING': { cls: 'sig-buy',  label: '⚡ ENTERING',  glow: 'var(--accent-green)' },
+                    'BLOCKED':  { cls: 'sig-hold', label: '🚫 BLOCKED',   glow: 'none' },
+                    'NO CROSS': { cls: 'sig-hold', label: '➖ NO CROSS',  glow: 'none' },
+                    'NO SETUP': { cls: 'sig-hold', label: '➖ NO SETUP',  glow: 'none' },
+                    'CLOSED':   { cls: 'sig-hold', label: '🌙 MARKET CLOSED', glow: 'none' },
+                    'BELOW':    { cls: 'sig-hold', label: '⏳ BELOW',     glow: 'none' },
                 }[s.signal] || { cls: 'sig-hold', label: s.signal, glow: 'none' };
+
+                // A blocked crossover is only actionable if you can see which
+                // filter rejected it, so name it rather than just saying no.
+                if (s.signal === 'BLOCKED' && s.blocked_by) {
+                    signalConfig.label += ` · ${BLOCK_LABELS[s.blocked_by] || s.blocked_by}`;
+                }
 
                 const smaShort = s.sma_short != null ? s.sma_short.toFixed(4) : '—';
                 const smaLong  = s.sma_long  != null ? s.sma_long.toFixed(4)  : '—';

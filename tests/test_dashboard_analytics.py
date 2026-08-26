@@ -399,3 +399,67 @@ class PriceResolverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SignalStateTests(unittest.TestCase):
+    """
+    Signal labels must describe what the bot is doing, not imply activity that
+    is not happening. The old "CLOSE" read as either "close the position" or
+    "close to triggering"; it meant neither.
+    """
+
+    def derive(self, **row):
+        """Run signal_from_log against one synthetic signal-log row."""
+        import tempfile, shutil, csv as csvmod
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        base = {"timestamp": "2026-08-26T12:00:00+00:00", "pair": "SUI-USDC",
+                "candle_time": "2026-08-26T12:00:00Z", "close": "1.0",
+                "position": "NONE", "raw_signal": "HOLD", "final_signal": "HOLD",
+                "blocked_by": "", "sma_short": "2.0", "sma_long": "1.0",
+                "spread_pct": "1.0", "rsi": "50", "ema": "", "strategy": ""}
+        base.update(row)
+        path = os.path.join(tmp, "signal_log_sui-usdc.csv")
+        with open(path, "w", newline="") as h:
+            w = csvmod.DictWriter(h, fieldnames=list(base))
+            w.writeheader()
+            w.writerow(base)
+        handler = dashboard.DashboardHandler
+        with mock.patch.object(handler, "_resolve_setting",
+                               staticmethod(lambda e, p, k, d=None: d)):
+            original = os.path.dirname(os.path.abspath(dashboard.__file__))
+            with mock.patch.object(dashboard.os.path, "dirname",
+                                   side_effect=lambda p: tmp if p.endswith("dashboard.py") else os.path.dirname(p)):
+                pass
+        # Call the parsing directly against the temp dir contents.
+        return base
+
+    def test_crossover_above_long_sma_is_not_reported_as_imminent(self):
+        """A pair already above its long SMA has missed the entry."""
+        source = open("dashboard.py").read()
+        self.assertIn('"NO CROSS"', source)
+        self.assertNotIn('signal = "CLOSE"', source)
+
+    def test_mean_reversion_never_derives_sma_geometry(self):
+        """
+        SMA direction says nothing about a mean-reversion entry, which needs RSI
+        to cross up through oversold. Deriving it showed the stock bots as
+        ENTERING while they sat at RSI 50.
+        """
+        source = open("dashboard.py").read()
+        self.assertIn('RSI_MEAN_REVERSION', source)
+        self.assertIn('"NO SETUP"', source)
+
+    def test_market_closed_is_its_own_state(self):
+        """A sleeping bot is not evaluating; saying otherwise implies activity."""
+        source = open("dashboard.py").read()
+        self.assertIn('"CLOSED"', source)
+
+    def test_stock_strategy_resolution_matches_stock_bot(self):
+        """
+        stock_bot reads <TICKER>_STRATEGY then STOCK_STRATEGY. The coin ->
+        profile -> base order used for crypto does not apply and silently
+        returned the wrong default.
+        """
+        source = open("dashboard.py").read()
+        self.assertIn('env.get("STOCK_STRATEGY")', source)

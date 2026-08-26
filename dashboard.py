@@ -235,20 +235,34 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         # blocked_by states the reason directly, so readiness is read off the
         # bot's own decision rather than re-derived from indicator values.
+        #
+        # Labels describe what the bot is doing, not how likely a trade is. The
+        # crossover strategy enters on the crossing itself — a single candle —
+        # so a pair already above its long SMA has missed the entry rather than
+        # approached one, which is what the old "CLOSE" label implied.
+        #
+        # SMA geometry is meaningless for a mean-reversion bot, which enters on
+        # RSI crossing up through oversold. Deriving it anyway is why the stock
+        # bots displayed as ENTERING while sitting at RSI 50.
+        strategy = (last.get("strategy") or "").upper()
+
         if position == "LONG":
             signal = "IN TRADE"
         elif blocked_by:
             signal = "BLOCKED"
         elif raw_signal == "BUY":
-            signal = "READY"
+            signal = "ENTERING"
+        elif strategy == "RSI_MEAN_REVERSION":
+            signal = "NO SETUP"
         elif direction == "ABOVE":
-            signal = "CLOSE"
+            signal = "NO CROSS"
         else:
-            signal = "WAITING"
+            signal = "BELOW"
 
         return {
             "bot": None,
-            "pair": pair,
+            "pair": pair.replace("stock-", ""),
+            "strategy": strategy or "SMA_CROSSOVER",
             "position": position,
             "sma_short": short,
             "sma_long": long,
@@ -284,9 +298,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "xrp-bot":    "XRP-USDC",
             "render-bot": "RENDER-USDC",
             # Stock bots (Alpaca)
-            "spy-bot":    "SPY",
-            "qqq-bot":    "QQQ",
-            "lpl-bot":    "LPL",
+            # Prefixed to match the signal log the stock bot writes; the
+            # market-hours suffix is stripped for display.
+            "spy-bot":    "stock-SPY",
+            "qqq-bot":    "stock-QQQ",
+            "lpl-bot":    "stock-LPL",
         }
         pm2_log_dir = os.path.expanduser("~/.pm2/logs")
         results = []
@@ -316,6 +332,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
             indicator_line = None
             position = "NONE"
+            lines = []
 
             # Check both out and error logs (some bots log to stderr)
             for lpath in [log_path, err_path]:
@@ -339,15 +356,34 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if indicator_line:
                     break
 
+            # The stock bots run whichever class .env selects. Deriving an
+            # SMA-based signal for a mean-reversion bot is how SPY/QQQ/LPL
+            # showed as ENTERING while sitting at RSI 50, nowhere near the
+            # oversold level they actually trigger on.
+            display_pair = pair.replace("stock-", "")
+            prefix = display_pair.split("-")[0].upper()
+            # Mirror stock_bot's own lookup: <TICKER>_STRATEGY, then
+            # STOCK_STRATEGY. The coin -> profile -> base order used elsewhere
+            # does not apply here and silently returned the wrong default.
+            bot_strategy = (env.get(f"{prefix}_STRATEGY")
+                            or env.get("STOCK_STRATEGY")
+                            or "SMA_CROSSOVER").strip().upper()
+
+            # A stock bot asleep outside market hours is not "waiting for a
+            # setup" — it is not evaluating at all, and saying otherwise implies
+            # activity that is not happening.
+            market_closed = any("Market closed" in ln for ln in (lines or [])[-8:])
+
             entry = {
                 "bot": bot_name,
-                "pair": pair,
+                "pair": display_pair,
+                "strategy": bot_strategy,
                 "position": position,
                 "sma_short": None, "sma_long": None,
                 "spread_pct": None, "direction": None,
                 "rsi": None, "rsi_min": None, "rsi_max": None,
                 "ema200": None, "price_vs_ema": None,
-                "signal": "WAITING",
+                "signal": "BELOW",
                 "blocked_by": "",
                 "candle_time": "",
                 "source": "pm2_log",
@@ -375,12 +411,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                     if position == "LONG":
                         entry["signal"] = "IN TRADE"
+                    elif market_closed:
+                        entry["signal"] = "CLOSED"
+                    elif bot_strategy == "RSI_MEAN_REVERSION":
+                        # This path cannot see the RSI crossing, only the level,
+                        # so it reports no setup rather than guessing.
+                        entry["signal"] = "NO SETUP"
                     elif entry["direction"] == "ABOVE" and rsi_ok and ema_ok:
-                        entry["signal"] = "READY"   # crossover already happened, filters pass
+                        entry["signal"] = "ENTERING"
                     elif entry["direction"] == "ABOVE":
-                        entry["signal"] = "CLOSE"   # SMA bullish but filter blocking
+                        entry["signal"] = "BLOCKED"
                     else:
-                        entry["signal"] = "WAITING"  # SMA bearish
+                        entry["signal"] = "BELOW"
 
             results.append(entry)
 

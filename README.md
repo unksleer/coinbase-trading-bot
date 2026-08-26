@@ -302,6 +302,27 @@ doing right now:
 | **Signal Funnel** | Crossovers seen → blocked by which filter → entries taken. An over-tight filter is invisible in the trade ledger, where it looks identical to a quiet market. |
 | **Go-Live Readiness** | Per-coin progress against all five graduation criteria, closest first. Evaluated by `utils/graduation.py` — the same code the nightly report renders and the promotion gate enforces, so one coin cannot show two readiness figures. |
 
+### Bot signal states
+
+| state | meaning |
+| :--- | :--- |
+| `IN TRADE` | holding a position |
+| `ENTERING` | the entry condition fired this candle and passed every filter |
+| `BLOCKED` | the entry condition fired and a filter rejected it — the filter is named |
+| `NO CROSS` | crossover strategy: short SMA already above long, so the crossing has passed |
+| `NO SETUP` | mean reversion: RSI has not crossed up through oversold |
+| `BELOW` | crossover strategy: short SMA under long, no setup forming |
+| `CLOSED` | stock bot outside market hours — not evaluating at all |
+
+States describe what the bot is doing, not how likely a trade is. The crossover
+strategy enters on the crossing itself, a single candle, so a pair already above
+its long SMA has **missed** the entry rather than approached one. The previous
+label for that was `CLOSE`, which read as either "close the position" or "close
+to triggering" and meant neither.
+
+`NO CROSS` and `BELOW` describe SMA geometry and are never shown for a
+mean-reversion bot, which triggers on RSI instead.
+
 ### Price provenance
 
 Position P&L is only as trustworthy as the price behind it. Prices resolve

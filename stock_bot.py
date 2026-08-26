@@ -310,6 +310,36 @@ def compute_indicators(df: pd.DataFrame) -> dict:
     }
 
 
+def describe_decision(ind, position, should_enter, why, exit_reason):
+    """
+    What the bot decided this candle, in the shared signal-log shape.
+
+    Without this the dashboard had to infer intent by regexing log lines, and
+    it inferred it under SMA-crossover rules — so mean-reversion bots showed as
+    about to enter while sitting at RSI 50, nowhere near their oversold trigger.
+    """
+    if STRATEGY == "RSI_MEAN_REVERSION":
+        raw = "BUY" if (ind["prev_rsi"] < RSI_OVERSOLD <= ind["rsi"]) else "HOLD"
+        blocked = ""
+    else:
+        crossed = (ind["prev_sma_short"] < ind["prev_sma_long"]
+                   and ind["sma_short"] > ind["sma_long"])
+        raw = "BUY" if crossed else "HOLD"
+        blocked = "RSI" if (crossed and not should_enter) else ""
+    return {
+        "raw_signal": raw,
+        "final_signal": "BUY" if should_enter else ("SELL" if exit_reason else "HOLD"),
+        "blocked_by": blocked,
+        "sma_short": ind.get("sma_short"),
+        "sma_long": ind.get("sma_long"),
+        "spread_pct": (abs(ind["sma_short"] - ind["sma_long"]) / ind["sma_long"] * 100
+                       if ind.get("sma_long") else None),
+        "rsi": ind.get("rsi"),
+        "ema": None,
+        "strategy": STRATEGY,
+    }
+
+
 def entry_signal(ind):
     """
     Whether to open a position. Returns (should_enter, description).
@@ -347,6 +377,15 @@ def strategy_exit_reason(ind):
 # Order execution via Alpaca
 # ─────────────────────────────────────────────────────────────────────────────
 _VENUE = None
+_SIGNAL_LOG = None
+
+
+def signal_logger():
+    global _SIGNAL_LOG
+    if _SIGNAL_LOG is None:
+        from utils.signal_log import SignalLogger
+        _SIGNAL_LOG = SignalLogger(f"stock-{TICKER}")
+    return _SIGNAL_LOG
 
 
 def venue():
@@ -559,6 +598,13 @@ def main():
             # ── Strategy logic ────────────────────────────────────────────────
             if state["position"] == "NONE":
                 should_enter, why = entry_signal(ind)
+                try:
+                    signal_logger().record(
+                        str(bars.index[-1]), price, state["position"],
+                        describe_decision(ind, state["position"], should_enter,
+                                          why, None))
+                except Exception as sig_err:
+                    log.warning(f"Could not record signal decision: {sig_err}")
 
                 if should_enter:
                     # Volume confirmation filter
