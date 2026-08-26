@@ -20,10 +20,15 @@ separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
 three days.
 
-### Six-hour experiment arm (2026-08-26)
+### All nine coins on six-hour (2026-08-26)
 
-Four coins — **BTC, SOL, LINK, SUI** — run `SIX_HOUR` candles with `SMA 10/40`.
-The other five stay on `ONE_HOUR` with `SMA 5/30` as a control.
+Every coin runs `SIX_HOUR` candles with `SMA 10/40`.
+
+This started as a four-coin arm with five held on `ONE_HOUR` as a control. The
+control was dropped the same day: it measured a configuration already shown
+negative at every parameter, so it confirmed a known answer while halving the
+rate at which the open question gets answered. The 53 completed hourly trades on
+record are the historical baseline instead.
 
 Every hourly SMA window tested is negative out of sample. Six-hour shows a
 plateau — `8/30` through `15/45` all positive, peaking at `10/40`–`12/40` — and
@@ -39,14 +44,18 @@ ONE_DAY       -0.9   -6.3   +2.2   -1.7   +2.8   +3.4   +0.4   -0.8   -0.2
 Reproduce with
 [compare_strategies.py](file:///home/leeunks/coinbase-trading-bot/compare_strategies.py).
 
-**The arms are not directly comparable on trade count.** Six-hour produces
-roughly 0.23 entries/day against hourly's 3.24 — about 14× slower, which puts 20
-trades per coin at ~27 months rather than ~2. Judge this arm on per-trade
-quality and on whether net P&L turns positive, not on volume. The control arm
-exists so data keeps flowing while that plays out.
+**Expected rate**, measured over 375 days rather than extrapolated from one
+window: **0.92 entries per coin per month** after filters (the RSI band passes
+48% of crossovers). Across nine coins that is ~8.3/month — about 40 trades in
+five months.
 
-Coins were assigned by market-cap tier, not by past performance — picking the
-better historical performers into the test arm would bias the result.
+An earlier estimate of 0.35/coin/month came from a single quiet 120-day
+out-of-sample slice and was roughly 2.6× too pessimistic. Measure rates over the
+longest history available, not over whichever window a backtest happened to use.
+
+Judge on per-trade quality and on whether net turns positive, not on volume.
+This is ~6× slower per coin than hourly by design — frequency traded for moves
+large enough to clear the 1.207% round trip.
 
 > Six-hour buy-and-hold returned +$11.39 over the same window against the
 > strategy's +$4.35. Six-hour is where this strategy stops destroying value, not

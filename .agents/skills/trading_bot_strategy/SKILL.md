@@ -227,10 +227,17 @@ positive net, positive on a majority of coins, and at least one graduated coin.
 
 ## Six-Hour Experiment (started 2026-08-26)
 
-| Arm | Coins | Config |
-|---|---|---|
-| Test | BTC, SOL, LINK, SUI | `SIX_HOUR`, SMA 10/40 |
-| Control | ETH, ADA, XRP, NEAR, RENDER | `ONE_HOUR`, SMA 5/30 |
+**All nine coins run `SIX_HOUR` with SMA 10/40.** Began as a 4-coin arm with an
+hourly control; the control was dropped same-day because it measured a config
+already proven negative, halving the rate at which the open question resolves.
+The 53 hourly trades on record are the baseline.
+
+Rate: **0.92 entries/coin/month** after filters, measured over 375 days (RSI band
+passes 48% of crossovers). Nine coins ≈ 8.3/month ≈ 40 trades in 5 months.
+
+> An earlier estimate of 0.35/coin/month came from one quiet 120-day window and
+> was 2.6× too pessimistic. **Measure rates over the longest history available**,
+> not over whatever window a backtest happened to use.
 
 **Every hourly SMA window is negative out-of-sample.** Six-hour shows a plateau
 (8/30 through 15/45 all positive, peak 10/40–12/40). Daily alternates sign =
