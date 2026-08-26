@@ -255,6 +255,33 @@ Judge that arm on per-trade quality, not volume.
 **Buy-and-hold still beats it** (+$11.39 vs +$4.35 over the same window). Six-hour
 is where this strategy stops destroying value, not where it wins.
 
+## Stocks vs Crypto — Different Economics
+
+**Alpaca equities are commission-free.** Round-trip cost is slippage only
+(~0.20%) against crypto's 1.20%. That single term flips which strategies work,
+so **never transfer a crypto finding to stocks or the reverse.**
+
+Measured across 15 symbols, both timeframes, out-of-sample:
+
+| variant | Hour | Day | win rate |
+|---|---|---|---|
+| SMA 5/30 (what stock_bot runs) | +1.60 | +4.45 | 35–44% |
+| **RSI mean-rev 30/70** | **+9.06** | **+13.39** | **66–75%** |
+| RSI mean-rev 25/75 | +5.63 | +3.43 | 67–70% |
+| RSI mean-rev 20/80 | +3.51 | +6.60 | 73–100% |
+| buy and hold | +32.17 | +84.05 | — |
+
+All four mean-reversion thresholds are positive on **both** timeframes — a
+plateau, unlike crypto where the winner flipped between timeframes (noise).
+Mean reversion is clearly the better class here, and `stock_bot.py` does not
+implement it; it is hardcoded to SMA crossover.
+
+Buy-and-hold still beats everything, but the sample covers a strong bull market
+(13/15 symbols positive holding).
+
+Add or remove tickers with `add_stock.py`; it validates tradability, checks
+history, and backtests before registering anything.
+
 ## Graduation (sim -> live)
 
 Defined once in `utils/graduation.py`. Five criteria, **all must pass**; the

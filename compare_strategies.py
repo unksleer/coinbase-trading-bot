@@ -30,9 +30,22 @@ import auto_learner as al
 PAIRS = ["BTC-USDC", "ETH-USDC", "SOL-USDC", "ADA-USDC", "LINK-USDC",
          "NEAR-USDC", "SUI-USDC", "XRP-USDC", "RENDER-USDC"]
 
-FEE = al.REAL_FEE_RATE
+CRYPTO_FEE = al.REAL_FEE_RATE     # 0.60% per side, Coinbase tier 1
+STOCK_FEE = 0.0                   # Alpaca equities are commission-free
 SLIPPAGE = al.DEFAULT_SLIPPAGE_BPS / 10000.0
 TRADE_USD = 10.0
+
+# Set per run by main(); the fee is the single term that most changes which
+# strategies are viable, so it is explicit rather than assumed.
+FEE = CRYPTO_FEE
+
+
+def stock_universe():
+    """Tickers with a bot, plus any listed in STOCK_WATCHLIST."""
+    import os
+    running = [t.strip().upper()
+               for t in os.getenv("STOCK_WATCHLIST", "").split(",") if t.strip()]
+    return running or ["SPY", "QQQ", "LPL"]
 
 
 def rsi_series(closes, period):
@@ -158,15 +171,31 @@ def evaluate(closes, builder, args, split=0.6):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--granularity", default="ONE_HOUR",
-                        choices=sorted(al.GRANULARITY_MAP))
+    parser.add_argument("--market", default="crypto", choices=("crypto", "stocks"))
+    parser.add_argument("--granularity", default=None,
+                        help="crypto: %s; stocks: Hour or Day"
+                             % ", ".join(sorted(al.GRANULARITY_MAP)))
     parser.add_argument("--candles", type=int, default=1500)
+    parser.add_argument("--lookback-days", type=int, default=400,
+                        help="stocks only")
     args = parser.parse_args()
 
-    print(f"\n  Strategy classes on {args.granularity}, {args.candles} candles, "
-          f"{len(PAIRS)} coins")
-    print(f"  Fees {FEE*100:.2f}%/side · slippage {SLIPPAGE*100:.2f}%/side · "
-          f"${TRADE_USD:.0f}/trade · SL 5% · TP 8% · trail 1.5%\n")
+    global FEE
+    is_stocks = args.market == "stocks"
+    FEE = STOCK_FEE if is_stocks else CRYPTO_FEE
+    if args.granularity is None:
+        args.granularity = "Hour" if is_stocks else "ONE_HOUR"
+
+    symbols = stock_universe() if is_stocks else PAIRS
+    print(f"\n  Strategy classes · {args.market} · {args.granularity} · "
+          f"{len(symbols)} symbols")
+    fee_note = "COMMISSION-FREE" if FEE == 0 else f"{FEE*100:.2f}%/side"
+    print(f"  Fees {fee_note} · slippage {SLIPPAGE*100:.2f}%/side · "
+          f"${TRADE_USD:.0f}/trade · SL 5% · TP 8% · trail 1.5%")
+    if FEE == 0:
+        print(f"  Round-trip cost is slippage only ({SLIPPAGE*2*100:.2f}%), against "
+              f"{CRYPTO_FEE*2*100:.2f}% on crypto.")
+    print()
 
     variants = [
         ("SMA 5/30 (live config)", sma_crossover, (5, 30)),
@@ -179,12 +208,21 @@ def main():
     ]
 
     series = {}
-    for pair in PAIRS:
-        df = al.fetch_candles(pair, args.granularity, args.candles)
-        if not df.empty and len(df) > 200:
-            series[pair] = pd.to_numeric(df["close"]).to_numpy()
+    if is_stocks:
+        from utils import stock_data
+        for ticker in symbols:
+            values = stock_data.closes(ticker, args.granularity, args.lookback_days)
+            if len(values) > 200:
+                series[ticker] = values
+            else:
+                print(f"  {ticker}: only {len(values)} bars, skipped")
+    else:
+        for pair in symbols:
+            df = al.fetch_candles(pair, args.granularity, args.candles)
+            if not df.empty and len(df) > 200:
+                series[pair] = pd.to_numeric(df["close"]).to_numpy()
     if not series:
-        print("  No candle data available.")
+        print("  No price data available.")
         return
 
     # Buy-and-hold must be measured on the same out-of-sample segment the
@@ -196,7 +234,7 @@ def main():
                      if al.buy_and_hold_backtest(c[int(len(c) * split):])["net_profit"] > 0)
 
     print(f"  {'variant':26} {'in-sample':>11} {'OUT-SAMPLE':>12} "
-          f"{'trades':>7} {'win%':>6} {'coins +':>8}")
+          f"{'trades':>7} {'win%':>6} {'sym +':>7}")
     print("  " + "-" * 76)
     for label, builder, params in variants:
         ins = outs = 0.0

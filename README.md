@@ -148,7 +148,33 @@ the fee floor, and breaks a candidate filter down per pair — a filter that loo
 profitable overall but is carried by one lucky coin is not a filter. It flags
 its own sample size when a result rests on too few trades to trust.
 
-### 7. Scheduled Jobs (PM2 cron)
+### 7. Stock Bots (`add_stock.py`)
+
+Stock trades on Alpaca are **commission-free**, so the ~1.2% round-trip fee that
+dominates every crypto result is absent. Results are not transferable between
+the two markets.
+
+```bash
+.venv/bin/python add_stock.py --list          # registered tickers vs pm2
+.venv/bin/python add_stock.py NVDA --check    # validate + backtest, change nothing
+.venv/bin/python add_stock.py NVDA            # register and start
+.venv/bin/python add_stock.py NVDA --amount 25
+.venv/bin/python add_stock.py NVDA --remove   # stop and deregister
+```
+
+Every check runs before anything changes: that Alpaca will accept orders for the
+symbol, that enough history exists for the indicators, and a backtest of the
+configured strategy on that symbol against buy-and-hold. Registration starts the
+pm2 process, adds the ticker to `STOCK_WATCHLIST` and runs `pm2 save`.
+
+Compare strategy classes across the watchlist with:
+
+```bash
+.venv/bin/python compare_strategies.py --market stocks --granularity Hour
+.venv/bin/python compare_strategies.py --market stocks --granularity Day --lookback-days 1800
+```
+
+### 8. Scheduled Jobs (PM2 cron)
 
 Both run once per firing and then stop; `--no-autorestart` is required or PM2
 will treat the exit as a crash and restart them in a loop.

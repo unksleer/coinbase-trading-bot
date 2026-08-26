@@ -4,8 +4,10 @@ bearing: anything wider than the client's wrap point breaks every aligned
 column below it.
 """
 import io
+import os
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 import sim_report
 
@@ -193,3 +195,40 @@ class HtmlTests(unittest.TestCase):
     def test_infinite_profit_factor_renders(self):
         out = self.html({"sui-usdc": trades([0.5, 0.6])})
         self.assertIn("∞", out)
+
+
+class StockDataTests(unittest.TestCase):
+    """Stock economics differ from crypto in the term that has mattered most."""
+
+    def test_stock_fee_is_zero_and_crypto_is_not(self):
+        import compare_strategies as cs
+        self.assertEqual(cs.STOCK_FEE, 0.0)
+        self.assertGreater(cs.CRYPTO_FEE, 0.0)
+
+    def test_timeframe_is_validated(self):
+        from utils import stock_data
+        with self.assertRaises(ValueError):
+            stock_data.fetch_bars("SPY", timeframe="SIX_HOUR")
+
+    def test_missing_credentials_raise_a_clear_error(self):
+        from utils import stock_data
+        with mock.patch.dict(os.environ, {"ALPACA_API_KEY": "", "ALPACA_SECRET_KEY": ""}):
+            with self.assertRaises(RuntimeError) as ctx:
+                stock_data._client()
+        self.assertIn("ALPACA_API_KEY", str(ctx.exception))
+
+
+class AddStockTests(unittest.TestCase):
+    def test_ticker_validation_rejects_paths_and_junk(self):
+        import add_stock
+        for good in ("SPY", "NVDA", "BRK.B", "RDS-A"):
+            self.assertTrue(add_stock.valid_ticker(good), good)
+        for bad in ("../etc/passwd", "", "TOOLONGSYMBOL", "1ABC", "a b"):
+            self.assertFalse(add_stock.valid_ticker(bad), bad)
+
+    def test_watchlist_parsing_is_tolerant(self):
+        import add_stock
+        self.assertEqual(
+            add_stock.watchlist({"STOCK_WATCHLIST": " spy , qqq ,, LPL "}),
+            ["SPY", "QQQ", "LPL"])
+        self.assertEqual(add_stock.watchlist({}), [])
