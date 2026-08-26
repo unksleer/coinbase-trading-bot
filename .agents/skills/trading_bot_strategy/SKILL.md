@@ -19,27 +19,46 @@ description: >
 | Setting | Value | Reason |
 |---|---|---|
 | Granularity | ONE_HOUR | Only timeframe with moves large enough to clear fees |
-| Fee rate | 0.60% (FEE_RATE_PERCENT=0.60) | Actual Coinbase Advanced Trade taker fee |
-| Roundtrip cost | 1.20% | Need avg gross move ≥3.6% to be profitable |
-| SMA baseline | Short=5, Long=30 | 5h/30h crossover on hourly data |
-| BTC SMA | Short=8, Long=21 | Separately tuned via historical backtest |
+| Fee rate | 0.60%/side (`FEE_RATE_PERCENT=0.60`) | Coinbase tier-1 **maker** rate. The bot places `limit_order_gtc`, so this is the normal path. The market-order exit fallback pays the **taker** rate of 1.20%. |
+| Roundtrip cost | **1.207% measured** across 51 sim trades | A trade must clear this gross to net anything. Current average gross move is 0.861% — structurally underwater. |
+| SMA | Short=5, Long=30, **all nine coins** | Per-coin overrides commented out 2026-08-24. They were hand-set, never learner-derived. Identical settings make coins comparable — otherwise you cannot tell a coin difference from a config difference. |
+| Trade size | $10, **all nine coins** | Equal weighting; no coin is privileged, BTC included. |
 | Stop-loss | 5% | 3% too tight for 1h noise |
-| Take-profit | 8% (BTC: 10%) | Realistic 1h trend target clearing fees |
+| Take-profit | 8% | Realistic 1h trend target clearing fees |
+| Trailing stop | 1.5% trail, arms at +1.5% | Was 3.0%/2.0%, which needed a ~4.3% peak to break even and never fired once in 51 trades. Hourly ATR is 1.4–2.2%, so the trail cannot go below that without firing on noise. |
 | EMA200 filter | ON for CONSERVATIVE, OFF for SIM | See Profiles section |
-| RSI range | [30-70] for SIM, [40-70] for CONSERVATIVE | |
+| RSI buy band | **[30-57] SIM, [40-57] CONSERVATIVE** | 70 → 55 on 2026-08-24, relaxed to 57 on 2026-08-26. RSI ≥55 entries lost $4.11 over 24 trades, but live crossovers cluster at 54.5–57.0, so a cut at 55 rejected 4 of 6 and tripled time-to-graduation. 55 vs 57 is indistinguishable on 51 trades (+$2.15 vs +$2.23) while 57 keeps 25% more. **Do not relax past 57** — 58-60 is −$0.22/trade, 60-65 is −$0.25. |
+| Separation ceiling | `SMA_MAX_SPREAD_PERCENT`, unset (disabled) | Rejects a crossover that has already extended. BUY only. |
+
+**Hourly noise floor:** ATR is 1.4–2.2% of price per candle. Any threshold tighter
+than that fires on noise rather than signal. This is the constraint behind the
+trailing-stop and take-profit values, and the reason sub-hourly granularity was
+abandoned.
 
 ## Profile Assignments
 
-| Bot | Profile | EMA Filter | RSI Min | Purpose |
+| Bot | Profile | EMA Filter | RSI Band | Purpose |
 |---|---|---|---|---|
-| btc-bot | CONSERVATIVE | ON | 40 | Live-adjacent, full protection |
-| near-bot | CONSERVATIVE | ON | 40 | Closest sim to graduation |
-| sol-bot | SIM | OFF | 30 | Data collection |
-| sui-bot | SIM | OFF | 30 | Data collection |
-| xrp-bot | SIM | OFF | 30 | Data collection |
-| etc-bot | SIM | OFF | 30 | Data collection |
-| link-bot | SIM | OFF | 30 | Data collection |
-| render-bot | SIM | OFF | 30 | Data collection |
+| btc-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
+| eth-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
+| near-bot | SIM | OFF | 30–55 | Data collection (moved off CONSERVATIVE 2026-08-24) |
+| ada-bot | SIM | OFF | 30–55 | Data collection |
+| link-bot | SIM | OFF | 30–55 | Data collection |
+| render-bot | SIM | OFF | 30–55 | Data collection |
+| sol-bot | SIM | OFF | 30–55 | Data collection |
+| sui-bot | SIM | OFF | 30–55 | Data collection |
+| xrp-bot | SIM | OFF | 30–55 | Data collection |
+| spy/qqq/lpl-bot | STOCK | — | 40–70 | Alpaca paper, commission-free |
+
+> `etc-bot` no longer exists. The three stock bots trade a different venue with
+> no commission, so never average their results into crypto fee analysis.
+
+> **⚠ CONSERVATIVE cannot trade as configured.** The 0.25% separation floor and
+> the EMA200 filter compound: btc/eth/near took 0, 0 and 1 entries per 1500
+> candles under it, and neither filter alone was the blocker — dropping both
+> raises them to 18, 21 and 23. All nine crypto bots now run SIM so their data is
+> comparable; CONSERVATIVE is reserved for live trading and needs both filters
+> loosened before anything points at it.
 
 ## Auto-Learner: How to Diagnose
 
@@ -147,16 +166,140 @@ The learner checks this every night and sends an email alert if met. **Never man
 
 ### Fee rate bug
 - `FEE_RATE_PERCENT=1.20` was set to the old Coinbase Pro rate
-- Actual Coinbase Advanced Trade fee is 0.60% taker
+- Coinbase Advanced Trade tier-1 is 0.60% **maker** (the bot's normal path via
+  `limit_order_gtc`); 1.20% is the **taker** rate, paid only on the market-order
+  exit fallback
 - All backtests and sims ran against double the real cost for weeks
 - Fixed: `FEE_RATE_PERCENT=0.60`
+
+## Silent Failures Found 2026-08-24
+
+Four things were broken in ways that produced no error and looked like normal
+operation. Worth pattern-matching against before trusting any component.
+
+### The learner optimised a strategy the bot doesn't run
+`quick_backtest` modelled only crossover + SL/TP/trailing. The bot also applies
+RSI, separation and EMA filters. Every recommendation was scored against the
+wrong strategy. Fixed: the backtest now applies the full BUY chain, and config
+is threaded from `.env` instead of defaulted. A parity test asserts the two
+agree on every crossover candle.
+
+### BTC, ETH and ADA were never optimised
+Their `-USDC` products return HTTP 200 with an **empty candle list**, not 404,
+so the `-USD` fallback never fired. They were skipped every run, silently.
+Coverage was 6 coins, not 9. **Any Coinbase `-USDC` fetch needs the `-USD`
+fallback on empty-200 as well as 404.**
+
+### The dashboard reported a loss that did not exist
+Position P&L came from the scanner file, which had gone 34 days without an
+update because `scanner.py` was never scheduled. LINK showed −$2.56 against a
+live price making it −$0.22. Coins absent from the file fell back to entry price
+and showed exactly $0.00 unrealized. Fixed: live → candle → entry resolution
+with source and age attached to every price.
+
+### The market-regime filter had never fired
+`MIN_BULLISH_MARKET_RATIO=0.35` read that same dead file, so the ratio was
+pinned at 1.0 and the gate passed every time. **Removed**, along with the
+dashboard gauge showing "100% bullish". A risk control that cannot fire is worse
+than none, because it implies protection that is absent. If restored, it needs a
+staleness check that fails closed.
+
+## Risk Model
+
+**All risk limits are per bot**, read from that bot's own state file. There is no
+cross-bot aggregation — portfolio exposure is the per-bot value × 9.
+
+| Setting | Per bot | × 9 |
+|---|---|---|
+| `MAX_VAL_PER_ORDER` | $15 | — |
+| `MAX_EXPOSURE_PER_PRODUCT` | $15 | $135 |
+| `MAX_DAILY_LOSS` | $3.00 | $27 |
+| `MAX_TRADES_PER_DAY` | 6 | 54 |
+
+At $10/trade, all nine holding deploys $90; all nine stopping out at once loses
+~$5.59. **Catastrophic loss is not the risk at this size — fee drag is.** 51
+trades have cost $6.13 in fees against a +$4.36 gross edge.
+
+**Never raise `TRADE_AMOUNT_USD` to chase returns.** Fees are a percentage, so
+scaling multiplies gross and fees equally; a negative-expectancy system just
+loses faster. Required before any increase: 30+ trades since the last change,
+positive net, positive on a majority of coins, and at least one graduated coin.
+
+## Six-Hour Experiment (started 2026-08-26)
+
+**All nine coins run `SIX_HOUR` with SMA 10/40.** Began as a 4-coin arm with an
+hourly control; the control was dropped same-day because it measured a config
+already proven negative, halving the rate at which the open question resolves.
+The 53 hourly trades on record are the baseline.
+
+Rate: **0.92 entries/coin/month** after filters, measured over 375 days (RSI band
+passes 48% of crossovers). Nine coins ≈ 8.3/month ≈ 40 trades in 5 months.
+
+> An earlier estimate of 0.35/coin/month came from one quiet 120-day window and
+> was 2.6× too pessimistic. **Measure rates over the longest history available**,
+> not over whatever window a backtest happened to use.
+
+**Every hourly SMA window is negative out-of-sample.** Six-hour shows a plateau
+(8/30 through 15/45 all positive, peak 10/40–12/40). Daily alternates sign =
+noise. RSI mean-reversion looked strong on hourly (67% win rate) but is the
+worst variant on daily — also noise. Run `compare_strategies.py` to reproduce.
+
+The learner **only ever searched inside the hourly row**: granularity is not in
+its parameter space, and `SIX_HOUR` was silently backtested as `ONE_HOUR` until
+the GRANULARITY_MAP fix. It could not have found this. When a search is
+exhaustive and finds nothing, question the box before questioning the contents.
+
+Six-hour is ~14× slower (0.23 vs 3.24 entries/day; ~27 months to 20 trades/coin).
+Judge that arm on per-trade quality, not volume.
+
+**Buy-and-hold still beats it** (+$11.39 vs +$4.35 over the same window). Six-hour
+is where this strategy stops destroying value, not where it wins.
+
+## Graduation (sim -> live)
+
+Defined once in `utils/graduation.py`. Five criteria, **all must pass**; the
+score out of 100 is display only.
+
+| Criterion | Threshold | Weight |
+|---|---|---|
+| Completed trades | ≥ 20 | 25 |
+| Win rate | ≥ 55% | 25 |
+| Net P&L | > $0 | 25 |
+| Worst single trade | ≥ −$2.50 | 15 |
+| Per-trade Sharpe | ≥ 0.35 | 10 |
+
+**This was three inconsistent implementations until 2026-08-26.**
+`check_graduation` gated promotion on four criteria, `sim_report.py` displayed a
+five-criterion score in the nightly email, and the dashboard counted four — so
+one coin showed two different readiness figures, and the gate that actually
+promotes was *weaker* than the score shown.
+
+The Sharpe check was also broken: it multiplied by `sqrt(252)`, the annualisation
+factor for daily returns, against per-trade P&L on positions held ~20 hours.
+That inflated every value 15.87x, so it passed whenever the mean was positive —
+duplicating the net-P&L criterion. The threshold of 0.35 is derived from the
+observed win/loss distributions: simulated 20-trade coins meeting the other four
+criteria have a median raw Sharpe of 0.515 and a 10th percentile of 0.270, so
+0.35 rejects the lumpiest fifth without blocking the median.
+
+**Never add a graduation criterion outside `utils/graduation.py`.**
+
+## Instrumentation
+
+| Source | Use |
+|---|---|
+| `logs/signal_log_<pair>.csv` | Every candle decision incl. `blocked_by`. The only place an over-tight filter is visible — in the trade ledger it looks identical to a quiet market. |
+| `analyze_entries.py` | Which entry conditions produce follow-through vs the measured fee floor, per pair. |
+| Dashboard Signal Funnel | Crossovers seen → blocked by which filter → entries taken. |
+| Dashboard waterfall | Gross vs fees vs net. Distinguishes a cost problem from a signal problem. |
 
 ## PM2 Process Names
 
 | Process | Function |
 |---|---|
-| btc-bot | BTC-USDC live-adjacent sim |
-| sol-bot, sui-bot, xrp-bot | SIM profile altcoin bots |
-| etc-bot, link-bot, near-bot, render-bot | SIM profile altcoin bots |
-| learner | auto_learner.py — cron 0 4 * * * |
-| dashboard | Web dashboard server |
+| btc-bot, eth-bot, near-bot | CONSERVATIVE profile |
+| ada-bot, link-bot, render-bot, sol-bot, sui-bot, xrp-bot | SIM profile altcoin bots |
+| spy-bot, qqq-bot, lpl-bot | Alpaca stock paper bots |
+| learner | auto_learner.py — cron `0 4 * * *`, `--no-autorestart` |
+| scanner | scanner.py — cron `5 * * * *`, `--no-autorestart` |
+| dashboard | Web dashboard server, port 8080 |

@@ -858,10 +858,11 @@
             const ready = coins.filter(c => c.ready).length;
             sub.textContent = ready
                 ? `${ready} coin${ready > 1 ? 's' : ''} meeting all criteria`
-                : `No coins eligible yet — closest is ${coins[0].pair} at ${coins[0].passed}/${coins[0].total}`;
+                : `No coins eligible yet — closest is ${coins[0].pair} at ${coins[0].score}/${coins[0].max_score}`;
 
             el.innerHTML = coins.map(c => {
-                const pct = (c.passed / c.total) * 100;
+                // Score, not criteria count — matches the nightly email exactly.
+                const pct = (c.score / c.max_score) * 100;
                 const bar = c.ready ? "var(--accent-green)" : "var(--accent-blue)";
                 const checks = c.checks.map(ck => `
                     <div class="grad-check">
@@ -873,7 +874,7 @@
                 <div class="scanner-card">
                     <div class="grad-head">
                         <span class="grad-coin">${c.pair}</span>
-                        <span class="grad-score">${c.passed}/${c.total}</span>
+                        <span class="grad-score">${c.score}/${c.max_score} pts</span>
                     </div>
                     <div class="grad-track"><div class="grad-fill" style="width:${pct}%; background:${bar}"></div></div>
                     ${checks}

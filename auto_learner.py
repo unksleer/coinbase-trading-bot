@@ -90,17 +90,26 @@ MIN_VALIDATION_TRADES = 4
 MIN_STABILITY_PASS_RATE = 0.60
 MIN_REAL_TRADES_FOR_RECOMMENDATION = 20
 
-# Criteria a sim coin must meet before it is eligible for live trading.
-# Named so the dashboard can display progress against the same numbers the
-# learner gates on, rather than keeping a second copy that can drift.
-GRADUATION_MIN_TRADES = 20
-GRADUATION_MIN_WIN_RATE = 55.0
-GRADUATION_MIN_NET_PNL = 0.0
-GRADUATION_WORST_TRADE_FLOOR = -2.50
+# Graduation criteria live in utils/graduation.py. Re-exported here because
+# existing callers import them from this module.
+from utils.graduation import (
+    MIN_TRADES as GRADUATION_MIN_TRADES,
+    MIN_WIN_RATE as GRADUATION_MIN_WIN_RATE,
+    MIN_NET_PNL as GRADUATION_MIN_NET_PNL,
+    WORST_TRADE_FLOOR as GRADUATION_WORST_TRADE_FLOOR,
+    MIN_SHARPE as GRADUATION_MIN_SHARPE,
+    evaluate as evaluate_graduation,
+)
 
+# Must cover every granularity the bot can be configured with, or a coin set to
+# an unlisted one is silently backtested as ONE_HOUR — optimising the wrong
+# timeframe with no error. Mirrors scanner.py's map.
+# Only the granularities the Exchange candles endpoint accepts. THIRTY_MINUTE
+# (1800s) and TWO_HOUR (7200s) appear in scanner.py's map but are rejected with
+# a 400, so they are deliberately absent here rather than silently falling back.
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
-    "ONE_HOUR": 3600, "ONE_DAY": 86400
+    "ONE_HOUR": 3600, "SIX_HOUR": 21600, "ONE_DAY": 86400,
 }
 
 # Failure mode constants
@@ -402,6 +411,9 @@ def get_adaptive_search_bounds(diag: dict, history: dict, pair: str) -> dict:
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFrame:
+    if granularity not in GRANULARITY_MAP:
+        log.warning(f"Unknown granularity {granularity!r}; backtesting as ONE_HOUR. "
+                    f"Results will not describe the configured timeframe.")
     gran_sec = GRANULARITY_MAP.get(granularity, 3600)
     all_candles, end_time = [], datetime.utcnow()
     pid = pair
@@ -1020,28 +1032,25 @@ def check_graduation() -> list:
                         pass
         except Exception:
             continue
-        n = len(trades)
-        if n < GRADUATION_MIN_TRADES:
-            continue
-        wins     = sum(1 for p in trades if p > 0)
-        win_rate = wins / n * 100
-        net_pnl  = sum(trades)
-        worst    = min(trades)
-        if (win_rate >= GRADUATION_MIN_WIN_RATE
-                and net_pnl > GRADUATION_MIN_NET_PNL
-                and worst >= GRADUATION_WORST_TRADE_FLOOR):
+        # Same evaluation the nightly report and the dashboard display, so a
+        # coin cannot read "not ready" in the email while being promoted here.
+        result = evaluate_graduation(trades)
+        if result["ready"]:
             coin = (os.path.basename(fpath)
                     .replace("completed_trades_", "")
                     .replace("_dry.csv", ""))
-            ready.append({"coin": coin, "trades": n,
-                          "win_rate": win_rate, "net_pnl": net_pnl})
+            stats = result["stats"]
+            ready.append({"coin": coin, "trades": stats["trades"],
+                          "win_rate": stats["win_rate"],
+                          "net_pnl": stats["net_pnl"],
+                          "sharpe": stats["sharpe"]})
     return ready
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification
 # ─────────────────────────────────────────────────────────────────────────────
-def send_notification(subject: str, body: str):
+def send_notification(subject: str, body: str, html: str = None):
     try:
         from dotenv import load_dotenv
         load_dotenv(os.path.join(DIR, ".env"))
@@ -1054,7 +1063,15 @@ def send_notification(subject: str, body: str):
         to_email  = os.getenv("NOTIFICATION_EMAIL", smtp_user)
         if not smtp_host or not smtp_user:
             return
-        msg = MIMEText(body)
+        if html:
+            # Multipart alternative: clients that cannot render HTML fall back
+            # to the plain-text part rather than showing raw markup.
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg.attach(MIMEText(body, "plain"))
+            msg.attach(MIMEText(html, "html"))
+        else:
+            msg = MIMEText(body)
         msg["Subject"] = f"[TradingBot] {subject}"
         msg["From"]    = smtp_user
         msg["To"]      = to_email
@@ -1123,7 +1140,13 @@ def main():
                  f"  SL={current['stop_loss']}%  TP={current['take_profit']}%")
 
         # ── PHASE 2/3: Adaptive grid search ──────────────────────────────────
-        best = optimize_coin(pair, cfg["gran"], diag, history, current)
+        # Granularity comes from .env, not the COINS table: the bot reads it
+        # there, so a hardcoded value here would backtest a different timeframe
+        # than the one being traded.
+        gran = _resolve_env(read_env(), cfg["prefix"], "GRANULARITY", cfg["gran"])
+        if gran != cfg["gran"]:
+            log.info(f"  Granularity from .env: {gran} (table default {cfg['gran']})")
+        best = optimize_coin(pair, gran, diag, history, current)
         if not best:
             log.warning(f"  No valid optimizer result for {pair} — keeping current params")
             continue
@@ -1259,6 +1282,7 @@ def main():
 
     # ── Run sim report ────────────────────────────────────────────────────────
     log.info("\nRunning sim_report...")
+    report_html = None
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(DIR, "sim_report.py")],
@@ -1266,6 +1290,17 @@ def main():
         )
         report_text = result.stdout
         log.info(report_text)
+
+        # HTML for the email; the text form stays the plain-text alternative
+        # and is what appears in this log.
+        html_result = subprocess.run(
+            [sys.executable, os.path.join(DIR, "sim_report.py"), "--html"],
+            capture_output=True, text=True, cwd=DIR
+        )
+        if html_result.returncode == 0 and html_result.stdout.strip():
+            report_html = html_result.stdout
+        else:
+            log.warning("HTML report unavailable; sending plain text only")
     except Exception as e:
         report_text = f"sim_report failed: {e}"
         log.warning(report_text)
@@ -1295,8 +1330,21 @@ def main():
         wr   = d.get("win_rate", "N/A")
         n    = d.get("n", 0)
         digest += f"  {pair:<14}: {mode:<16} WR={wr}%  ({n} real trades)\n"
-    digest += "\n" + report_text[:2500]
-    send_notification("Daily Learning Report", digest)
+    # Previously truncated at 2500 chars, which cut the report mid-coin. The
+    # full report is a few KB; email has no trouble with it.
+    digest += "\n" + report_text
+
+    html_body = None
+    if report_html:
+        preamble = "".join(
+            f'<div style="color:#8b96ad;font-size:12px;padding:2px 0">{line}</div>'
+            for line in digest.split(report_text)[0].strip().splitlines() if line.strip())
+        html_body = report_html.replace(
+            "<tr><td style=\"padding:0 0 6px\">",
+            f'<tr><td style="padding:0 0 14px">{preamble}</td></tr>'
+            f'<tr><td style="padding:0 0 6px">', 1)
+
+    send_notification("Daily Learning Report", digest, html=html_body)
 
     log.info("\n" + "=" * 60)
     log.info("AUTO LEARNER complete")

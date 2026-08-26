@@ -16,11 +16,14 @@ import statistics
 from datetime import datetime
 
 # ── Graduation Criteria ────────────────────────────────────────────────────────
-MIN_TRADES      = 20      # Minimum completed round-trips
-MIN_WIN_RATE    = 55.0    # Win rate %
-MIN_NET_PNL     = 0.0     # Must be net profitable
-MAX_SINGLE_LOSS = -2.50   # No single trade worse than -$2.50
-MIN_SHARPE      = 0.5     # Sharpe ratio (rough estimate)
+# Defined once in utils/graduation.py so this report, the learner's promotion
+# gate and the dashboard cannot show different answers for the same coin.
+from utils.graduation import (
+    MIN_TRADES, MIN_WIN_RATE, MIN_NET_PNL, MIN_SHARPE, MAX_SCORE,
+    WORST_TRADE_FLOOR as MAX_SINGLE_LOSS,
+    evaluate as evaluate_graduation,
+    per_trade_sharpe,
+)
 
 # ── Compounding Stake Table ────────────────────────────────────────────────────
 STAKE_TABLE = [(0, 20, 10), (20, 50, 15), (50, 100, 20), (100, 200, 30), (200, float('inf'), 50)]
@@ -55,139 +58,395 @@ def load_trades(csv_path):
     return trades
 
 def compute_sharpe(pnls):
-    if len(pnls) < 2:
-        return 0.0
-    mean = statistics.mean(pnls)
-    std  = statistics.stdev(pnls)
-    return (mean / std) * (252 ** 0.5) if std > 0 else 0.0
+    """Per-trade risk-adjusted return. See utils.graduation.per_trade_sharpe."""
+    return per_trade_sharpe(pnls)
 
 def graduation(trades):
+    result = evaluate_graduation([t["pnl_usd"] for t in trades])
+    return result["score"], result["blockers"], result["ready"]
+
+W = 66          # email clients wrap monospace safely under ~72 columns
+RULE = "─" * W
+
+
+def bar(fraction, width=10, fill="█", empty="░"):
+    """Fixed-width progress bar. Monospace so columns stay aligned."""
+    filled = max(0, min(width, round(fraction * width)))
+    return fill * filled + empty * (width - filled)
+
+
+def money(value, width=0):
+    return f"{'$' + format(abs(value), '.2f') if value >= 0 else '-$' + format(abs(value), '.2f'):>{width}}"
+
+
+def signed(value, width=0):
+    return f"{('+$' if value >= 0 else '-$') + format(abs(value), '.2f'):>{width}}"
+
+
+def summarise(trades):
+    """Per-coin figures used by both the leaderboard and the detail block."""
     n = len(trades)
-    if n == 0:
-        return 0, ["No trades yet"], False
-    wins      = [t for t in trades if t["pnl_usd"] > 0]
-    net_pnl   = sum(t["pnl_usd"] for t in trades)
-    win_rate  = len(wins) / n * 100
-    worst     = min(t["pnl_usd"] for t in trades)
-    sharpe    = compute_sharpe([t["pnl_usd"] for t in trades])
-    score, reasons = 0, []
-    if n >= MIN_TRADES:              score += 25
-    else: reasons.append(f"Need {MIN_TRADES - n} more trades (have {n})")
-    if win_rate >= MIN_WIN_RATE:     score += 25
-    else: reasons.append(f"Win rate {win_rate:.1f}% < {MIN_WIN_RATE}% required")
-    if net_pnl > MIN_NET_PNL:        score += 25
-    else: reasons.append(f"Net P&L ${net_pnl:+.2f} not positive yet")
-    if worst >= MAX_SINGLE_LOSS:     score += 15
-    else: reasons.append(f"Worst trade ${worst:.2f} exceeds -$2.50 limit")
-    if sharpe >= MIN_SHARPE:         score += 10
-    else: reasons.append(f"Sharpe {sharpe:.2f} < {MIN_SHARPE} required")
-    return score, reasons, score >= 100
+    pnls = [t["pnl_usd"] for t in trades]
+    wins = [t for t in trades if t["pnl_usd"] > 0]
+    losses = [t for t in trades if t["pnl_usd"] <= 0]
+    fees = sum(t["fees_usd"] for t in trades)
+    net = sum(pnls)
+    win_sum = sum(t["pnl_usd"] for t in wins)
+    loss_sum = sum(t["pnl_usd"] for t in losses)
+    return {
+        "n": n,
+        "win_rate": 100.0 * len(wins) / n if n else 0.0,
+        "wins": len(wins), "losses": len(losses),
+        "net": net, "fees": fees, "gross": net + fees,
+        "avg_win": win_sum / len(wins) if wins else 0.0,
+        "avg_loss": loss_sum / len(losses) if losses else 0.0,
+        "profit_factor": abs(win_sum / loss_sum) if loss_sum else float("inf"),
+        "avg_hold": sum(t["hold_hours"] for t in trades) / n if n else 0.0,
+        "best": max(trades, key=lambda t: t["pnl_usd"]) if trades else None,
+        "worst": min(trades, key=lambda t: t["pnl_usd"]) if trades else None,
+        "grad": evaluate_graduation(pnls),
+    }
+
+
+def print_portfolio(results):
+    """Headline figures. Gross vs fees leads, because that is the decision."""
+    trades = [t for group in results.values() for t in group]
+    n = len(trades)
+    net = sum(t["pnl_usd"] for t in trades)
+    fees = sum(t["fees_usd"] for t in trades)
+    wins = sum(1 for t in trades if t["pnl_usd"] > 0)
+    wr = 100.0 * wins / n if n else 0.0
+
+    print(f"\n{RULE}")
+    print(f"  SIM TRADING REPORT{datetime.now().strftime('%Y-%m-%d %H:%M'):>{W - 20}}")
+    print(RULE)
+    plural = "coin" if len(results) == 1 else "coins"
+    print(f"  {n} trades · {len(results)} {plural} · {wr:.1f}% win rate")
+    print()
+    print(f"    gross {signed(net + fees, 9)}      "
+          f"fees {money(-fees, 9)}      net {signed(net, 9)}")
+
+    # The one line that says which problem this is.
+    if n:
+        if net + fees > 0 and net < 0:
+            gross = net + fees
+            print(f"    → direction is right: {signed(gross)} gross. "
+                  f"Fees of {money(fees)} erase it.")
+        elif net + fees <= 0:
+            print(f"    → negative before fees; the entry signal is the problem")
+        else:
+            print(f"    → profitable after costs")
+
+
+def print_leaderboard(results):
+    """Every coin on one screen, closest to graduating first."""
+    rows = sorted(
+        ((label, summarise(t)) for label, t in results.items() if t),
+        key=lambda kv: (-kv[1]["grad"]["score"], -kv[1]["n"]),
+    )
+    if not rows:
+        return
+    print(f"\n{RULE}")
+    print(f"  {'COIN':<14}{'TRADES':>7}{'WIN%':>7}{'NET':>10}   READINESS")
+    print(RULE)
+    for label, s in rows:
+        g = s["grad"]
+        mark = "*" if g["ready"] else " "
+        print(f" {mark}{label.upper():<14}{s['n']:>6}{s['win_rate']:>7.0f}%"
+              f"{signed(s['net'], 10)}   {bar(g['score'] / MAX_SCORE)} {g['score']:>3}/{MAX_SCORE}")
+
 
 def print_report(label, trades):
+    """Per-coin detail. Only the failing criteria are listed — passing ones
+    are visible in the leaderboard and would just be noise here."""
     n = len(trades)
-    sep = "═" * 60
-    print(f"\n{sep}")
-    print(f"  {label.upper()}  ({n} completed sim trades)")
-    print(sep)
     if n == 0:
-        print("  No completed sim trades yet — waiting for first crossover signal.")
         return
-    wins        = [t for t in trades if t["pnl_usd"] > 0]
-    losses      = [t for t in trades if t["pnl_usd"] <= 0]
-    net_pnl     = sum(t["pnl_usd"] for t in trades)
-    total_fees  = sum(t["fees_usd"] for t in trades)
-    win_rate    = len(wins) / n * 100
-    avg_hold    = sum(t["hold_hours"] for t in trades) / n
-    avg_win     = sum(t["pnl_usd"] for t in wins) / len(wins) if wins else 0
-    avg_loss    = sum(t["pnl_usd"] for t in losses) / len(losses) if losses else 0
-    best        = max(trades, key=lambda t: t["pnl_usd"])
-    worst       = min(trades, key=lambda t: t["pnl_usd"])
-    loss_sum    = sum(t["pnl_usd"] for t in losses)
-    win_sum     = sum(t["pnl_usd"] for t in wins)
-    pf          = abs(win_sum / loss_sum) if loss_sum != 0 else float('inf')
+    s = summarise(trades)
+    g = s["grad"]
 
-    print(f"  Win Rate:       {win_rate:.1f}%  ({len(wins)}W / {len(losses)}L)")
-    print(f"  Net P&L:        ${net_pnl:+.4f}   (Fees: ${total_fees:.4f})")
-    print(f"  Avg Win / Loss: ${avg_win:+.4f} / ${avg_loss:+.4f}")
-    print(f"  Profit Factor:  {pf:.2f}x")
-    print(f"  Avg Hold Time:  {avg_hold:.1f}h")
-    print(f"  Best Trade:     ${best['pnl_usd']:+.4f}  ({best['exit_reason']})")
-    print(f"  Worst Trade:    ${worst['pnl_usd']:+.4f}  ({worst['exit_reason']})")
+    header = f"{label.upper()}  ·  {g['score']}/{MAX_SCORE} pts  ·  {n} trades"
+    print(f"\n{RULE}")
+    print(f"  {header}")
+    print(RULE)
+    pf = "inf" if s["profit_factor"] == float("inf") else f"{s['profit_factor']:.2f}x"
+    print(f"  win rate  {s['win_rate']:>7.1f}%  ({s['wins']}W/{s['losses']}L)"
+          f"{'profit factor':>18}  {pf:>8}")
+    print(f"  net P&L   {signed(s['net'], 8)}"
+          f"{'gross':>14}  {signed(s['gross'], 8)}"
+          f"{'fees':>10}  {money(-s['fees'], 8)}")
+    print(f"  avg win   {signed(s['avg_win'], 8)}"
+          f"{'avg loss':>14}  {signed(s['avg_loss'], 8)}"
+          f"{'hold':>10}  {s['avg_hold']:>7.0f}h")
+    if s["best"] and s["worst"]:
+        print(f"  best      {signed(s['best']['pnl_usd'], 8)}  {s['best']['exit_reason']}")
+        print(f"  worst     {signed(s['worst']['pnl_usd'], 8)}  {s['worst']['exit_reason']}")
 
-    reasons_map = {}
+    reasons = {}
     for t in trades:
-        reasons_map[t["exit_reason"]] = reasons_map.get(t["exit_reason"], 0) + 1
-    print(f"\n  Exit Breakdown:")
-    for r, cnt in sorted(reasons_map.items(), key=lambda x: -x[1]):
-        print(f"    {r:<38} {cnt:>3}x ({cnt/n*100:.0f}%)")
+        reasons[t["exit_reason"]] = reasons.get(t["exit_reason"], 0) + 1
+    print("\n  exits")
+    for reason, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
+        share = count / n
+        print(f"    {reason:<28} {bar(share, 8)} {count:>3}  {share*100:>3.0f}%")
 
-    score, blockers, ready = graduation(trades)
-    print(f"\n  ─── Graduation: ", end="")
-    if ready:
-        stake = get_stake(max(net_pnl, 0))
-        print(f"✅ READY FOR LIVE  →  ${stake}/trade next stake")
+    if g["ready"]:
+        stake = get_stake(max(s["net"], 0))
+        print(f"\n  ✅ READY FOR LIVE  →  ${stake}/trade next stake")
     else:
-        print(f"⏳ {score}/100 pts")
-        for b in blockers:
-            print(f"    ✗ {b}")
+        print("\n  still needed")
+        for blocker in g["blockers"]:
+            print(f"    ✗ {blocker}")
+
+
+
+
+# ── HTML rendering ────────────────────────────────────────────────────────────
+# The learner emails this report. Plain text stays the terminal path; --html
+# produces the emailed version. Table layout and inline styles only — email
+# clients strip <style> blocks and do not support flex or grid.
+
+_BG      = "#0b0f19"
+_CARD    = "#151b2b"
+_LINE    = "#252d40"
+_TEXT    = "#e6ebf5"
+_MUTED   = "#8b96ad"
+_UP      = "#34d399"
+_DOWN    = "#f87171"
+_ACCENT  = "#60a5fa"
+
+
+def _esc(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _money_html(value):
+    colour = _UP if value >= 0 else _DOWN
+    return f'<span style="color:{colour};font-weight:600">{signed(value)}</span>'
+
+
+def _meter(fraction, colour=_ACCENT, width=110):
+    """Bar as a nested table — the only construct every email client renders."""
+    filled = max(0, min(width, int(round(fraction * width))))
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" '
+        f'style="display:inline-block;vertical-align:middle"><tr>'
+        f'<td style="width:{filled}px;height:8px;background:{colour};'
+        f'border-radius:4px 0 0 4px;font-size:0;line-height:0">&nbsp;</td>'
+        f'<td style="width:{width - filled}px;height:8px;background:{_LINE};'
+        f'border-radius:0 4px 4px 0;font-size:0;line-height:0">&nbsp;</td>'
+        f'</tr></table>'
+    )
+
+
+def render_html(results):
+    """Full HTML email body for the nightly report."""
+    trades = [t for group in results.values() for t in group]
+    n = len(trades)
+    net = sum(t["pnl_usd"] for t in trades)
+    fees = sum(t["fees_usd"] for t in trades)
+    gross = net + fees
+    wins = sum(1 for t in trades if t["pnl_usd"] > 0)
+    wr = 100.0 * wins / n if n else 0.0
+
+    if gross > 0 and net < 0:
+        verdict = (f"Direction is right — {signed(gross)} gross. "
+                   f"Fees of {money(fees)} erase it. This is a cost problem.")
+        verdict_colour = _DOWN
+    elif gross <= 0:
+        verdict = "Negative before fees. The entry signal is the problem."
+        verdict_colour = _DOWN
+    else:
+        verdict = "Profitable after costs."
+        verdict_colour = _UP
+
+    rows = sorted(((label, summarise(t)) for label, t in results.items() if t),
+                  key=lambda kv: (-kv[1]["grad"]["score"], -kv[1]["n"]))
+
+    head = (
+        f'<tr><td style="padding:0 0 6px"><div style="font-size:11px;'
+        f'letter-spacing:.09em;text-transform:uppercase;color:{_MUTED}">'
+        f'Sim Trading Report</div>'
+        f'<div style="font-size:13px;color:{_MUTED};padding-top:2px">'
+        f'{datetime.now().strftime("%Y-%m-%d %H:%M")} &middot; {n} trades &middot; '
+        f'{len(results)} coin{"" if len(results) == 1 else "s"} &middot; '
+        f'{wr:.1f}% win rate</div></td></tr>'
+    )
+
+    money_row = (
+        f'<tr><td style="padding:14px 0 4px">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        + "".join(
+            f'<td style="width:33%;padding:10px 0">'
+            f'<div style="font-size:11px;color:{_MUTED};text-transform:uppercase;'
+            f'letter-spacing:.07em">{lbl}</div>'
+            f'<div style="font-size:24px;font-weight:700;color:{col};'
+            f'padding-top:3px;font-family:ui-monospace,Menlo,Consolas,monospace">'
+            f'{val}</div></td>'
+            for lbl, val, col in (
+                ("gross", signed(gross), _UP if gross >= 0 else _DOWN),
+                ("fees", money(-fees), _DOWN),
+                ("net", signed(net), _UP if net >= 0 else _DOWN),
+            ))
+        + '</tr></table></td></tr>'
+        f'<tr><td style="padding:2px 0 4px;font-size:13px;color:{verdict_colour}">'
+        f'{_esc(verdict)}</td></tr>'
+    )
+
+    board = [
+        f'<tr><td style="padding:20px 0 8px;font-size:11px;letter-spacing:.09em;'
+        f'text-transform:uppercase;color:{_MUTED}">Readiness</td></tr>'
+        f'<tr><td><table role="presentation" width="100%" cellpadding="0" '
+        f'cellspacing="0" style="font-size:13px">'
+    ]
+    for label, s in rows:
+        g = s["grad"]
+        name = _esc(label.upper()) + (" ✅" if g["ready"] else "")
+        board.append(
+            f'<tr>'
+            f'<td style="padding:7px 0;border-bottom:1px solid {_LINE};color:{_TEXT};'
+            f'font-weight:600;white-space:nowrap">{name}</td>'
+            f'<td style="padding:7px 8px;border-bottom:1px solid {_LINE};'
+            f'color:{_MUTED};text-align:right;white-space:nowrap">{s["n"]} trades</td>'
+            f'<td style="padding:7px 8px;border-bottom:1px solid {_LINE};'
+            f'text-align:right;white-space:nowrap">{_money_html(s["net"])}</td>'
+            f'<td style="padding:7px 0 7px 10px;border-bottom:1px solid {_LINE};'
+            f'width:120px">{_meter(g["score"] / MAX_SCORE, _UP if g["ready"] else _ACCENT)}</td>'
+            f'<td style="padding:7px 0 7px 8px;border-bottom:1px solid {_LINE};'
+            f'color:{_MUTED};text-align:right;white-space:nowrap;'
+            f'font-family:ui-monospace,Menlo,Consolas,monospace">'
+            f'{g["score"]}/{MAX_SCORE}</td></tr>'
+        )
+    board.append('</table></td></tr>')
+
+    detail = []
+    for label, s in rows:
+        g = s["grad"]
+        pf = "∞" if s["profit_factor"] == float("inf") else f'{s["profit_factor"]:.2f}x'
+        stats = "".join(
+            f'<td style="padding:4px 12px 4px 0;white-space:nowrap">'
+            f'<span style="color:{_MUTED}">{lbl}</span> {val}</td>'
+            for lbl, val in (
+                ("win", f'{s["win_rate"]:.0f}% ({s["wins"]}W/{s["losses"]}L)'),
+                ("net", _money_html(s["net"])),
+                ("fees", money(s["fees"])),
+                ("PF", pf),
+                ("hold", f'{s["avg_hold"]:.0f}h'),
+            ))
+        exits = {}
+        for t in results[label]:
+            exits[t["exit_reason"]] = exits.get(t["exit_reason"], 0) + 1
+        exit_rows = "".join(
+            f'<tr><td style="padding:3px 0;color:{_MUTED};white-space:nowrap">'
+            f'{_esc(reason)}</td>'
+            f'<td style="padding:3px 0 3px 10px;width:90px">'
+            f'{_meter(count / s["n"], _MUTED, 80)}</td>'
+            f'<td style="padding:3px 0 3px 8px;color:{_MUTED};text-align:right">'
+            f'{count} &middot; {100 * count / s["n"]:.0f}%</td></tr>'
+            for reason, count in sorted(exits.items(), key=lambda kv: -kv[1]))
+
+        if g["ready"]:
+            status = (f'<div style="color:{_UP};padding-top:8px;font-weight:600">'
+                      f'✅ Ready for live → ${get_stake(max(s["net"], 0))}/trade next stake</div>')
+        else:
+            items = "".join(
+                f'<div style="color:{_MUTED};padding-top:3px">✗ {_esc(b)}</div>'
+                for b in g["blockers"])
+            status = (f'<div style="padding-top:10px"><div style="font-size:11px;'
+                      f'letter-spacing:.07em;text-transform:uppercase;color:{_MUTED}">'
+                      f'Still needed</div>{items}</div>')
+
+        detail.append(
+            f'<tr><td style="padding:10px 0 0"><table role="presentation" width="100%" '
+            f'cellpadding="0" cellspacing="0" style="background:{_CARD};'
+            f'border:1px solid {_LINE};border-radius:10px;font-size:13px">'
+            f'<tr><td style="padding:14px 16px">'
+            f'<div style="font-size:15px;font-weight:700;color:{_TEXT}">'
+            f'{_esc(label.upper())} '
+            f'<span style="color:{_MUTED};font-weight:400;font-size:13px">'
+            f'&middot; {g["score"]}/{MAX_SCORE} &middot; {s["n"]} trades</span></div>'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="font-size:13px;color:{_TEXT};padding-top:8px"><tr>{stats}</tr></table>'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="font-size:12px;padding-top:10px">{exit_rows}</table>'
+            f'{status}</td></tr></table></td></tr>'
+        )
+
+    return (
+        f'<!DOCTYPE html><html><body style="margin:0;padding:0;background:{_BG}">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'style="background:{_BG};padding:22px 0">'
+        f'<tr><td align="center">'
+        f'<table role="presentation" width="620" cellpadding="0" cellspacing="0" '
+        f'style="width:620px;max-width:94%;font-family:-apple-system,BlinkMacSystemFont,'
+        f'\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:{_TEXT}">'
+        + head + money_row + "".join(board) + "".join(detail) +
+        f'<tr><td style="padding:18px 0 0;font-size:11px;color:{_MUTED}">'
+        f'All five criteria must pass to graduate. Score is for display only.'
+        f'</td></tr>'
+        f'</table></td></tr></table></body></html>'
+    )
+
 
 def main():
-    root        = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.abspath(__file__))
     coin_filter = None
+    as_html = "--html" in sys.argv
     for i, a in enumerate(sys.argv):
         if a == "--coin" and i + 1 < len(sys.argv):
             coin_filter = sys.argv[i + 1].upper()
 
-    print("\n" + "█" * 60)
-    print("    COINBASE SIM TRADING — PERFORMANCE REPORT")
-    print(f"    {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("█" * 60)
-
     files = sorted(glob.glob(os.path.join(root, "completed_trades_*_dry.csv")))
-    # Also include old shared file if it exists
-    shared = os.path.join(root, "completed_trades_dry.csv")
-    if os.path.exists(shared) and shared not in files:
-        files.insert(0, shared)
+    # The legacy shared completed_trades_dry.csv is deliberately not included:
+    # its name does not carry a coin, so it rendered as a phantom "DRY.CSV"
+    # coin at the top of every report.
 
-    if not files:
-        print("\n  No sim trade files found yet.")
-        print("  Files appear here once bots start completing trades.")
-        print(f"  Looking for: {root}/completed_trades_*_dry.csv")
-        return
-
-    all_trades, results = [], {}
+    results = {}
     for fpath in files:
         label = os.path.basename(fpath).replace("completed_trades_", "").replace("_dry.csv", "")
         if coin_filter and coin_filter not in label.upper():
             continue
         trades = load_trades(fpath)
-        results[label] = trades
-        all_trades.extend(trades)
-        print_report(label, trades)
+        if trades:
+            results[label] = trades
 
     if not results:
-        print(f"\n  No data for --coin {coin_filter}")
+        if as_html:
+            print(f'<html><body style="background:{_BG};color:{_MUTED};'
+                  f'font-family:sans-serif;padding:20px">'
+                  f'No completed sim trades yet.</body></html>')
+            return
+        print(f"\n{RULE}")
+        if coin_filter:
+            print(f"  No completed sim trades for {coin_filter} yet.")
+        else:
+            print("  No completed sim trades yet.")
+            print(f"  Files appear here once bots close their first position.")
+        print(RULE)
         return
 
-    # Portfolio total
-    n      = len(all_trades)
-    pnl    = sum(t["pnl_usd"] for t in all_trades)
-    fees   = sum(t["fees_usd"] for t in all_trades)
-    wr     = sum(1 for t in all_trades if t["pnl_usd"] > 0) / n * 100 if n else 0
-    ready  = [l for l, t in results.items() if graduation(t)[2]]
+    if as_html:
+        print(render_html(results))
+        return
 
-    print(f"\n{'█'*60}")
-    print("    PORTFOLIO OVERVIEW")
-    print(f"{'█'*60}")
-    print(f"  Coins Active:   {len(results)}")
-    print(f"  Total Trades:   {n}")
-    print(f"  Overall Win %:  {wr:.1f}%")
-    print(f"  Total Net P&L:  ${pnl:+.4f}  (after ${fees:.4f} fees)")
+    print_portfolio(results)
+    print_leaderboard(results)
+
+    ready = [l for l, t in results.items() if summarise(t)["grad"]["ready"]]
+    for label, trades in sorted(results.items(),
+                                key=lambda kv: -summarise(kv[1])["grad"]["score"]):
+        print_report(label, trades)
+
+    print(f"\n{RULE}")
     if ready:
-        print(f"\n  🚀 READY FOR LIVE: {', '.join(l.upper() for l in ready)}")
+        print(f"  🚀 READY FOR LIVE: {', '.join(l.upper() for l in ready)}")
     else:
-        print(f"\n  ⏳ Building track record — no coins ready for live yet.")
-    print(f"{'█'*60}\n")
+        closest = max(results.items(), key=lambda kv: summarise(kv[1])["grad"]["score"])
+        score = summarise(closest[1])["grad"]["score"]
+        print(f"  ⏳ No coins ready for live yet — closest is "
+              f"{closest[0].upper()} at {score}/{MAX_SCORE}")
+    print(RULE + "\n")
+
 
 if __name__ == "__main__":
     main()

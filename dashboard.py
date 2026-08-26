@@ -509,20 +509,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         """
         Per-coin progress toward live-trading eligibility.
 
-        The learner's check_graduation only returns coins that already pass, so
-        there is nowhere to see how far off the rest are. Thresholds are imported
-        from the learner rather than restated, so this cannot drift from the gate
-        it is reporting on.
+        Evaluated by utils.graduation, the same code the nightly report renders
+        and the learner's promotion gate enforces. Previously this counted four
+        criteria while the emailed report scored five, so the same coin showed
+        two different readiness figures.
         """
         try:
-            from auto_learner import (
-                GRADUATION_MIN_TRADES,
-                GRADUATION_MIN_WIN_RATE,
-                GRADUATION_MIN_NET_PNL,
-                GRADUATION_WORST_TRADE_FLOOR,
-            )
+            from utils.graduation import evaluate, MAX_SCORE
         except ImportError:
-            logger.warning("Could not import graduation thresholds from auto_learner")
+            logger.warning("Could not import utils.graduation")
             return []
 
         by_pair = {}
@@ -531,38 +526,23 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         coins = []
         for pair, pnls in by_pair.items():
-            count = len(pnls)
-            wins = sum(1 for p in pnls if p > 0)
-            win_rate = 100.0 * wins / count
-            net = sum(pnls)
-            worst = min(pnls)
-
-            checks = [
-                {"label": f"{GRADUATION_MIN_TRADES} trades",
-                 "passed": count >= GRADUATION_MIN_TRADES,
-                 "detail": f"{count} of {GRADUATION_MIN_TRADES}"},
-                {"label": f"win rate ≥ {GRADUATION_MIN_WIN_RATE:.0f}%",
-                 "passed": win_rate >= GRADUATION_MIN_WIN_RATE,
-                 "detail": f"{win_rate:.0f}%"},
-                {"label": "net P&L positive",
-                 "passed": net > GRADUATION_MIN_NET_PNL,
-                 "detail": f"${net:+.2f}"},
-                {"label": f"worst trade ≥ ${GRADUATION_WORST_TRADE_FLOOR:.2f}",
-                 "passed": worst >= GRADUATION_WORST_TRADE_FLOOR,
-                 "detail": f"${worst:+.2f}"},
-            ]
-            passed = sum(1 for c in checks if c["passed"])
+            result = evaluate(pnls)
             coins.append({
                 "pair": pair,
-                "trades": count,
-                "checks": checks,
-                "passed": passed,
-                "total": len(checks),
-                "ready": passed == len(checks),
+                "trades": result["stats"]["trades"],
+                "checks": [
+                    {"label": c["label"], "passed": c["passed"], "detail": c["detail"]}
+                    for c in result["criteria"]
+                ],
+                "passed": result["passed"],
+                "total": result["total"],
+                "score": result["score"],
+                "max_score": MAX_SCORE,
+                "ready": result["ready"],
             })
 
         # Closest to eligible first — that is the one worth watching.
-        coins.sort(key=lambda c: (-c["passed"], -c["trades"]))
+        coins.sort(key=lambda c: (-c["score"], -c["trades"]))
         return coins
 
     def build_analytics(self, trades):
