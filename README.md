@@ -4,6 +4,24 @@ A modular, secure, and automated cryptocurrency algorithmic trading system desig
 
 ---
 
+## 🏗️ Architecture
+
+[`utils/venue.py`](file:///home/leeunks/coinbase-trading-bot/utils/venue.py) is the
+boundary between shared logic and exchange specifics. Everything above it is
+common to both markets; only four things differ below it.
+
+| Shared | Venue-specific |
+| :--- | :--- |
+| Position accounting, stops, trailing | Order submission |
+| Risk limits and cooldowns | Response parsing |
+| Atomic state with backup | Fee rate |
+| Order journal and reconciliation | Market hours |
+| Graduation criteria | |
+
+A new venue means a new adapter, not a new bot. Per-asset variation lives in
+`.env` via coin/ticker → profile → base resolution; safety machinery does not
+vary per asset.
+
 ## 🛡️ Safety & Concurrency Safeguards
 
 This bot is engineered with strict production safety safeguards to protect capital and state integrity:

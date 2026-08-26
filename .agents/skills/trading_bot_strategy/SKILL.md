@@ -255,6 +255,30 @@ Judge that arm on per-trade quality, not volume.
 **Buy-and-hold still beats it** (+$11.39 vs +$4.35 over the same window). Six-hour
 is where this strategy stops destroying value, not where it wins.
 
+## Architecture: what is shared, what is not
+
+`utils/venue.py` is the boundary. Above it everything is shared and must behave
+identically for both markets; below it live the only genuine differences.
+
+| shared (never fork per market) | venue-specific (`utils/venue.py`) |
+|---|---|
+| position accounting, stops, trailing | order submission |
+| risk limits, cooldowns | response parsing |
+| atomic state + backup (`utils/state.py`) | fee rate |
+| order journal + reconciliation | market hours |
+| graduation (`utils/graduation.py`) | |
+
+**A new venue is a new adapter, not a new bot.** The two bots diverged in the
+parts that protect capital — the stock bot had no journal, no reconciliation, no
+risk engine, and wrote state with a bare `json.dump` that corrupts on a crash
+mid-write. That was drift, not design, and it was invisible because paper
+trading never punished it.
+
+Per-asset variation belongs in `.env` through the coin/ticker → profile → base
+resolution. That is deliberately unconstrained, because volatility and liquidity
+genuinely differ per asset. **Safety machinery must never vary per asset**,
+which is why it sits above the boundary.
+
 ## Stocks vs Crypto — Different Economics
 
 **Alpaca equities are commission-free.** Round-trip cost is slippage only

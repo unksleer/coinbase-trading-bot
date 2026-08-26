@@ -23,6 +23,7 @@ PM2 launch (one per ticker):
     pm2 start stock_bot.py --name lpl-bot --interpreter .venv/bin/python --no-autorestart
 """
 import os
+import uuid
 import sys
 import csv
 import json
@@ -114,8 +115,53 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
-    with open(STATE_PATH, "w") as f:
-        json.dump(state, f, indent=2)
+    """
+    Atomic write with a backup, via the same StateManager the crypto bot uses.
+
+    Previously this was json.dump straight onto the live file: a crash or a
+    full disk mid-write left truncated JSON and the position was lost. The
+    shared manager writes to a temp file, fsyncs, then renames, and keeps a
+    .bak to recover from.
+    """
+    _state_manager().state = _to_shared_schema(state)
+    _state_manager().save_state()
+
+
+_SHARED_STATE = None
+
+
+def _to_shared_schema(state: dict) -> dict:
+    """
+    Map the stock bot's state onto the shared schema.
+
+    The shared schema calls the position size holdings_base; for equities that
+    is shares. Same float, same meaning — worth bridging rather than forking
+    the schema, because forking is how the two bots diverged in the first place.
+    """
+    return {
+        "version": 2,
+        "dry_run": IS_PAPER,
+        "position": state.get("position", "NONE"),
+        "entry_price": float(state.get("entry_price", 0.0) or 0.0),
+        "holdings_base": float(state.get("shares", 0.0) or 0.0),
+        "cash_usd": float(state.get("cash_usd", 100.0) or 0.0),
+        "trades": state.get("trades", []),
+        "orders": state.get("orders", {}),
+        # Preserved verbatim so nothing the bot relies on is dropped in transit.
+        "shares": float(state.get("shares", 0.0) or 0.0),
+        "entry_time": state.get("entry_time"),
+        "highest_price": state.get("highest_price", 0.0),
+        "ticker": TICKER,
+    }
+
+
+def _state_manager():
+    global _SHARED_STATE
+    if _SHARED_STATE is None:
+        from utils.state import StateManager
+        _SHARED_STATE = StateManager(state_file=STATE_PATH, dry_run=IS_PAPER,
+                                     persist_trade_csv=False)
+    return _SHARED_STATE
 
 
 def record_trade(state: dict, exit_price: float, exit_reason: str):
@@ -300,29 +346,128 @@ def strategy_exit_reason(ind):
 # ─────────────────────────────────────────────────────────────────────────────
 # Order execution via Alpaca
 # ─────────────────────────────────────────────────────────────────────────────
+_VENUE = None
+
+
+def venue():
+    global _VENUE
+    if _VENUE is None:
+        from utils.venue import AlpacaVenue
+        _VENUE = AlpacaVenue(API_KEY, SECRET_KEY, paper=IS_PAPER)
+    return _VENUE
+
+
 def place_buy(price: float) -> float:
-    """Submit a fractional market buy for TRADE_AMOUNT USD. Returns shares bought."""
+    """
+    Submit a fractional market buy for TRADE_AMOUNT USD. Returns shares bought.
+
+    The intent is journalled with a generated client order ID *before* the
+    order is sent. If the process dies between submission and the state write,
+    startup reconciliation finds the order at the venue and applies it, rather
+    than the position existing at Alpaca while the bot believes it is flat.
+    """
     shares = round(TRADE_AMOUNT / price, 6)
     if IS_PAPER:
         log.info(f"[{MODE}] BUY {shares:.6f} {TICKER} @ ~${price:.4f}  (${TRADE_AMOUNT:.2f})")
         return shares
+
+    client_order_id = f"{TICKER.lower()}-buy-{uuid.uuid4().hex[:16]}"
+    _journal_intent(client_order_id, "BUY", price, shares)
     try:
-        from alpaca.trading.client import TradingClient
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums import OrderSide, TimeInForce
-        client = TradingClient(API_KEY, SECRET_KEY, paper=IS_PAPER)
-        req = MarketOrderRequest(
-            symbol=TICKER,
-            notional=TRADE_AMOUNT,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
-        )
-        order = client.submit_order(req)
-        log.info(f"[{MODE}] BUY order submitted: {order.id} — ${TRADE_AMOUNT:.2f} of {TICKER}")
+        order = venue().submit_buy(TICKER, TRADE_AMOUNT, client_order_id)
+        parsed = venue().parse_response(order)
+        log.info(f"[{MODE}] BUY submitted: {parsed['order_id']} "
+                 f"({client_order_id}) — ${TRADE_AMOUNT:.2f} of {TICKER}")
+        _journal_result(client_order_id, parsed)
         return shares
     except Exception as e:
         log.error(f"BUY order failed: {e}")
+        _journal_result(client_order_id, {"status": "FAILED", "order_id": ""})
         return 0.0
+
+
+def _journal_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "logs", f"order_journal_stock_{TICKER.lower()}.json")
+
+
+def _journal_intent(client_order_id, side, price, size):
+    """Record what we are about to do, before doing it."""
+    try:
+        path = _journal_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path) as handle:
+                journal = json.load(handle)
+        except (OSError, ValueError):
+            journal = {}
+        journal[client_order_id] = {
+            "ticker": TICKER, "side": side, "price": price, "size": size,
+            "status": "PENDING", "applied": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp = path + ".tmp"
+        with open(tmp, "w") as handle:
+            json.dump(journal, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except OSError as e:
+        # Never let journalling failure stop a trade decision; log loudly.
+        log.warning(f"Could not journal order intent: {e}")
+
+
+def _journal_result(client_order_id, parsed):
+    try:
+        path = _journal_path()
+        with open(path) as handle:
+            journal = json.load(handle)
+        if client_order_id in journal:
+            journal[client_order_id].update({
+                "status": parsed.get("status", ""),
+                "order_id": parsed.get("order_id", ""),
+                "applied": True,
+                "resolved_at": datetime.now(timezone.utc).isoformat(),
+            })
+            tmp = path + ".tmp"
+            with open(tmp, "w") as handle:
+                json.dump(journal, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+    except (OSError, ValueError) as e:
+        log.warning(f"Could not journal order result: {e}")
+
+
+def reconcile_orders():
+    """
+    Resolve orders submitted but never confirmed, at startup.
+
+    Without this, a crash between submitting and recording leaves a position at
+    the venue that the bot does not know about — it will then happily open a
+    second one.
+    """
+    if IS_PAPER:
+        return
+    try:
+        with open(_journal_path()) as handle:
+            journal = json.load(handle)
+    except (OSError, ValueError):
+        return
+    unresolved = {k: v for k, v in journal.items() if not v.get("applied")}
+    if not unresolved:
+        log.info("No unresolved orders to reconcile.")
+        return
+    log.warning(f"{len(unresolved)} unresolved order(s); querying venue")
+    for client_order_id in unresolved:
+        order = venue().get_order_by_client_id(client_order_id)
+        if order is None:
+            log.warning(f"  {client_order_id}: not found at venue — never reached it")
+            continue
+        parsed = venue().parse_response(order)
+        log.warning(f"  {client_order_id}: venue reports {parsed['status']} "
+                    f"filled={parsed['filled_size']}")
+        _journal_result(client_order_id, parsed)
 
 
 def place_sell(shares: float, price: float, reason: str):
@@ -357,6 +502,7 @@ def main():
         log.error(f"STOCK_STRATEGY={STRATEGY!r} is not one of {VALID_STRATEGIES}. "
                   f"Refusing to start rather than silently falling back.")
         sys.exit(1)
+    reconcile_orders()
     log.info(f"  Strategy: {STRATEGY}")
     if STRATEGY == "RSI_MEAN_REVERSION":
         log.info(f"  RSI {RSI_OVERSOLD:.0f}/{RSI_OVERBOUGHT:.0f} | "

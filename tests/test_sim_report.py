@@ -320,3 +320,110 @@ class StockReportTests(unittest.TestCase):
         out = render(sim_report.print_stocks, rows)
         self.assertIn("commission-free", out.lower())
         self.assertIn("not comparable", out.lower())
+
+
+class VenueAdapterTests(unittest.TestCase):
+    """
+    The adapter is the boundary between shared safety logic and exchange
+    specifics. Everything above it must behave identically for both markets.
+    """
+
+    def test_fee_rates_differ_and_are_explicit(self):
+        from utils.venue import CoinbaseVenue, AlpacaVenue
+        self.assertEqual(AlpacaVenue().fee_rate_per_side, 0.0)
+        self.assertGreater(CoinbaseVenue().fee_rate_per_side, 0.0)
+        self.assertAlmostEqual(CoinbaseVenue().round_trip_cost_pct(), 1.2, places=2)
+        self.assertEqual(AlpacaVenue().round_trip_cost_pct(), 0.0)
+
+    def test_for_market_returns_the_right_adapter(self):
+        from utils import venue
+        self.assertEqual(venue.for_market("crypto").name, "coinbase")
+        self.assertEqual(venue.for_market("stocks").name, "alpaca")
+        with self.assertRaises(ValueError):
+            venue.for_market("forex")
+
+    def test_both_adapters_return_the_same_response_shape(self):
+        """Callers must never branch on which venue produced a response."""
+        from utils.venue import CoinbaseVenue, AlpacaVenue
+        keys = {"order_id", "status", "filled_size", "filled_value",
+                "fees", "average_price"}
+        cb = CoinbaseVenue().parse_response({"order": {
+            "order_id": "abc", "status": "filled", "filled_size": "1.5",
+            "filled_value": "150", "total_fees": "0.9",
+            "average_filled_price": "100"}})
+        self.assertEqual(set(cb), keys)
+
+        alp = AlpacaVenue().parse_response(
+            mock.Mock(id="xyz", status="filled", filled_qty="2",
+                      filled_avg_price="50"))
+        self.assertEqual(set(alp), keys)
+
+    def test_alpaca_reports_zero_fees(self):
+        from utils.venue import AlpacaVenue
+        parsed = AlpacaVenue().parse_response(
+            mock.Mock(id="x", status="filled", filled_qty="2", filled_avg_price="50"))
+        self.assertEqual(parsed["fees"], 0)
+        self.assertEqual(parsed["filled_value"], 100)
+
+    def test_missing_fields_become_zero_not_absent(self):
+        from utils.venue import CoinbaseVenue, AlpacaVenue
+        cb = CoinbaseVenue().parse_response({})
+        self.assertEqual(cb["filled_size"], 0)
+        self.assertEqual(cb["status"], "")
+        alp = AlpacaVenue().parse_response(mock.Mock(spec=[]))
+        self.assertEqual(alp["filled_size"], 0)
+
+    def test_market_hours_are_asked_not_inferred(self):
+        """Holidays and early closes are not derivable from a weekday check."""
+        from utils.venue import AlpacaVenue
+        v = AlpacaVenue()
+        with mock.patch.object(v, "client", side_effect=Exception("down")):
+            self.assertFalse(v.is_open())   # fail closed
+        with mock.patch.object(v, "client",
+                               return_value=mock.Mock(get_clock=lambda: mock.Mock(is_open=True))):
+            self.assertTrue(v.is_open())
+
+
+class StockSafetyTests(unittest.TestCase):
+    """Parity with the crypto bot on the parts that protect capital."""
+
+    def _bot(self, **env):
+        import importlib, sys
+        base = {"STOCK_TICKER": "TESTX", "ALPACA_API_KEY": "x",
+                "ALPACA_SECRET_KEY": "y", "ALPACA_PAPER": "True"}
+        base.update(env)
+        with mock.patch.dict(os.environ, base, clear=False):
+            sys.modules.pop("stock_bot", None)
+            return importlib.import_module("stock_bot")
+
+    def test_state_write_is_atomic_and_keeps_a_backup(self):
+        import tempfile, shutil, json as js
+        sb = self._bot()
+        d = tempfile.mkdtemp()
+        try:
+            sb.STATE_PATH = os.path.join(d, "s.json")
+            sb._SHARED_STATE = None
+            sb.save_state({"position": "LONG", "entry_price": 10.0, "shares": 1.5})
+            files = os.listdir(d)
+            self.assertIn("s.json", files)
+            self.assertTrue(any(f.endswith(".bak") for f in files))
+            self.assertFalse(any(f.endswith(".tmp") for f in files),
+                             "temp file left behind means the swap did not complete")
+            saved = js.load(open(sb.STATE_PATH))
+            self.assertEqual(saved["position"], "LONG")
+            # Shared schema and stock naming must both survive.
+            self.assertEqual(saved["holdings_base"], 1.5)
+            self.assertEqual(saved["shares"], 1.5)
+        finally:
+            shutil.rmtree(d)
+
+    def test_reconciliation_exists_and_is_a_noop_on_paper(self):
+        sb = self._bot()
+        self.assertTrue(callable(sb.reconcile_orders))
+        sb.reconcile_orders()   # must not raise
+
+    def test_journalling_failure_never_blocks_a_trade(self):
+        """Losing the journal is bad; refusing to trade because of it is worse."""
+        sb = self._bot()
+        with mock.patch("builtins.open", side_effect=OSError("disk full")):
+            sb._journal_intent("cid-1", "BUY", 10.0, 1.0)   # must not raise
