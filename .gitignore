@@ -27,6 +27,14 @@ logs/
 # Local State Files
 state.json
 state_*.json
+# Backups and locks of the above. Without these the .bak files show as modified
+# every session while the files they back up are ignored.
+state_*.json.bak
+state_*.json.lock
+state.json.bak
+# ...but keep deliberately archived history, which is the only record of the
+# live-trading era and is not regenerable.
+!archive/**
 
 # Trade logs & data
 # *.csv
