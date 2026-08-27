@@ -730,10 +730,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def get_dashboard_data(self):
         project_root = os.path.dirname(os.path.abspath(__file__))
+        # Fleet health. The failures this catches — a bot trading the wrong
+        # instrument, or several sharing one state file — are invisible in
+        # every other number on this page: they present as an absence of
+        # trades, which is what a quiet market also looks like. Published so
+        # the UI can say something is wrong instead of showing a fleet that
+        # merely appears idle.
+        try:
+            from utils import registry
+            fleet_problems = registry.audit()
+        except Exception as e:
+            logger.error(f"Fleet audit failed: {e}")
+            fleet_problems = [f"could not audit the fleet: {e}"]
+
         data = {
             "timestamp": datetime_now_iso(),
             "scanner": {},
             "active_positions": [],
+            "fleet_problems": fleet_problems,
             "bots": self.get_pm2_status(),
             "performance": {
                 "live_realized_pnl": 0.0,

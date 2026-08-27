@@ -1393,6 +1393,25 @@ def main():
 
     # ── Daily digest email ────────────────────────────────────────────────────
     digest = f"Auto-Learner Digest — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n\n"
+
+    # Fleet health first, because the failures it catches are silent ones: a
+    # bot trading the wrong instrument, or several sharing a state file, look
+    # exactly like a quiet market from every other number in this report. If
+    # something here is wrong, the rest of the digest is describing a fleet
+    # that is not the one you think is running.
+    try:
+        from utils import registry
+        fleet_problems = registry.audit()
+    except Exception as e:
+        fleet_problems = [f"could not audit the fleet: {e}"]
+    if fleet_problems:
+        digest += "─── ⚠ FLEET PROBLEMS ───\n"
+        for problem in fleet_problems:
+            digest += f"  ! {problem}\n"
+        digest += "\n"
+    else:
+        digest += "Fleet: all bots match their names.\n"
+
     digest += f"Learner mode: {learner_mode}\n"
     digest += f"Recommendations generated: {len(recommendations)}\n"
     digest += f"Approved paper updates applied: {len(param_updates) // 4} coin(s)\n"
@@ -1419,7 +1438,9 @@ def main():
             f'<tr><td style="padding:0 0 14px">{preamble}</td></tr>'
             f'<tr><td style="padding:0 0 6px">', 1)
 
-    send_notification("Daily Learning Report", digest, html=html_body)
+    subject = ("⚠ Daily Learning Report — FLEET PROBLEMS"
+               if fleet_problems else "Daily Learning Report")
+    send_notification(subject, digest, html=html_body)
 
     log.info("\n" + "=" * 60)
     log.info("AUTO LEARNER complete")

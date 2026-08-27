@@ -490,6 +490,28 @@
         .tag-ok    { background: var(--accent-glow-blue);  color: var(--accent-blue); }
         .tag-stale { background: var(--accent-glow-red);   color: var(--accent-red); }
 
+        .fleet-banner {
+            background: var(--accent-glow-red);
+            border: 1px solid var(--accent-red);
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 22px;
+        }
+        .fleet-banner h3 {
+            color: var(--accent-red);
+            font-size: 14px;
+            margin: 0 0 8px;
+            letter-spacing: .04em;
+        }
+        .fleet-banner ul { margin: 0; padding-left: 20px; }
+        .fleet-banner li { color: var(--text-primary); font-size: 13px; line-height: 1.7; }
+        .fleet-banner .fix {
+            margin-top: 10px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
         .stale-note {
             font-size: 0.7rem;
             color: var(--accent-red);
@@ -510,6 +532,15 @@
                 <span>SYSTEM ONLINE</span>
             </div>
         </header>
+
+        <!--
+          Fleet problems. These are the failures that do not show up anywhere
+          else on this page: a bot trading the wrong instrument, or several
+          sharing one state file, present only as an absence of trades — the
+          same thing a quiet market looks like. Hidden when there is nothing
+          wrong, so its presence always means something.
+        -->
+        <div id="fleet-banner" class="fleet-banner" style="display:none"></div>
 
 
         <!-- --- Edge Analysis: gross vs fees vs net --- -->
@@ -1070,7 +1101,25 @@
             return sign + num.toFixed(2) + "%";
         }
 
+        function renderFleetProblems(problems) {
+            const el = document.getElementById('fleet-banner');
+            if (!el) return;
+            if (!problems || !problems.length) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            const items = problems.map(p =>
+                `<li>${String(p).replace(/[&<>]/g, c =>
+                    ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</li>`).join('');
+            el.innerHTML =
+                `<h3>⚠ FLEET PROBLEMS (${problems.length})</h3><ul>${items}</ul>` +
+                `<div class="fix">.venv/bin/python restart_bots.py --check</div>`;
+            el.style.display = 'block';
+        }
+
         function updateDashboard(data) {
+            renderFleetProblems(data.fleet_problems);
             // Update Timestamp
             if (data.timestamp) {
                 const d = new Date(data.timestamp);

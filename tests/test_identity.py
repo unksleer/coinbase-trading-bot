@@ -186,3 +186,31 @@ def test_audit_reports_the_shared_state_file(monkeypatch, tmp_path):
 
 def test_audit_is_quiet_on_a_healthy_fleet(monkeypatch, tmp_path):
     assert _audit_with(monkeypatch, HEALTHY, tmp_path) == []
+
+
+# ── the alert has to reach a human ───────────────────────────────────────────
+# registry.audit() catching drift is worthless if nothing displays it. The
+# first version of this fix wired the audit into neither the dashboard nor the
+# daily report — it was reachable only by running `add_crypto.py --list` by
+# hand, which nobody does while things look fine.
+
+def test_dashboard_publishes_fleet_problems():
+    """The API payload must carry the key, so the banner has something to read."""
+    source = open(os.path.join(DIR, "dashboard.py")).read()
+    assert '"fleet_problems": fleet_problems' in source
+    assert "registry.audit()" in source
+
+
+def test_dashboard_ui_renders_the_banner():
+    page = open(os.path.join(DIR, "dashboard", "index.html")).read()
+    assert 'id="fleet-banner"' in page
+    assert "renderFleetProblems(data.fleet_problems)" in page
+
+
+def test_daily_report_includes_the_audit():
+    source = open(os.path.join(DIR, "auto_learner.py")).read()
+    assert "registry.audit()" in source
+    assert "FLEET PROBLEMS" in source
+    # A warning inside a mail that usually reads fine goes unread; the subject
+    # line has to change too.
+    assert 'subject = ("⚠ Daily Learning Report — FLEET PROBLEMS"' in source
