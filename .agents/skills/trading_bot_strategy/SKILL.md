@@ -14,6 +14,38 @@ description: >
 
 # Trading Bot Strategy — Full Knowledge Base
 
+## ⛔ CONFIGURATION FREEZE UNTIL 2026-10-10
+
+**Do not change strategy, timeframe, thresholds or stops.** Adding symbols is
+fine — it raises the evidence rate without changing what is being tested.
+
+Six config changes were made on 2026-08-26 alone. Each resets the forward-test
+clock on a system whose feedback loop is days per trade, so no configuration
+ever ran long enough to produce evidence. **Change velocity exceeded evidence
+velocity.** That is the reason months of work produced no verdict — not any
+individual parameter.
+
+Expected rate, to judge against instead of a feeling:
+
+| | bots | config | rate |
+|---|---|---|---|
+| stocks | 12 | mean reversion 30/70 | ~27/month |
+| crypto | 9 | SMA 10/40 six-hour | ~8/month |
+| combined | 21 | | **~1 per day** |
+
+A day with zero trades is normal. A **week** with zero trades is a signal.
+
+Checkpoints: **2026-09-18** ~20 stock trades (first read) · **2026-10-10** ~40
+(decide).
+
+**Crypto is a control, not a candidate.** The best variant flips with the
+timeframe — SMA wins at six-hour, mean reversion at hourly — which is the
+signature of noise at a 1.207% round trip. Stocks are where the stable result
+is: mean reversion positive on both timeframes at all four thresholds.
+
+**When a search is exhaustive and finds nothing, the answer is outside the box —
+but changing the box repeatedly is how you never find out.**
+
 ## Quick Reference: Current Architecture
 
 | Setting | Value | Reason |
