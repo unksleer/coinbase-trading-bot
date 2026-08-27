@@ -163,6 +163,22 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
+    def end_headers(self):
+        """
+        Tell the browser to revalidate instead of serving the page from cache.
+
+        SimpleHTTPRequestHandler sends Last-Modified but no Cache-Control, so a
+        browser is free to reuse index.html without asking whether it changed.
+        Every dashboard edit then stays invisible until someone thinks to hard
+        refresh — which reads as "the change did not work" rather than "the
+        page is stale", and sends you looking for a bug that isn't there.
+
+        no-cache still permits caching; it requires revalidation first, so the
+        304 path keeps working and only genuinely-changed files are re-sent.
+        """
+        self.send_header("Cache-Control", "no-cache, must-revalidate")
+        super().end_headers()
+
     @staticmethod
     def _env_values():
         """Parse .env once per request into a flat mapping."""

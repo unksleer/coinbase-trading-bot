@@ -76,3 +76,23 @@ def test_legend_is_attached_to_the_signal_panel():
     page = _page()
     panel = page.split('id="bot-signal-panel"', 1)[1].split("</div>\n        </div>")[0]
     assert "signal-legend" in panel
+
+
+def test_legend_is_open_by_default():
+    """
+    It exists because the state labels were not readable on sight. Behind a
+    click, it does not solve that.
+    """
+    page = _page()
+    assert '<details class="signal-legend" open>' in page
+
+
+def test_pages_are_served_with_revalidation():
+    """
+    SimpleHTTPRequestHandler sends Last-Modified but no Cache-Control, so a
+    browser may reuse index.html without asking whether it changed. Every
+    dashboard edit then looks like it silently failed to apply.
+    """
+    source = open(os.path.join(DIR, "dashboard.py")).read()
+    assert '"Cache-Control", "no-cache, must-revalidate"' in source
+    assert "def end_headers(self):" in source

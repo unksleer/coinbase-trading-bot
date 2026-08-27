@@ -497,10 +497,14 @@
         }
         .signal-legend summary {
             cursor: pointer;
-            color: var(--text-secondary);
-            font-size: 12px;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
             letter-spacing: .03em;
+            padding: 4px 0;
+            user-select: none;
         }
+        .signal-legend summary:hover { color: var(--accent-green); }
         .signal-legend dl {
             margin: 14px 0 0;
             display: grid;
@@ -674,7 +678,7 @@
               README too, but nobody reads a README to interpret a table they
               are already looking at.
             -->
-            <details class="signal-legend">
+            <details class="signal-legend" open>
                 <summary>What do these states mean?</summary>
                 <dl>
                     <dt><span class="coin-signal sig-buy">🟢 IN TRADE</span></dt>
