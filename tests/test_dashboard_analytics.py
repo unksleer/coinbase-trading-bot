@@ -539,3 +539,72 @@ class RegistryTests(unittest.TestCase):
         source = open("dashboard.py").read()
         self.assertIn("registry.bots()", source)
         self.assertNotIn('"spy-bot":    "stock-SPY"', source)
+
+
+class EnvLoaderTests(unittest.TestCase):
+    """
+    Editing .env must change what a bot does. load_dotenv does not override an
+    existing variable and pm2 caches the environment a process started with, so
+    a plain restart silently kept old settings — nine stock bots ran RSI 30/70
+    for a day after .env said 35/65, with nothing in the logs to say so.
+    """
+
+    def setUp(self):
+        # load() writes into os.environ by design. Snapshot and restore around
+        # every test in this class so the real .env cannot leak into others.
+        self._saved = dict(os.environ)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self._saved)
+
+    def _env_file(self, body):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".env")
+        with os.fdopen(fd, "w") as h:
+            h.write(body)
+        self.addCleanup(os.unlink, path)
+        return path
+
+    def test_env_overrides_a_stale_inherited_value(self):
+        from utils import env_loader
+        path = self._env_file("TUNING_KNOB=new\n")
+        with mock.patch.dict(os.environ, {"TUNING_KNOB": "stale"}, clear=False):
+            env_loader.load(path)
+            self.assertEqual(os.environ["TUNING_KNOB"], "new")
+
+    def test_process_identity_is_never_overridden(self):
+        """
+        Each bot is told which instrument it trades on the pm2 command line.
+        .env carries a default for the same keys, so overriding blindly points
+        every bot at the same instrument.
+        """
+        from utils import env_loader
+        path = self._env_file("TRADING_PAIR=BTC-USD\nSTOCK_TICKER=SPY\n")
+        with mock.patch.dict(os.environ,
+                             {"TRADING_PAIR": "SOL-USDC", "STOCK_TICKER": "DIS"},
+                             clear=False):
+            env_loader.load(path)
+            self.assertEqual(os.environ["TRADING_PAIR"], "SOL-USDC")
+            self.assertEqual(os.environ["STOCK_TICKER"], "DIS")
+
+    def test_reports_which_keys_changed(self):
+        """So a restart can log that it picked something up, not assume it did."""
+        from utils import env_loader
+        path = self._env_file("A=1\nB=2\n")
+        with mock.patch.dict(os.environ, {"A": "old", "B": "2"}, clear=False):
+            changed = env_loader.load(path)
+        self.assertIn("A", changed)
+        self.assertNotIn("B", changed)
+
+    def test_missing_env_file_does_not_raise(self):
+        from utils import env_loader
+        # Isolated: load() mutates os.environ, and a leak here changes what
+        # every later test sees.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            env_loader.load("/nonexistent/.env")
+
+    def test_both_entry_points_use_the_loader(self):
+        for path in ("stock_bot.py", "config/settings.py"):
+            source = open(path).read()
+            self.assertIn("env_loader", source, path)

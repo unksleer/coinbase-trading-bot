@@ -241,12 +241,19 @@ class StockStrategyTests(unittest.TestCase):
     """
 
     def _bot(self, **env):
-        """Import stock_bot with a given configuration."""
+        """
+        Import stock_bot with a given configuration.
+
+        env_loader intentionally lets .env override inherited values, so the
+        loader is stubbed out here — otherwise the live configuration would
+        clobber whatever the test is trying to exercise.
+        """
         import importlib, sys
         base = {"STOCK_TICKER": "SPY", "ALPACA_API_KEY": "x",
                 "ALPACA_SECRET_KEY": "y", "ALPACA_PAPER": "True"}
         base.update(env)
-        with mock.patch.dict(os.environ, base, clear=False):
+        with mock.patch.dict(os.environ, base, clear=False), \
+             mock.patch("utils.env_loader.load", lambda *a, **k: set()):
             sys.modules.pop("stock_bot", None)
             return importlib.import_module("stock_bot")
 
@@ -260,8 +267,10 @@ class StockStrategyTests(unittest.TestCase):
         env = {"STOCK_TICKER": "SPY", "ALPACA_API_KEY": "x", "ALPACA_SECRET_KEY": "y"}
         # stock_bot calls load_dotenv at import, which would repopulate
         # STOCK_STRATEGY from .env even into a cleared environment.
+        # env_loader binds load_dotenv at import, so patching dotenv after the
+        # fact has no effect; patch the loader the module actually calls.
         with mock.patch.dict(os.environ, env, clear=True), \
-             mock.patch("dotenv.load_dotenv", lambda *a, **k: None):
+             mock.patch("utils.env_loader.load", lambda *a, **k: set()):
             sys.modules.pop("stock_bot", None)
             self.assertEqual(importlib.import_module("stock_bot").STRATEGY,
                              "SMA_CROSSOVER")
@@ -301,7 +310,10 @@ class StockStrategyTests(unittest.TestCase):
             sb.strategy_exit_reason(dict(base, prev_rsi=hi - 20, rsi=hi - 22)))
 
     def test_crossover_still_applies_the_rsi_band(self):
-        sb = self._bot(STOCK_STRATEGY="SMA_CROSSOVER")
+        # Band set explicitly: reading it from .env makes this test fail
+        # whenever the live configuration moves, which is not what it is about.
+        sb = self._bot(STOCK_STRATEGY="SMA_CROSSOVER",
+                       STOCK_RSI_BUY_MIN="40", STOCK_RSI_BUY_MAX="70")
         base = {"prev_sma_short": 1, "prev_sma_long": 2,
                 "sma_short": 3, "sma_long": 2, "prev_rsi": 50, "price": 100}
         self.assertTrue(sb.entry_signal(dict(base, rsi=50))[0])

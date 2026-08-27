@@ -32,10 +32,14 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 import pandas as pd
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: F401  (kept for compatibility)
+from utils.env_loader import load as load_config
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+# .env wins for tuning, the pm2 command line wins for identity. A plain
+# load_dotenv would leave stale values in place and a restart would silently
+# change nothing.
+_CHANGED = load_config()
 
 # ── Configuration from environment ───────────────────────────────────────────
 TICKER          = os.getenv("STOCK_TICKER", "SPY").upper()

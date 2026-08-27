@@ -1,8 +1,19 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: F401  (kept for compatibility)
 
-# Load environment variables from .env file
-load_dotenv()
+# .env is authoritative for tuning; the pm2 command line stays authoritative for
+# which instrument this process trades. A plain load_dotenv() does not override
+# an inherited value, so pm2's cached environment silently wins and editing .env
+# appears to do nothing.
+try:
+    import sys as _sys
+    _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _here not in _sys.path:
+        _sys.path.insert(0, _here)
+    from utils.env_loader import load as _load_config
+    _load_config()
+except Exception:
+    load_dotenv()
 
 
 
