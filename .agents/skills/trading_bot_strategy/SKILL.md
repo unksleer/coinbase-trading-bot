@@ -14,6 +14,26 @@ description: >
 
 # Trading Bot Strategy — Full Knowledge Base
 
+## Objective: EVIDENCE RATE, not backtest profit
+
+This is paper trading. A trade costs nothing; data is the scarce resource.
+Settings are tuned to **maximise trades per day subject to net staying
+positive**, not to maximise expected profit. Optimising profit while producing
+0.7 trades a day was the wrong objective and produced months without a verdict.
+
+Net positive is the constraint that keeps the data meaningful — a config that
+loses teaches you about a config nobody would run.
+
+**PM2 caches the environment a bot was started with, and `load_dotenv` does not
+override existing variables. A plain `pm2 restart` will NOT pick up .env
+changes.** Use:
+
+```bash
+set -a && . ./.env && set +a && pm2 restart <bots> --update-env
+```
+
+Nine stock bots silently kept RSI 30/70 after .env said 35/65 because of this.
+
 ## ⛔ CONFIGURATION FREEZE UNTIL 2026-10-10
 
 **Do not change strategy, timeframe, thresholds or stops.** Adding symbols is

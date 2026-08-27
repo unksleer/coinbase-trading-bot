@@ -275,13 +275,14 @@ class StockStrategyTests(unittest.TestCase):
 
     def test_mean_reversion_enters_only_on_an_upward_cross(self):
         sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")
+        lo = sb.RSI_OVERSOLD
         base = {"prev_sma_short": 1, "prev_sma_long": 2,
                 "sma_short": 1, "sma_long": 2, "price": 100}
-        self.assertTrue(sb.entry_signal(dict(base, prev_rsi=28, rsi=32))[0])
+        self.assertTrue(sb.entry_signal(dict(base, prev_rsi=lo - 2, rsi=lo + 2))[0])
         # Already above the level, no crossing
-        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=40, rsi=45))[0])
+        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=lo + 5, rsi=lo + 10))[0])
         # Still below the level
-        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=25, rsi=28))[0])
+        self.assertFalse(sb.entry_signal(dict(base, prev_rsi=lo - 5, rsi=lo - 2))[0])
 
     def test_mean_reversion_ignores_sma_crosses(self):
         """A bearish SMA cross must not exit a mean-reversion position."""
@@ -292,9 +293,12 @@ class StockStrategyTests(unittest.TestCase):
 
     def test_mean_reversion_exits_on_downward_cross_of_overbought(self):
         sb = self._bot(STOCK_STRATEGY="RSI_MEAN_REVERSION")
+        hi = sb.RSI_OVERBOUGHT
         base = {"prev_sma_short": 1, "prev_sma_long": 2, "sma_short": 1, "sma_long": 2}
-        self.assertIsNotNone(sb.strategy_exit_reason(dict(base, prev_rsi=72, rsi=68)))
-        self.assertIsNone(sb.strategy_exit_reason(dict(base, prev_rsi=50, rsi=48)))
+        self.assertIsNotNone(
+            sb.strategy_exit_reason(dict(base, prev_rsi=hi + 2, rsi=hi - 2)))
+        self.assertIsNone(
+            sb.strategy_exit_reason(dict(base, prev_rsi=hi - 20, rsi=hi - 22)))
 
     def test_crossover_still_applies_the_rsi_band(self):
         sb = self._bot(STOCK_STRATEGY="SMA_CROSSOVER")
