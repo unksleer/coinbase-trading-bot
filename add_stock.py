@@ -187,6 +187,14 @@ def main():
     values = load_env()
 
     if args.list:
+        # Consistency check: a bot running but absent from the watchlist, or
+        # listed with no bot, means something got half-added or half-removed.
+        try:
+            from utils import registry
+            for problem in registry.audit():
+                print(f"  ! {problem}")
+        except Exception:
+            pass
         running = pm2_names()
         tickers = watchlist(values)
         if not tickers:

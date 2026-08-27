@@ -70,7 +70,7 @@ logging.basicConfig(
 log = logging.getLogger("auto_learner")
 
 # ── Coins and their PM2 bot names ────────────────────────────────────────────
-COINS = {
+COINS_FALLBACK = {
     "BTC-USDC":   {"bot": "btc-bot",    "gran": "ONE_HOUR", "prefix": "BTC",    "amount": 10},
     "ETH-USDC":   {"bot": "eth-bot",    "gran": "ONE_HOUR", "prefix": "ETH",    "amount": 10},
     "SOL-USDC":   {"bot": "sol-bot",    "gran": "ONE_HOUR", "prefix": "SOL",    "amount": 10},
@@ -81,6 +81,35 @@ COINS = {
     "XRP-USDC":   {"bot": "xrp-bot",    "gran": "ONE_HOUR", "prefix": "XRP",    "amount": 10},
     "RENDER-USDC":{"bot": "render-bot", "gran": "ONE_HOUR", "prefix": "RENDER", "amount": 10},
 }
+
+COINS = COINS_FALLBACK   # replaced at run time by _discover_coins()
+
+def _discover_coins():
+    """
+    Coins to optimise, from the running fleet.
+
+    The table below is the fallback. A hardcoded fleet list means a bot added by
+    any other route is never optimised, and nothing reports that it was skipped.
+    """
+    try:
+        from utils import registry
+        running = registry.crypto_pairs()
+        if not running:
+            return dict(COINS_FALLBACK)
+        discovered = {}
+        for pair in running:
+            prefix = pair.split("-")[0].upper()
+            known = COINS_FALLBACK.get(pair, {})
+            discovered[pair] = {
+                "bot": known.get("bot", f"{prefix.lower()}-bot"),
+                "gran": known.get("gran", "ONE_HOUR"),
+                "prefix": prefix,
+                "amount": known.get("amount", 10),
+            }
+        return discovered
+    except Exception:
+        return dict(COINS_FALLBACK)
+
 
 MIN_IMPROVEMENT_PCT = 5.0   # New params must beat old by ≥5% net profit
 MIN_TRADES          = 5     # Optimizer result must have ≥5 backtest trades to count
@@ -1087,6 +1116,9 @@ def send_notification(subject: str, body: str, html: str = None):
 # Main loop
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
+    global COINS
+    COINS = _discover_coins()
+
     log.info("=" * 60)
     log.info("AUTO LEARNER starting")
     log.info("=" * 60)

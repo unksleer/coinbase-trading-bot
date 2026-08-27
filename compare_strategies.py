@@ -27,8 +27,20 @@ import pandas as pd
 
 import auto_learner as al
 
-PAIRS = ["BTC-USDC", "ETH-USDC", "SOL-USDC", "ADA-USDC", "LINK-USDC",
-         "NEAR-USDC", "SUI-USDC", "XRP-USDC", "RENDER-USDC"]
+# Discovered from the running fleet rather than hardcoded, so a bot added by
+# any route is included here without editing this file. The literal list is the
+# fallback for when pm2 is unreachable.
+def _default_pairs():
+    try:
+        from utils import registry
+        return registry.crypto_pairs(fallback=_FALLBACK_PAIRS)
+    except Exception:
+        return _FALLBACK_PAIRS
+
+
+_FALLBACK_PAIRS = ["BTC-USDC", "ETH-USDC", "SOL-USDC", "ADA-USDC", "LINK-USDC",
+                   "NEAR-USDC", "SUI-USDC", "XRP-USDC", "RENDER-USDC"]
+PAIRS = _default_pairs()
 
 CRYPTO_FEE = al.REAL_FEE_RATE     # 0.60% per side, Coinbase tier 1
 STOCK_FEE = 0.0                   # Alpaca equities are commission-free
@@ -41,11 +53,18 @@ FEE = CRYPTO_FEE
 
 
 def stock_universe():
-    """Tickers with a bot, plus any listed in STOCK_WATCHLIST."""
+    """Tickers with a running bot; STOCK_WATCHLIST is the fallback."""
     import os
-    running = [t.strip().upper()
-               for t in os.getenv("STOCK_WATCHLIST", "").split(",") if t.strip()]
-    return running or ["SPY", "QQQ", "LPL"]
+    try:
+        from utils import registry
+        found = registry.stock_tickers()
+        if found:
+            return found
+    except Exception:
+        pass
+    listed = [t.strip().upper()
+              for t in os.getenv("STOCK_WATCHLIST", "").split(",") if t.strip()]
+    return listed or ["SPY", "QQQ", "LPL"]
 
 
 def rsi_series(closes, period):

@@ -463,3 +463,79 @@ class SignalStateTests(unittest.TestCase):
         """
         source = open("dashboard.py").read()
         self.assertIn('env.get("STOCK_STRATEGY")', source)
+
+
+class RegistryTests(unittest.TestCase):
+    """
+    One source of truth for which bots exist. Every consumer used to keep its
+    own list, so adding a bot meant remembering all of them — and forgetting one
+    failed silently.
+    """
+
+    def _procs(self, *specs):
+        return [{"name": n, "pm2_env": {"pm_exec_path": f"/x/{script}",
+                                        "status": "online", **env}}
+                for n, script, env in specs]
+
+    def test_identifies_bots_by_script_not_env_var(self):
+        """
+        Stock bots inherit TRADING_PAIR from .env when launched from a shell
+        that loaded it. Keying on env vars made every stock bot report as
+        BTC-USD, which is how nine tickers showed up as the wrong symbol.
+        """
+        from utils import registry
+        procs = self._procs(
+            ("spy-bot", "stock_bot.py", {"STOCK_TICKER": "SPY",
+                                         "TRADING_PAIR": "BTC-USD"}),
+            ("btc-bot", "bot.py", {"TRADING_PAIR": "BTC-USDC"}),
+        )
+        with mock.patch.object(registry, "_pm2_processes", return_value=procs):
+            found = {b["name"]: (b["market"], b["symbol"]) for b in registry.bots()}
+        self.assertEqual(found["spy-bot"], ("stocks", "SPY"))
+        self.assertEqual(found["btc-bot"], ("crypto", "BTC-USDC"))
+
+    def test_ignores_non_bot_processes(self):
+        from utils import registry
+        procs = self._procs(
+            ("dashboard", "dashboard.py", {}),
+            ("learner", "auto_learner.py", {}),
+            ("btc-bot", "bot.py", {"TRADING_PAIR": "BTC-USDC"}),
+        )
+        with mock.patch.object(registry, "_pm2_processes", return_value=procs):
+            self.assertEqual([b["name"] for b in registry.bots()], ["btc-bot"])
+
+    def test_falls_back_rather_than_returning_nothing(self):
+        """
+        A caller handed an empty list silently concludes there is no work. The
+        known set is a better default when pm2 is unreachable.
+        """
+        from utils import registry
+        with mock.patch.object(registry, "_pm2_processes", return_value=[]):
+            self.assertEqual(registry.crypto_pairs(fallback=["BTC-USDC"]),
+                             ["BTC-USDC"])
+            self.assertEqual(registry.stock_tickers(), [])
+
+    def test_audit_reports_watchlist_drift(self):
+        import tempfile, shutil
+        from utils import registry
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        env_path = os.path.join(tmp, ".env")
+        with open(env_path, "w") as h:
+            h.write("STOCK_WATCHLIST=SPY,GONE\n")
+        procs = self._procs(
+            ("spy-bot", "stock_bot.py", {"STOCK_TICKER": "SPY"}),
+            ("new-bot", "stock_bot.py", {"STOCK_TICKER": "NEW"}),
+        )
+        with mock.patch.object(registry, "_pm2_processes", return_value=procs):
+            problems = registry.audit(env_path=env_path)
+        self.assertTrue(any("NEW" in p and "not in STOCK_WATCHLIST" in p
+                            for p in problems), problems)
+        self.assertTrue(any("GONE" in p and "no running bot" in p
+                            for p in problems), problems)
+
+    def test_no_consumer_keeps_a_hardcoded_fleet_list(self):
+        """Guards the regression: a fixed list makes new bots invisible."""
+        source = open("dashboard.py").read()
+        self.assertIn("registry.bots()", source)
+        self.assertNotIn('"spy-bot":    "stock-SPY"', source)

@@ -53,6 +53,14 @@ def load_env():
 
 
 def watchlist(values):
+    """Tickers with a running bot; STOCK_WATCHLIST is the fallback."""
+    try:
+        from utils import registry
+        found = registry.stock_tickers()
+        if found:
+            return found
+    except Exception:
+        pass
     raw = values.get("STOCK_WATCHLIST", "")
     tickers = [t.strip().upper() for t in raw.split(",") if t.strip()]
     return tickers or ["SPY", "QQQ", "LPL"]

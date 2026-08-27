@@ -287,6 +287,26 @@ Judge that arm on per-trade quality, not volume.
 **Buy-and-hold still beats it** (+$11.39 vs +$4.35 over the same window). Six-hour
 is where this strategy stops destroying value, not where it wins.
 
+## Which bots exist — `utils/registry.py`
+
+**PM2 is the single source of truth.** `registry.bots()` discovers the fleet and
+every consumer reads it: the dashboard, `auto_learner.COINS`,
+`compare_strategies.PAIRS`, `stock_learner`. Hardcoded lists remain only as
+fallbacks for when pm2 is unreachable.
+
+Adding a bot by any route makes it appear everywhere at once. Nine stock bots
+added on 2026-08-26 were invisible on the dashboard because its `BOT_MAP` was
+hardcoded and nobody remembered to edit it — the failure was silent, which is
+the whole problem with a fixed list.
+
+**Identify bots by SCRIPT, never by environment variable.** Stock bots inherit
+`TRADING_PAIR` from `.env` when launched from a shell that loaded it, so keying
+on env vars made all nine report as BTC-USD. `bot.py` means crypto,
+`stock_bot.py` means stocks.
+
+`registry.audit()` reports drift between the running fleet and `.env`; it runs
+automatically on `add_stock.py --list`.
+
 ## Architecture: what is shared, what is not
 
 `utils/venue.py` is the boundary. Above it everything is shared and must behave

@@ -280,6 +280,25 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "raw": None,
         }
 
+    @staticmethod
+    def discover_bots():
+        """
+        Map pm2 process name -> symbol, from the environment each bot runs with.
+
+        Crypto bots carry TRADING_PAIR, stock bots STOCK_TICKER. Stock symbols
+        are prefixed "stock-" to match the signal log those bots write; the
+        prefix is stripped for display.
+        """
+        try:
+            from utils import registry
+        except ImportError as e:
+            logger.error(f"Could not import registry: {e}")
+            return {}
+        # Stock symbols are prefixed to match the signal log those bots write.
+        return {b["name"]: (b["symbol"] if b["market"] == "crypto"
+                            else f"stock-{b['symbol']}")
+                for b in registry.bots()}
+
     def get_bot_signals(self):
         """
         Current decision state per bot.
@@ -287,23 +306,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         Crypto bots are read from their structured signal log; the stock bots
         do not write one, so they still fall back to parsing PM2 output.
         """
-        BOT_MAP = {
-            "btc-bot":    "BTC-USDC",
-            "eth-bot":    "ETH-USDC",
-            "sol-bot":    "SOL-USDC",
-            "ada-bot":    "ADA-USDC",
-            "link-bot":   "LINK-USDC",
-            "near-bot":   "NEAR-USDC",
-            "sui-bot":    "SUI-USDC",
-            "xrp-bot":    "XRP-USDC",
-            "render-bot": "RENDER-USDC",
-            # Stock bots (Alpaca)
-            # Prefixed to match the signal log the stock bot writes; the
-            # market-hours suffix is stripped for display.
-            "spy-bot":    "stock-SPY",
-            "qqq-bot":    "stock-QQQ",
-            "lpl-bot":    "stock-LPL",
-        }
+        # Discovered from PM2, not hardcoded. A fixed list means every bot
+        # added with add_stock.py is invisible here until someone remembers to
+        # edit this file — which is exactly what happened to the nine tickers
+        # added on 2026-08-26.
+        BOT_MAP = self.discover_bots()
         pm2_log_dir = os.path.expanduser("~/.pm2/logs")
         results = []
 
