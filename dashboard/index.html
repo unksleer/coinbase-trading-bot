@@ -490,6 +490,43 @@
         .tag-ok    { background: var(--accent-glow-blue);  color: var(--accent-blue); }
         .tag-stale { background: var(--accent-glow-red);   color: var(--accent-red); }
 
+        .signal-legend {
+            margin-top: 16px;
+            border-top: 1px solid var(--border-color, rgba(255,255,255,.08));
+            padding-top: 12px;
+        }
+        .signal-legend summary {
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 12px;
+            letter-spacing: .03em;
+        }
+        .signal-legend dl {
+            margin: 14px 0 0;
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 8px 14px;
+            align-items: baseline;
+        }
+        .signal-legend dt { margin: 0; }
+        .signal-legend dd {
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: 12.5px;
+            line-height: 1.6;
+        }
+        .signal-legend dd strong { color: var(--text-primary); }
+        .signal-legend p {
+            margin: 14px 0 0;
+            color: var(--text-secondary);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        @media (max-width: 640px) {
+            .signal-legend dl { grid-template-columns: 1fr; gap: 4px; }
+            .signal-legend dd { margin-bottom: 10px; }
+        }
+
         .fleet-banner {
             background: var(--accent-glow-red);
             border: 1px solid var(--accent-red);
@@ -628,6 +665,51 @@
                     </tbody>
                 </table>
             </div>
+
+            <!--
+              Legend. These labels are the bot's own vocabulary and none read
+              as self-explanatory — NO SETUP especially, which is the resting
+              state of every mean-reversion bot and so the one shown most
+              often, while looking like something is wrong. Documented in the
+              README too, but nobody reads a README to interpret a table they
+              are already looking at.
+            -->
+            <details class="signal-legend">
+                <summary>What do these states mean?</summary>
+                <dl>
+                    <dt><span class="coin-signal sig-buy">🟢 IN TRADE</span></dt>
+                    <dd>Holding a position.</dd>
+
+                    <dt><span class="coin-signal sig-buy">⚡ ENTERING</span></dt>
+                    <dd>The entry condition fired on this candle and passed every filter.</dd>
+
+                    <dt><span class="coin-signal sig-hold">🚫 BLOCKED</span></dt>
+                    <dd>The entry condition fired and a filter rejected it. The
+                        filter that rejected it is named in the row.</dd>
+
+                    <dt><span class="coin-signal sig-hold">➖ NO SETUP</span></dt>
+                    <dd><strong>Mean-reversion bots (all stocks).</strong> RSI has not
+                        crossed up through oversold, so there is nothing to act on.
+                        Nothing is wrong — this is the normal resting state and
+                        what you should expect to see most of the time.</dd>
+
+                    <dt><span class="coin-signal sig-hold">➖ NO CROSS</span></dt>
+                    <dd><strong>Crossover bots (all crypto).</strong> The short SMA is
+                        already above the long one, so the crossing has passed.
+                        These bots enter on the crossing itself — a single candle
+                        — so this means the entry was missed, not that one is
+                        approaching.</dd>
+
+                    <dt><span class="coin-signal sig-hold">⏳ BELOW</span></dt>
+                    <dd>Crossover bots: short SMA under long. No setup forming.</dd>
+
+                    <dt><span class="coin-signal sig-hold">🌙 MARKET CLOSED</span></dt>
+                    <dd>Stock bot outside market hours. Not evaluating at all.</dd>
+                </dl>
+                <p>States describe what the bot is doing, not how likely a trade
+                   is. SMA columns are meaningless for mean-reversion bots and
+                   are not used to label them.</p>
+            </details>
         </div>
 
         <!-- --- Performance Grid --- -->

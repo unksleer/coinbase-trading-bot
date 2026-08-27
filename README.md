@@ -41,6 +41,24 @@ This bot is engineered with strict production safety safeguards to protect capit
 
 ---
 
+### Bot identity
+
+Each bot asserts, before touching state or the market, that its pm2 process
+name matches the instrument it resolved. pm2 sets `name` in the process
+environment and no restart overwrites it, so it is the one piece of identity a
+bad restart cannot corrupt (`utils/identity.py`).
+
+This exists because the failure it catches is silent. When eight crypto bots
+were pointed at `BTC-USDC`, every one started cleanly, logged healthy, polled a
+real market and wrote a state file — the same file. The only symptom was
+per-coin trade files that stopped growing, which on six-hour candles is
+indistinguishable from a quiet market.
+
+`registry.audit()` covers the case the startup guard cannot — bots already
+running when identity drifts — and also reports bots sharing a symbol, and so a
+state file. It surfaces on the dashboard as a banner and leads the nightly
+digest, whose subject line changes when something is wrong.
+
 ## 🚀 Key Features
 
 * **Multi-Asset Live Bots**: Run isolated trading bots for multiple coins (e.g., BTC, ETH, SOL) concurrently.
@@ -111,6 +129,26 @@ pm2 logs               # View live logs
 pm2 logs btc-bot       # View live logs for specific bot
 pm2 delete btc-bot     # Stop and remove specific bot
 ```
+
+**Restart with `restart_bots.py`, not `pm2 restart`:**
+
+```bash
+.venv/bin/python restart_bots.py --check     # report identity drift, change nothing
+.venv/bin/python restart_bots.py             # all bots
+.venv/bin/python restart_bots.py --crypto    # or --stocks, or named bots
+```
+
+`pm2 restart <name> --update-env` copies the current shell environment into the
+process. Run it from a shell that has `.env` loaded and every bot inherits
+`.env`'s single `TRADING_PAIR`: on 2026-08-27 that put eight crypto bots on
+`BTC-USDC` within one second, all writing the same state file, with no error
+raised anywhere. `restart_bots.py` restates each bot's identity and verifies it
+afterwards.
+
+`--update-env` is also no longer needed for its original purpose.
+`utils/env_loader.py` re-reads `.env` at startup with `override=True`, so a
+plain restart already picks up tuning changes — **`.env` wins for tuning, the
+command line wins for identity.**
 
 ### 3. Manually Closing Positions (`manual_sell.py`)
 Close an open position manually under lock safety. Targets dry-run files by default or via argument overrides:
@@ -220,6 +258,25 @@ Compare strategy classes across the watchlist with:
 .venv/bin/python compare_strategies.py --market stocks --granularity Day --lookback-days 1800
 ```
 
+### 7b. Crypto Bots (`add_crypto.py`)
+
+The crypto counterpart to `add_stock.py`. Dry-run only — live trading stays
+behind `trade.sh` and its typed confirmation.
+
+```bash
+.venv/bin/python add_crypto.py --list         # running pairs vs pm2
+.venv/bin/python add_crypto.py FIL --check    # validate + backtest, change nothing
+.venv/bin/python add_crypto.py FIL            # register and start
+.venv/bin/python add_crypto.py FIL --remove
+```
+
+Settings come from the coins **actually running**, not from the `SIM` profile.
+The nine existing coins each carry per-coin overrides, so a new coin taking
+profile defaults would get SMA 5/30 on `ONE_HOUR` against the fleet's 10/40 on
+`SIX_HOUR` — quietly a different experiment, whose results would not be
+comparable with the rest. The backtest prints where its settings came from, and
+says so if the fleet has drifted apart.
+
 ### 8. Candidate Screening (`screen_candidates.py`)
 
 Ranks symbols by whether they **suit the strategy**, not by recent returns.
@@ -300,9 +357,13 @@ doing right now:
 | **Exits by Reason** | Count and average net per exit path. Warns when one reason dominates and loses. |
 | **Entry Follow-Through** | How many entries ever moved far enough to cover the round trip, against the fee floor. |
 | **Signal Funnel** | Crossovers seen → blocked by which filter → entries taken. An over-tight filter is invisible in the trade ledger, where it looks identical to a quiet market. |
+| **Fleet Problems** | Hidden unless something is wrong. Bots not matching their name, bots sharing a state file, bots not online — the failures that show up nowhere else because they present as an absence of trades. |
 | **Go-Live Readiness** | Per-coin progress against all five graduation criteria, closest first. Evaluated by `utils/graduation.py` — the same code the nightly report renders and the promotion gate enforces, so one coin cannot show two readiness figures. |
 
 ### Bot signal states
+
+The dashboard carries this same table as a **"What do these states mean?"**
+legend under the signal panel, so it can be read without leaving the page.
 
 | state | meaning |
 | :--- | :--- |
