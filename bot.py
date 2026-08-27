@@ -192,6 +192,13 @@ def main():
     logger.info(f"Trade Amount: ${Settings.TRADE_AMOUNT_USD:.2f} USD")
     logger.info(f"Loop Interval: {Settings.LOOP_INTERVAL_SECONDS} seconds")
     
+    # Before touching state or the market, confirm this process is the bot it
+    # claims to be. A restart that carries .env into the process environment
+    # points every bot at the same pair; that failure is invisible except as an
+    # absence of trades, so it is checked rather than trusted.
+    from utils import identity
+    identity.enforce(Settings.TRADING_PAIR, logger=logger)
+
     try:
         base_asset, quote_asset = Settings.TRADING_PAIR.split('-')
     except ValueError:

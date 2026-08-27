@@ -24,15 +24,42 @@ positive**, not to maximise expected profit. Optimising profit while producing
 Net positive is the constraint that keeps the data meaningful — a config that
 loses teaches you about a config nobody would run.
 
-**PM2 caches the environment a bot was started with, and `load_dotenv` does not
-override existing variables. A plain `pm2 restart` will NOT pick up .env
-changes.** Use:
+### Restarting bots
 
 ```bash
-set -a && . ./.env && set +a && pm2 restart <bots> --update-env
+.venv/bin/python restart_bots.py            # all bots
+.venv/bin/python restart_bots.py --crypto
+.venv/bin/python restart_bots.py --check    # report identity drift only
 ```
 
-Nine stock bots silently kept RSI 30/70 after .env said 35/65 because of this.
+**Never restart with `--update-env` from a shell that has .env loaded.** The
+advice that used to be here —
+
+```bash
+set -a && . ./.env && set +a && pm2 restart <bots> --update-env   # DO NOT
+```
+
+— copies the whole shell environment into every process, including .env's
+single `TRADING_PAIR`. On 2026-08-27 at 14:51 that put **eight crypto bots on
+BTC-USDC within one second**, all writing the same state file. Caught 36
+minutes later; no trades were lost, which was luck rather than design.
+
+Nothing errored; every bot started, logged healthy and polled a real market.
+The only symptom was per-coin trade files that stopped growing — on six-hour
+candles, indistinguishable from a quiet market.
+
+That workaround is also no longer needed. `utils/env_loader` re-reads .env at
+startup with `override=True`, so a plain restart already picks up tuning
+changes while pm2 keeps each process's own identity — .env wins for tuning, the
+command line wins for identity. `restart_bots.py` is the only restart path that
+honours both, and it verifies the result afterwards.
+
+Bots now refuse to start if their pm2 name disagrees with their resolved symbol
+(`utils/identity.py`), and `registry.audit()` reports drift in already-running
+bots, so this failure cannot recur silently.
+
+*(The earlier symptom of the same env-caching problem: nine stock bots silently
+kept RSI 30/70 after .env said 35/65.)*
 
 ## ⛔ CONFIGURATION FREEZE UNTIL 2026-10-10
 

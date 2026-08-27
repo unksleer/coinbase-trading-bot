@@ -126,4 +126,28 @@ def audit(env_path=None):
         if bot["status"] != "online":
             problems.append(f"{bot['name']} is {bot['status']}, not online")
 
+    # Identity drift. A restart carrying .env into the process environment
+    # gives every bot .env's single default: on 2026-08-27 eight crypto bots
+    # went to BTC-USDC in one second while pm2's saved config still held the
+    # right pairs. Nothing errored — the only symptom was per-coin trade files
+    # that stopped growing, which on six-hour candles is indistinguishable from
+    # a quiet market. Reported here so the dashboard and the daily report show
+    # it instead of showing nine bots apparently watching nine coins.
+    from utils.identity import expected_prefix
+    duplicates = {}
+    for bot in running:
+        expected = expected_prefix(bot["name"])
+        actual = bot["symbol"].split("-")[0].upper()
+        if expected and actual != expected:
+            problems.append(
+                f"{bot['name']} is trading {bot['symbol']}, not {expected} — "
+                f"run restart_bots.py to restore its identity")
+        duplicates.setdefault((bot["market"], bot["symbol"]), []).append(bot["name"])
+
+    for (market, symbol), names in sorted(duplicates.items()):
+        if len(names) > 1:
+            problems.append(
+                f"{len(names)} {market} bots share {symbol} and one state file: "
+                f"{', '.join(sorted(names))}")
+
     return problems

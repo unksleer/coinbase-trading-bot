@@ -1035,14 +1035,37 @@ def _resolve_env(env: dict, prefix: str, key: str, default: str) -> str:
 # PM2 bot restart
 # ─────────────────────────────────────────────────────────────────────────────
 def restart_bot(bot_name: str, pair: str, amount: int, dry_run: bool = True):
+    """
+    Restart a bot with its identity restated explicitly.
+
+    --update-env replaces the process environment with this process's, and the
+    learner has .env loaded — so without the assignments below every bot it
+    touches would inherit .env's single TRADING_PAIR. That is exactly how all
+    nine crypto bots ended up on BTC-USDC on 2026-08-27, silently.
+
+    The assignments prevent it and the check afterwards proves it, because the
+    failure leaves no trace other than trades that stop appearing.
+    """
     dr = "True" if dry_run else "False"
     cmd = (f"TRADING_PAIR={pair} TRADE_AMOUNT_USD={amount} DRY_RUN={dr} "
            f"pm2 restart {bot_name} --update-env")
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        log.info(f"  ✅ Restarted {bot_name}")
-    else:
+    if result.returncode != 0:
         log.warning(f"  ⚠ Restart failed for {bot_name}: {result.stderr.strip()}")
+        return
+
+    try:
+        from utils import registry
+        actual = {b["name"]: b["symbol"] for b in registry.bots()}.get(bot_name)
+    except Exception as e:
+        log.warning(f"  ⚠ Restarted {bot_name} but could not verify identity: {e}")
+        return
+
+    if actual and actual.upper() != pair.upper():
+        log.error(f"  ❌ {bot_name} restarted as {actual}, expected {pair}. "
+                  f"It is trading the wrong instrument — run restart_bots.py.")
+    else:
+        log.info(f"  ✅ Restarted {bot_name} on {pair}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -185,8 +185,14 @@ ACTIVE_PROFILE=SIM
 Settings are read at startup, so a change requires a restart:
 
 ```bash
-pm2 restart all
+.venv/bin/python restart_bots.py
 ```
+
+Use this rather than `pm2 restart all`. It restates each bot's identity and
+verifies it afterwards; a restart that carries .env into the process
+environment gives every bot the same `TRADING_PAIR`, which on 2026-08-27 put
+eight crypto bots on BTC-USDC within one second without any error being
+raised.
 
 ---
 

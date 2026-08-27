@@ -43,6 +43,13 @@ _CHANGED = load_config()
 
 # ── Configuration from environment ───────────────────────────────────────────
 TICKER          = os.getenv("STOCK_TICKER", "SPY").upper()
+
+# Confirm this process is the bot its pm2 name claims before TICKER is baked
+# into the log file, state file and trade file below. Checked here rather than
+# after logging is configured, because a wrong ticker sends the complaint into
+# the wrong bot's log.
+from utils import identity as _identity
+_identity.enforce(TICKER)
 TRADE_AMOUNT    = float(os.getenv("TRADE_AMOUNT_USD", 10))
 IS_PAPER        = os.getenv("ALPACA_PAPER", "True").strip().lower() not in ("false", "0", "no")
 API_KEY         = os.getenv("ALPACA_API_KEY", "")
