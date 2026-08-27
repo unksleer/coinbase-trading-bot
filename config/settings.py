@@ -5,14 +5,26 @@ from dotenv import load_dotenv  # noqa: F401  (kept for compatibility)
 # which instrument this process trades. A plain load_dotenv() does not override
 # an inherited value, so pm2's cached environment silently wins and editing .env
 # appears to do nothing.
+# Only ImportError falls back. A bare `except Exception` here previously turned
+# a real failure inside the loader into a silent pass — it is what hid a broken
+# test stub, and it would equally hide a malformed .env by quietly loading the
+# stale environment instead.
+import sys as _sys
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _here not in _sys.path:
+    _sys.path.insert(0, _here)
 try:
-    import sys as _sys
-    _here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if _here not in _sys.path:
-        _sys.path.insert(0, _here)
     from utils.env_loader import load as _load_config
+except ImportError:
+    import warnings as _warnings
+    _warnings.warn("utils.env_loader unavailable; .env will not override "
+                   "inherited values and config changes may not take effect",
+                   RuntimeWarning)
+    _load_config = None
+
+if _load_config is not None:
     _load_config()
-except Exception:
+else:
     load_dotenv()
 
 
