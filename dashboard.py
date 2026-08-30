@@ -650,6 +650,78 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         coins.sort(key=lambda c: (-c["score"], -c["trades"]))
         return coins
 
+    @staticmethod
+    def build_pooled_graduation():
+        """
+        Progress toward live, pooled across every symbol in a market.
+
+        The per-symbol view answers "is WMT ready", which needs 20 trades on
+        WMT alone and takes months. But the thing being tested is a STRATEGY —
+        RSI mean reversion on equities — not any one ticker, so the honest unit
+        of evidence is every trade that strategy has made. Twelve tickers reach
+        20 pooled trades roughly twelve times faster, and it is the question
+        actually being asked.
+
+        Going live should then use a BASKET of qualifying symbols. Picking the
+        single best of twelve after the fact is selection, not evidence, and it
+        is how a backtest that means nothing gets promoted.
+
+        Evaluated by utils.graduation — the same five criteria, the same code
+        the promotion gate enforces.
+        """
+        try:
+            from utils.graduation import evaluate, MAX_SCORE, MIN_TRADES
+        except ImportError:
+            logger.warning("Could not import utils.graduation")
+            return []
+
+        root = os.path.dirname(os.path.abspath(__file__))
+        markets = {
+            "stocks": glob.glob(os.path.join(root, "completed_trades_stock_*_paper.csv")),
+            "crypto": glob.glob(os.path.join(root, "completed_trades_*-usdc_dry.csv")),
+        }
+
+        out = []
+        for market, paths in markets.items():
+            pnls, symbols = [], set()
+            for path in paths:
+                try:
+                    with open(path, newline="") as handle:
+                        for row in csv.DictReader(handle):
+                            # A repeated header line appears in some files; it
+                            # parses as a row whose pnl is the literal string.
+                            if not row.get("exit_time") or row.get("exit_time") == "exit_time":
+                                continue
+                            try:
+                                pnls.append(float(row.get("pnl_usd") or 0.0))
+                            except (TypeError, ValueError):
+                                continue
+                            symbols.add((row.get("ticker") or row.get("pair") or "").upper())
+                except OSError:
+                    continue
+
+            if not pnls:
+                out.append({"market": market, "trades": 0, "symbols": len(paths),
+                            "needed": MIN_TRADES, "checks": [], "ready": False,
+                            "score": 0, "max_score": MAX_SCORE, "passed": 0, "total": 5})
+                continue
+
+            result = evaluate(pnls)
+            out.append({
+                "market": market,
+                "trades": result["stats"]["trades"],
+                "symbols": len(symbols) or len(paths),
+                "needed": MIN_TRADES,
+                "checks": [{"label": c["label"], "passed": c["passed"],
+                            "detail": c["detail"]} for c in result["criteria"]],
+                "passed": result["passed"],
+                "total": result["total"],
+                "score": result["score"],
+                "max_score": MAX_SCORE,
+                "ready": result["ready"],
+            })
+        return out
+
     def build_analytics(self, trades):
         """
         Derive the views that answer "is the strategy working", as opposed to
@@ -728,6 +800,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             }
 
         analytics["graduation"] = DashboardHandler.build_graduation(sim)
+        analytics["pooled_graduation"] = DashboardHandler.build_pooled_graduation()
 
         # Oldest-first cumulative net, for the only view with a time axis.
         chronological = sorted(

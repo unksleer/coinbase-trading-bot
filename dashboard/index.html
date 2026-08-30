@@ -490,6 +490,38 @@
         .tag-ok    { background: var(--accent-glow-blue);  color: var(--accent-blue); }
         .tag-stale { background: var(--accent-glow-red);   color: var(--accent-red); }
 
+        .pooled-grad { display: grid; gap: 12px; margin-bottom: 20px; }
+        .pooled-row {
+            border: 1px solid var(--border-color, rgba(255,255,255,.10));
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+        .pooled-row.ready { border-color: var(--accent-green); }
+        .pooled-head {
+            display: flex; justify-content: space-between;
+            align-items: baseline; gap: 12px; flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+        .pooled-head h4 {
+            margin: 0; font-size: 14px; letter-spacing: .04em;
+            text-transform: uppercase; color: var(--text-primary);
+        }
+        .pooled-head .count { font-size: 12px; color: var(--text-secondary); }
+        .pooled-bar {
+            height: 6px; border-radius: 3px; margin-bottom: 12px;
+            background: rgba(255,255,255,.07); overflow: hidden;
+        }
+        .pooled-bar > span { display:block; height:100%; background: var(--accent-green); }
+        .pooled-checks {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+            gap: 6px 14px;
+        }
+        .pooled-check { font-size: 12px; line-height: 1.5; }
+        .pooled-check .mark { display:inline-block; width: 1.1em; }
+        .pooled-check.pass .mark { color: var(--accent-green); }
+        .pooled-check.fail .mark { color: var(--accent-red); }
+        .pooled-check .detail { color: var(--text-secondary); }
+
         .signal-legend {
             margin-top: 16px;
             border-top: 1px solid var(--border-color, rgba(255,255,255,.08));
@@ -624,6 +656,13 @@
                 <h2>🚀 Go-Live Readiness</h2>
                 <span class="card-subtext" id="grad-subtext">—</span>
             </div>
+            <!--
+              Pooled first. The per-symbol cards below answer "is WMT ready",
+              which needs 20 trades on WMT alone and takes months; the strategy
+              is what is being tested, so the pooled row is the number that
+              actually moves and the one to watch.
+            -->
+            <div id="pooled-grad"></div>
             <div class="scanner-grid" id="grad-cards"></div>
         </div>
 
@@ -915,6 +954,7 @@
                 note.innerHTML = `Positive after costs. Edge survives the ${floor ? floor.toFixed(2) + '%' : ''} round trip.`;
             }
 
+            renderPooledGraduation(a.pooled_graduation);
             renderGraduation(a.graduation);
             renderExitReasons(a.exit_reasons, a.trade_count);
             renderEntryQuality(a.entry_quality, floor);
@@ -1035,6 +1075,33 @@
             if (foot.length) rows.push(`<div class="fn-foot">${foot.join(' · ')}</div>`);
 
             body.innerHTML = rows.join('');
+        }
+
+        function renderPooledGraduation(rows) {
+            const el = document.getElementById('pooled-grad');
+            if (!el) return;
+            if (!rows || !rows.length) { el.innerHTML = ''; return; }
+            const esc = t => String(t).replace(/[&<>]/g, c =>
+                ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+            el.className = 'pooled-grad';
+            el.innerHTML = rows.map(r => {
+                const pct = Math.min(100, Math.round(100 * r.trades / (r.needed || 20)));
+                const checks = (r.checks || []).map(c =>
+                    `<div class="pooled-check ${c.passed ? 'pass' : 'fail'}">
+                       <span class="mark">${c.passed ? '✓' : '✗'}</span>${esc(c.label)}
+                       <span class="detail">${esc(c.detail)}</span>
+                     </div>`).join('');
+                return `<div class="pooled-row ${r.ready ? 'ready' : ''}">
+                    <div class="pooled-head">
+                      <h4>${esc(r.market)} — pooled across ${r.symbols} symbols</h4>
+                      <span class="count">${r.trades} of ${r.needed} trades ·
+                        ${r.passed}/${r.total} criteria ·
+                        ${r.ready ? 'READY' : 'not ready'}</span>
+                    </div>
+                    <div class="pooled-bar"><span style="width:${pct}%"></span></div>
+                    <div class="pooled-checks">${checks}</div>
+                  </div>`;
+            }).join('');
         }
 
         function renderGraduation(coins) {
