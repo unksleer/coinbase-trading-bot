@@ -77,12 +77,14 @@ Expected rate, to judge against instead of a feeling:
 | | bots | config | rate |
 |---|---|---|---|
 | stocks | 12 | mean reversion 35/65 | ~27/month |
-| crypto | 9 | SMA 10/40 **ONE_HOUR** | ~90/month |
-| combined | 21 | | **~3.9 per day** |
+| crypto | 9 | SMA 10/40 SIX_HOUR — **PARKED** | ~14/month |
 
-A day with zero *stock* trades is normal. Two consecutive days with zero crypto
-BUY signals across nine bots is not — check `restart_bots.py --check` first,
-then the signal logs for `blocked_by`.
+Judge stocks on the **pooled** count, not per ticker — the strategy is what is
+under test, and 12 tickers reach 20 pooled trades ~12x faster than any one of
+them alone. The dashboard shows this above the per-symbol cards.
+
+A day with zero trades is normal. A **week** with zero stock trades is a signal
+— check `restart_bots.py --check` first, then the signal logs for `blocked_by`.
 
 Checkpoints: **2026-09-18** ~20 stock trades (first read) · **2026-10-10** ~40
 (decide).
@@ -92,12 +94,16 @@ timeframe — SMA wins at six-hour, mean reversion at hourly — which is the
 signature of noise at a 1.207% round trip. Stocks are where the stable result
 is: mean reversion positive on both timeframes at all four thresholds.
 
-Crypto moved back to `ONE_HOUR` on 2026-08-30 **for evidence rate, not for
-edge**. Six-hour was backtest-positive but produced one trade in six live days;
-hourly is backtest-negative but reaches 20 trades per coin in ~2 months instead
-of ~12.5. Expect crypto to lose slowly and to produce a verdict. Do not read
-early hourly losses as a new finding — that is the predicted outcome, and the
-question is whether it holds over 20 trades per coin.
+**Crypto is PARKED as of 2026-08-30** — finished, not pending. 53 forward
+trades: gross **+0.794%**/trade against a **1.206%** fee, net −0.412%. 19% win
+rate, net −$2.18, fails 3 of 5 criteria. The strategy picks direction and still
+earns less than it costs to run.
+
+It was briefly moved to hourly for evidence rate and moved back: hourly's best
+gross is 1.17% against the 1.206% fee, so it cannot clear costs at any
+parameter tested. **Do not re-open crypto on backtest evidence.** Re-open only
+if the economics change — a materially lower fee tier, or maker fees well under
+0.6%. The bot already uses `post_only`, so the order-type lever is spent.
 
 **When a search is exhaustive and finds nothing, the answer is outside the box —
 but changing the box repeatedly is how you never find out.**

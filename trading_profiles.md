@@ -20,37 +20,54 @@ separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
 three days.
 
-### All nine coins on hourly (2026-08-30) — reversing the six-hour move
+### Crypto is parked on six-hour (2026-08-30)
 
-Every coin runs `ONE_HOUR` candles with `SMA 10/40`.
+Every coin runs `SIX_HOUR` candles with `SMA 10/40`. **Crypto is a finished
+experiment, not one awaiting more data.**
 
-**This was reversed with eyes open, and the backtest argues against it.** The
-table below still stands: hourly is negative at every SMA window tested, and
-six-hour showed a seven-cell plateau. That is a structure argument, not a lucky
-cell, and it is the stronger *profitability* evidence.
+It was briefly moved to `ONE_HOUR` earlier the same day to raise its evidence
+rate, and moved back once the fee arithmetic was actually measured rather than
+assumed:
 
-What it could not survive was the evidence rate. Measured over 100 days of
-history and confirmed against six live days:
-
-| | fleet trades/month | per coin | time to 20 trades/coin |
+| timeframe | best gross/trade | fee round trip | net/trade |
 |---|---|---|---|
-| `SIX_HOUR` | 14.4 | 1.6 | ~12.5 months |
-| `ONE_HOUR` | 90.0 | 10.0 | ~2 months |
+| `ONE_HOUR` | 1.17% | 1.206% | **−0.14%** |
+| `SIX_HOUR` | 2.59% | 1.206% | +1.39% |
 
-In six live days the nine six-hour bots produced **one** completed trade (NEAR,
-−$0.20), and zero BUY signals in the 99 candle-observations after the 2026-08-27
-restart. Nothing was being filtered; the entry does not fire often enough on a
-40-candle average spanning ten days.
+At hourly the average gross move is **smaller than the fee**. Removing the
+early exit, widening stops and raising targets were all tested — selecting on
+in-sample and reporting out-of-sample — and every variant came out negative.
+No parameter fixes it: you cannot capture 1.2% of movement from moves that
+average 1.1%.
 
-The honest statement of the trade: **hourly is expected to lose slowly.** The
-1.207% fee floor is unchanged and every backtest window says negative. What it
-buys is a real answer in two months instead of twelve, in paper, where a losing
-trade costs nothing and an unanswered question costs everything. If hourly
-proves negative on 20 real trades per coin, that is a verdict — which is more
-than six-hour was on track to deliver by 2027.
+That is the crypto trap in one line: **the timeframe fast enough to verify
+cannot clear the fee, and the timeframe that clears the fee needs ~12 months to
+verify.**
 
-Revisit once ~20 hourly trades per coin exist. If they confirm the backtest,
-crypto is settled and the capital question moves to stocks.
+The fee lever is spent. The bot already sends `post_only` maker orders and
+0.6%/side *is* the maker rate; lower tiers need roughly $10k monthly volume
+against ~$900 actual.
+
+**The result, from 53 real forward trades:**
+
+```
+gross +0.794%/trade    fee -1.206%    net -0.412%/trade
+19% win rate · net -$2.18 · Sharpe -0.10 · fails 3 of 5 graduation criteria
+```
+
+The strategy picks direction — gross is genuinely positive. It earns less than
+it costs to run. That is a verdict, reached on a sample nearly three times the
+20-trade bar, and it will not be improved by tuning.
+
+*Parked* means the bots keep running so the record accrues at no cost, and
+nothing here is re-tuned. Re-open only if the economics change: a materially
+lower fee tier, or a venue with maker fees well under 0.6%.
+
+One hypothesis is recorded untested so it is not rediscovered: 41 of the 53
+trades exited on `SMA Bearish Cross` averaging −1.62% net, while 7 take-profit
+exits averaged +9.07%. The early exit may be cutting off the winners that pay
+for the fee. Six-hour backtests hint at it but rest on 10–18 out-of-sample
+trades — too thin to act on.
 
 #### The six-hour case, kept for the record
 
