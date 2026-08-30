@@ -62,14 +62,14 @@ def fleet_defaults(env):
     if not existing:
         # Nothing running to copy. These are the values the fleet was last
         # standardised on; stated here so the fallback is a known quantity.
-        return {"granularity": "SIX_HOUR", "short": 10, "long": 40,
+        return {"granularity": "ONE_HOUR", "short": 10, "long": 40,
                 "source": "no bots running — using last standardised values"}
 
     resolved = {}
     for pair in existing:
         prefix = pair.split("-")[0].upper()
         resolved[prefix] = (
-            resolve_for(prefix, env, "GRANULARITY", "SIX_HOUR"),
+            resolve_for(prefix, env, "GRANULARITY", "ONE_HOUR"),
             int(resolve_for(prefix, env, "SMA_SHORT_WINDOW", 10)),
             int(resolve_for(prefix, env, "SMA_LONG_WINDOW", 40)),
         )

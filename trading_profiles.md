@@ -20,9 +20,39 @@ separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
 three days.
 
-### All nine coins on six-hour (2026-08-26)
+### All nine coins on hourly (2026-08-30) — reversing the six-hour move
 
-Every coin runs `SIX_HOUR` candles with `SMA 10/40`.
+Every coin runs `ONE_HOUR` candles with `SMA 10/40`.
+
+**This was reversed with eyes open, and the backtest argues against it.** The
+table below still stands: hourly is negative at every SMA window tested, and
+six-hour showed a seven-cell plateau. That is a structure argument, not a lucky
+cell, and it is the stronger *profitability* evidence.
+
+What it could not survive was the evidence rate. Measured over 100 days of
+history and confirmed against six live days:
+
+| | fleet trades/month | per coin | time to 20 trades/coin |
+|---|---|---|---|
+| `SIX_HOUR` | 14.4 | 1.6 | ~12.5 months |
+| `ONE_HOUR` | 90.0 | 10.0 | ~2 months |
+
+In six live days the nine six-hour bots produced **one** completed trade (NEAR,
+−$0.20), and zero BUY signals in the 99 candle-observations after the 2026-08-27
+restart. Nothing was being filtered; the entry does not fire often enough on a
+40-candle average spanning ten days.
+
+The honest statement of the trade: **hourly is expected to lose slowly.** The
+1.207% fee floor is unchanged and every backtest window says negative. What it
+buys is a real answer in two months instead of twelve, in paper, where a losing
+trade costs nothing and an unanswered question costs everything. If hourly
+proves negative on 20 real trades per coin, that is a verdict — which is more
+than six-hour was on track to deliver by 2027.
+
+Revisit once ~20 hourly trades per coin exist. If they confirm the backtest,
+crypto is settled and the capital question moves to stocks.
+
+#### The six-hour case, kept for the record
 
 This started as a four-coin arm with five held on `ONE_HOUR` as a control. The
 control was dropped the same day: it measured a configuration already shown

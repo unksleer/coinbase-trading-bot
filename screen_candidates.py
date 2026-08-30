@@ -178,7 +178,9 @@ def main():
 
     is_stocks = args.market == "stocks"
     cs.FEE = cs.STOCK_FEE if is_stocks else cs.CRYPTO_FEE
-    timeframe = args.timeframe or ("Hour" if is_stocks else "SIX_HOUR")
+    # Match the timeframe the fleet trades, or the screen ranks candidates on
+    # behaviour the bots will never see.
+    timeframe = args.timeframe or ("Hour" if is_stocks else "ONE_HOUR")
     lookback = args.lookback or (400 if is_stocks else 1500)
 
     universe = ([s.strip().upper() for s in args.universe.split(",") if s.strip()]

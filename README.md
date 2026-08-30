@@ -272,9 +272,9 @@ behind `trade.sh` and its typed confirmation.
 
 Settings come from the coins **actually running**, not from the `SIM` profile.
 The nine existing coins each carry per-coin overrides, so a new coin taking
-profile defaults would get SMA 5/30 on `ONE_HOUR` against the fleet's 10/40 on
-`SIX_HOUR` — quietly a different experiment, whose results would not be
-comparable with the rest. The backtest prints where its settings came from, and
+profile defaults would get the `SIM` profile's SMA 5/30 against the fleet's
+10/40 — quietly a different experiment, whose results would not be comparable
+with the rest. The backtest prints where its settings came from, and
 says so if the fleet has drifted apart.
 
 ### 8. Candidate Screening (`screen_candidates.py`)
