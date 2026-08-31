@@ -41,6 +41,37 @@ This bot is engineered with strict production safety safeguards to protect capit
 
 ---
 
+### Measurement discipline
+
+Three months of tuning produced 56 paper trades and no statement about whether
+anything works. The bottleneck was never the strategy — it was that the system
+could not tell truth from noise. These exist to fix that, and
+[`DECISIONS.md`](file:///home/leeunks/coinbase-trading-bot/DECISIONS.md)
+records every change, its reasoning, and the entries that turned out wrong.
+
+| module | question |
+| :--- | :--- |
+| [`utils/benchmark.py`](file:///home/leeunks/coinbase-trading-bot/utils/benchmark.py) | Does this beat **not trading**? Buy-and-hold is a graduation criterion, not a footnote — the crypto strategy lost to holding on 5 of 7 coins while passing a positive-P&L check. |
+| [`utils/evidence.py`](file:///home/leeunks/coinbase-trading-bot/utils/evidence.py) | How much of a trade count is **independent**? 12 stock tickers measure as 4.9 effective symbols; crypto's 9 coins as 1.4. Pooled counts overstate evidence 2.4–6x. |
+| [`utils/experiment.py`](file:///home/leeunks/coinbase-trading-bot/utils/experiment.py) | Were the criteria fixed **before** the result? Registrations are sealed; a conclusion graded against altered terms is labelled as such. |
+| [`walkforward.py`](file:///home/leeunks/coinbase-trading-bot/walkforward.py) | Does it hold across **many** windows? One 60/40 split is one draw. Also reports parameter churn — an unstable fit is tracking noise. |
+| [`analyze_correlation.py`](file:///home/leeunks/coinbase-trading-bot/analyze_correlation.py) | How many independent bets does the fleet hold? Cached to `logs/correlations.json`. |
+
+```bash
+.venv/bin/python walkforward.py --market stocks
+.venv/bin/python analyze_correlation.py
+```
+
+**The sample-size formula that matters:** `n ≈ (1.96 / per-trade Sharpe)²`. At
+the gate's 0.35 threshold that is ~31 trades; at the measured 0.074 it is ~700.
+*The goal is a higher per-trade Sharpe, not more trades.*
+
+> **The graduation gate does not establish an edge.** Per-trade noise is 13x
+> the effect size, so a 20-trade sample carries a ±$0.20 band around a $0.033
+> effect and a ±22 point band on win rate. Passing means "not visibly broken",
+> not "profitable". This is documented at the top of `utils/graduation.py`
+> rather than hidden behind a passing score.
+
 ### Bot identity
 
 Each bot asserts, before touching state or the market, that its pm2 process

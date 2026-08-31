@@ -62,7 +62,18 @@ def compute_sharpe(pnls):
     return per_trade_sharpe(pnls)
 
 def graduation(trades):
-    result = evaluate_graduation([t["pnl_usd"] for t in trades])
+    """
+    Score against the gate, benchmark included.
+
+    The benchmark is derived from the trade rows themselves so the emailed
+    score cannot diverge from what the gate enforces — a coin reading "ready"
+    in the report while the gate blocks it (or the reverse) is the exact defect
+    utils/graduation.py was created to end.
+    """
+    from utils import benchmark
+    pnls = [t["pnl_usd"] for t in trades]
+    excess = benchmark.excess_from_trades(trades, pnls)
+    result = evaluate_graduation(pnls, benchmark_excess=excess)
     return result["score"], result["blockers"], result["ready"]
 
 W = 66          # email clients wrap monospace safely under ~72 columns

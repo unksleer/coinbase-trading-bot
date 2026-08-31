@@ -146,10 +146,14 @@ class GraduationTests(unittest.TestCase):
         self.assertIn(f"{graduation.MIN_WIN_RATE:.0f}", labels)
         self.assertIn(f"{graduation.MIN_SHARPE:.2f}", labels)
 
-    def test_all_five_criteria_are_reported(self):
+    def test_all_six_criteria_are_reported(self):
+        """
+        Six since 2026-08-31: "beats buy & hold" was added because a strategy
+        can pass every other check while being worse than not trading.
+        """
         coins = self.build([trade(pnl_usd=1.0)])
-        self.assertEqual(coins[0]["total"], 5)
-        self.assertEqual(len(coins[0]["checks"]), 5)
+        self.assertEqual(coins[0]["total"], 6)
+        self.assertEqual(len(coins[0]["checks"]), 6)
 
     def test_dashboard_score_matches_the_nightly_report(self):
         """
@@ -160,8 +164,15 @@ class GraduationTests(unittest.TestCase):
         import sim_report
         pnls = [0.8, -0.2, 0.5, -0.1, 0.6]
         trades = [trade(pnl_usd=p) for p in pnls]
-        report_score, _, report_ready = sim_report.graduation(
-            [{"pnl_usd": p} for p in pnls])
+        # Both paths must see the SAME rows. Feeding the report bare P&Ls while
+        # the dashboard got full rows made them disagree on the benchmark and
+        # so on the score — which is the divergence this test exists to catch,
+        # manufactured by the test itself.
+        for i, row in enumerate(trades):
+            row["entry_time"] = f"2026-08-{i+1:02d}"
+            row["entry_price"] = 100.0
+            row["exit_price"] = 100.5
+        report_score, _, report_ready = sim_report.graduation(trades)
         coin = self.build(trades)[0]
         self.assertEqual(coin["score"], report_score)
         self.assertEqual(coin["ready"], report_ready)
@@ -179,7 +190,8 @@ class GraduationTests(unittest.TestCase):
                      and 100 * sum(1 for p in pnls if p > 0) / len(pnls) >= 55
                      and sum(pnls) > 0 and min(pnls) >= -2.50)
         self.assertTrue(four_only, "fixture should pass the four original checks")
-        self.assertFalse(result["criteria"][4]["passed"], "Sharpe should fail")
+        sharpe_check = next(c for c in result["criteria"] if c["key"] == "sharpe")
+        self.assertFalse(sharpe_check["passed"], "Sharpe should fail")
         self.assertFalse(result["ready"], "gate must not promote on a failed criterion")
 
     def test_coin_meeting_every_criterion_is_ready(self):
@@ -187,9 +199,16 @@ class GraduationTests(unittest.TestCase):
         # 20 trades, 80% wins, positive net, consistent returns.
         pnls = ([0.60, 0.55, 0.65, 0.50] * 4) + [-0.15] * 4
         self.assertGreaterEqual(len(pnls), graduation.MIN_TRADES)
-        coin = self.build([trade(pnl_usd=p) for p in pnls])[0]
+        # Prices rise 1% across the window while the strategy makes more, so
+        # the benchmark criterion passes on its merits rather than by fixture.
+        rows = [trade(pnl_usd=p) for p in pnls]
+        for i, row in enumerate(rows):
+            row["entry_time"] = f"2026-08-{i+1:02d}"
+            row["entry_price"] = 100.0
+            row["exit_price"] = 101.0
+        coin = self.build(rows)[0]
         self.assertTrue(coin["ready"], coin["checks"])
-        self.assertEqual(coin["passed"], 5)
+        self.assertEqual(coin["passed"], 6)
         self.assertEqual(coin["score"], graduation.MAX_SCORE)
 
     def test_identical_winning_trades_are_perfect_consistency_not_zero(self):
@@ -197,7 +216,12 @@ class GraduationTests(unittest.TestCase):
         from utils import graduation
         self.assertEqual(graduation.per_trade_sharpe([0.5] * 20), float("inf"))
         self.assertEqual(graduation.per_trade_sharpe([-0.5] * 20), float("-inf"))
-        coin = self.build([trade(pnl_usd=0.50) for _ in range(20)])[0]
+        rows = [trade(pnl_usd=0.50) for _ in range(20)]
+        for i, row in enumerate(rows):
+            row["entry_time"] = f"2026-08-{i+1:02d}"
+            row["entry_price"] = 100.0
+            row["exit_price"] = 100.5
+        coin = self.build(rows)[0]
         self.assertTrue(coin["ready"])
 
     def test_too_few_trades_blocks_an_otherwise_perfect_coin(self):

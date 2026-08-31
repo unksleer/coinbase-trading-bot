@@ -24,7 +24,7 @@ def test_pooled_uses_the_same_criteria_as_the_gate():
     for row in rows:
         if not row["checks"]:
             continue
-        assert row["total"] == 5, "the gate has five criteria"
+        assert row["total"] == 6, "the gate has six criteria"
         assert row["max_score"] == graduation.MAX_SCORE
         assert row["needed"] == graduation.MIN_TRADES
 

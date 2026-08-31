@@ -625,13 +625,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             logger.warning("Could not import utils.graduation")
             return []
 
+        from utils import benchmark
+
         by_pair = {}
         for t in sim_trades:
-            by_pair.setdefault(t["pair"], []).append(t["pnl_usd"])
+            by_pair.setdefault(t["pair"], []).append(t)
 
         coins = []
-        for pair, pnls in by_pair.items():
-            result = evaluate(pnls)
+        for pair, rows in by_pair.items():
+            pnls = [r["pnl_usd"] for r in rows]
+            # Computed from the ledger's own entry/exit prices, so the
+            # benchmark criterion is actually evaluated rather than failing by
+            # default for want of a price feed.
+            excess = benchmark.excess_from_trades(rows, pnls)
+            result = evaluate(pnls, benchmark_excess=excess)
             coins.append({
                 "pair": pair,
                 "trades": result["stats"]["trades"],
@@ -649,6 +656,30 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Closest to eligible first — that is the one worth watching.
         coins.sort(key=lambda c: (-c["score"], -c["trades"]))
         return coins
+
+    @staticmethod
+    def _cached_correlations():
+        """
+        Correlations from logs/correlations.json, written by
+        analyze_correlation.py.
+
+        Computing this live would mean fetching 400 days of bars for every
+        symbol on every dashboard refresh. The age is carried through so a
+        stale figure can be labelled rather than presented as current — the
+        same mistake the 34-day-old scanner file caused.
+        """
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "logs", "correlations.json")
+        try:
+            with open(path) as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError):
+            return {}
+        age = max(0.0, time.time() - payload.get("generated_at", 0))
+        markets = payload.get("markets", {})
+        for value in markets.values():
+            value["age_seconds"] = age
+        return markets
 
     @staticmethod
     def build_pooled_graduation():
@@ -681,9 +712,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "crypto": glob.glob(os.path.join(root, "completed_trades_*-usdc_dry.csv")),
         }
 
+        from utils import benchmark, evidence
+
         out = []
         for market, paths in markets.items():
-            pnls, symbols = [], set()
+            pnls, symbols, rows_by_symbol = [], set(), {}
             for path in paths:
                 try:
                     with open(path, newline="") as handle:
@@ -696,7 +729,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 pnls.append(float(row.get("pnl_usd") or 0.0))
                             except (TypeError, ValueError):
                                 continue
-                            symbols.add((row.get("ticker") or row.get("pair") or "").upper())
+                            sym = (row.get("ticker") or row.get("pair") or "").upper()
+                            symbols.add(sym)
+                            rows_by_symbol.setdefault(sym, []).append(row)
                 except OSError:
                     continue
 
@@ -706,12 +741,59 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                             "score": 0, "max_score": MAX_SCORE, "passed": 0, "total": 5})
                 continue
 
-            result = evaluate(pnls)
+            # Equal-weighted buy-and-hold across the symbols traded, against
+            # the pooled strategy return: the honest alternative to running
+            # any of these bots is holding the same basket.
+            holds = [h for h in (benchmark.from_trades(r)
+                                 for r in rows_by_symbol.values()) if h is not None]
+            excess = None
+            if holds:
+                strat = benchmark.strategy_return(pnls)
+                if strat is not None:
+                    excess = strat - (sum(holds) / len(holds))
+
+            result = evaluate(pnls, benchmark_excess=excess)
+
+            # Correlated symbols do not each contribute a full trade's worth of
+            # evidence. Correlation comes from PRICE returns, computed by
+            # analyze_correlation.py and cached: trade outcomes keyed by exit
+            # time almost never overlap between symbols, so a trade-level
+            # correlation is undefined and would report perfect independence
+            # purely from having no shared observations.
+            sharpe = result["stats"]["sharpe"]
+            ev = {
+                "symbols": len(symbols),
+                "pooled_trades": result["stats"]["trades"],
+                "measured": False,
+                "effective_symbols": None,
+                "effective_trades": None,
+                "mean_correlation": None,
+                "trades_needed": evidence.trades_needed(
+                    sharpe if sharpe not in (float("inf"), float("-inf")) else None),
+            }
+            cached = DashboardHandler._cached_correlations().get(market)
+            if cached and cached.get("effective_symbols"):
+                k = cached["symbols"] or len(symbols)
+                ev.update({
+                    "measured": True,
+                    # Report the universe the correlation was measured over,
+                    # not just the symbols that happen to have traded, or the
+                    # ratio reads as nonsense like "4.9 of 2".
+                    "symbols": k,
+                    "traded_symbols": len(symbols),
+                    "effective_symbols": cached["effective_symbols"],
+                    "mean_correlation": cached["mean_correlation"],
+                    "effective_trades": evidence.effective_trades(
+                        result["stats"]["trades"], k, cached["effective_symbols"]),
+                    "correlation_age_seconds": cached.get("age_seconds"),
+                })
+
             out.append({
                 "market": market,
                 "trades": result["stats"]["trades"],
                 "symbols": len(symbols) or len(paths),
                 "needed": MIN_TRADES,
+                "evidence": ev,
                 "checks": [{"label": c["label"], "passed": c["passed"],
                             "detail": c["detail"]} for c in result["criteria"]],
                 "passed": result["passed"],

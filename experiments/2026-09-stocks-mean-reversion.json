@@ -1,0 +1,51 @@
+{
+  "name": "2026-09-stocks-mean-reversion",
+  "hypothesis": "RSI mean reversion (35/65) on a 12-ticker equity basket produces a positive per-trade edge that BEATS BUY-AND-HOLD after costs. Prior evidence is inconclusive: pooled out-of-sample mean is +$0.033/trade with a 95% interval of -$0.045 to +$0.111, and walk-forward beat buy-and-hold in only 27 of 60 folds with a mean excess of -0.95%.",
+  "market": "stocks",
+  "symbols": [
+    "DIS",
+    "JNJ",
+    "LPL",
+    "META",
+    "PG",
+    "QQQ",
+    "SLV",
+    "SPY",
+    "TSLA",
+    "WMT",
+    "XLP",
+    "XLU"
+  ],
+  "config": {
+    "strategy": "RSI_MEAN_REVERSION",
+    "rsi_period": 14,
+    "oversold": 35,
+    "overbought": 65,
+    "stop_loss_pct": 5.0,
+    "take_profit_pct": 8.0,
+    "trailing_stop_pct": 1.5,
+    "trailing_activation_pct": 1.0,
+    "trade_amount_usd": 10.0,
+    "timeframe": "Hour",
+    "venue": "alpaca_paper"
+  },
+  "success_criteria": {
+    "primary": "pooled excess vs buy-and-hold > 0",
+    "min_effective_trades": 20,
+    "note": "EFFECTIVE trades, not pooled. The 12 tickers measure as 4.9 independent symbols, so pooled counts overstate evidence ~2.4x.",
+    "secondary": {
+      "win_rate_pct": 55.0,
+      "net_pnl_usd": 0.0,
+      "worst_trade_usd": -2.5,
+      "per_trade_sharpe": 0.35
+    },
+    "power_caveat": "At the measured per-trade Sharpe of 0.074 a conclusive test needs ~700 independent trades. This run CANNOT confirm a small edge; it can only detect a large one or rule out a disaster."
+  },
+  "stopping_rule": "Stop at 2026-09-27 OR 20 effective trades, whichever is later. No configuration change before then for any reason short of a bug that stops trades executing. A parameter change restarts the clock and voids this registration.",
+  "started": "2026-08-31",
+  "notes": "Crypto is parked: 53 trades, gross +0.794% against a 1.206% fee, and it lost to buy-and-hold on 5 of 7 coins. Its 9 coins measure as 1.4 independent bets.",
+  "status": "running",
+  "result": null,
+  "concluded": null,
+  "seal": "664fb619ab4a06b6"
+}

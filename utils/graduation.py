@@ -64,11 +64,22 @@ MIN_SHARPE = 0.35
 # high score never substitutes for a failed check.
 _WEIGHTS = {
     "trades": 25,
-    "win_rate": 25,
-    "net_pnl": 25,
-    "worst_trade": 15,
+    "win_rate": 20,
+    "net_pnl": 15,
+    "worst_trade": 10,
     "sharpe": 10,
+    "beats_hold": 20,
 }
+
+# The alternative to running a bot is not cash — it is holding the same
+# instrument at no per-trade cost. A strategy can pass every other criterion
+# here while being strictly worse than doing nothing: on crypto the strategy
+# lost to buy-and-hold on 5 of 7 coins, by 44 points on LINK and 35 on SOL,
+# while SOL's +1.44% would have read as a success against a zero bar.
+#
+# So this is a criterion, not a footnote. It is evaluated only when a benchmark
+# excess is supplied; without one it FAILS rather than passing, because "not
+# measured" must never score the same as "beat the alternative".
 MAX_SCORE = sum(_WEIGHTS.values())
 
 
@@ -93,9 +104,14 @@ def per_trade_sharpe(pnls):
     return mean / spread
 
 
-def evaluate(pnls):
+def evaluate(pnls, benchmark_excess=None):
     """
     Score a coin's completed-trade P&Ls against the graduation criteria.
+
+    benchmark_excess is the strategy's return minus buy-and-hold's over the
+    same window, as a fraction. Pass None when no price series is available;
+    the criterion then fails, since an unmeasured benchmark is not a passed
+    one. utils.benchmark.compare produces this value.
 
     Returns a dict with:
       criteria  list of {key, label, passed, detail, weight}, in display order
@@ -113,7 +129,8 @@ def evaluate(pnls):
             "total": len(_WEIGHTS), "ready": False,
             "blockers": ["No trades yet"],
             "stats": {"trades": 0, "win_rate": 0.0, "net_pnl": 0.0,
-                      "worst_trade": 0.0, "sharpe": 0.0},
+                      "worst_trade": 0.0, "sharpe": 0.0,
+                      "benchmark_excess": benchmark_excess},
         }
 
     wins = sum(1 for p in pnls if p > 0)
@@ -121,6 +138,15 @@ def evaluate(pnls):
     net_pnl = sum(pnls)
     worst = min(pnls)
     sharpe = per_trade_sharpe(pnls)
+
+    if benchmark_excess is None:
+        hold_detail, hold_pass = "not measured", False
+        hold_blocker = "No buy-and-hold benchmark for this window"
+    else:
+        hold_detail = f"{benchmark_excess*100:+.2f}% vs holding"
+        hold_pass = benchmark_excess > 0
+        hold_blocker = (f"Loses to buy-and-hold by "
+                        f"{abs(benchmark_excess)*100:.2f}%")
 
     criteria = [
         {
@@ -154,6 +180,12 @@ def evaluate(pnls):
             # Kept short: the report wraps at 66 columns.
             "blocker": f"Sharpe {sharpe:.2f} < {MIN_SHARPE} — returns too uneven",
         },
+        {
+            "key": "beats_hold", "label": "beats buy & hold",
+            "passed": hold_pass,
+            "detail": hold_detail,
+            "blocker": hold_blocker,
+        },
     ]
     for item in criteria:
         item["weight"] = _WEIGHTS[item["key"]]
@@ -168,5 +200,6 @@ def evaluate(pnls):
         "stats": {
             "trades": count, "win_rate": win_rate, "net_pnl": net_pnl,
             "worst_trade": worst, "sharpe": sharpe,
+            "benchmark_excess": benchmark_excess,
         },
     }
