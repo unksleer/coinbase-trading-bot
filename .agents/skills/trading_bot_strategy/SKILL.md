@@ -96,8 +96,11 @@ is: mean reversion positive on both timeframes at all four thresholds.
 
 **Crypto is PARKED as of 2026-08-30** — finished, not pending. 53 forward
 trades: gross **+0.794%**/trade against a **1.206%** fee, net −0.412%. 19% win
-rate, net −$2.18, fails 3 of 5 criteria. The strategy picks direction and still
-earns less than it costs to run.
+rate, net −$2.18, fails 3 of 5 criteria.
+
+**Do not describe that gross figure as an edge.** Its 95% interval is −0.353%
+to +1.940% and includes zero; per-trade σ is 4.258%. Confirming a 0.79% edge to
+±0.20% needs ~435 trades, ~30 months at six-hour rates.
 
 It was briefly moved to hourly for evidence rate and moved back: hourly's best
 gross is 1.17% against the 1.206% fee, so it cannot clear costs at any

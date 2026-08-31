@@ -55,9 +55,17 @@ gross +0.794%/trade    fee -1.206%    net -0.412%/trade
 19% win rate · net -$2.18 · Sharpe -0.10 · fails 3 of 5 graduation criteria
 ```
 
-The strategy picks direction — gross is genuinely positive. It earns less than
-it costs to run. That is a verdict, reached on a sample nearly three times the
-20-trade bar, and it will not be improved by tuning.
+**Correction (2026-08-31): that +0.794% is not established.** The 95%
+confidence interval across those 53 trades is **−0.353% to +1.940%** — it
+includes zero. Per-trade standard deviation is 4.258%, over five times the
+mean. So the honest claim is not "the strategy picks direction but costs too
+much"; it is **"we cannot tell whether it picks direction at all, and its most
+optimistic point estimate still loses to the fee."**
+
+Resolving a 0.79% edge to ±0.20% would take roughly **435 trades — about 30
+months** at six-hour rates. That, more than the fee, is why crypto is parked:
+not that it is proven bad, but that it cannot be proven anything on a horizon
+that matters.
 
 *Parked* means the bots keep running so the record accrues at no cost, and
 nothing here is re-tuned. Re-open only if the economics change: a materially

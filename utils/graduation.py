@@ -15,6 +15,30 @@ cannot drift apart.
 import statistics
 
 
+# ⚠ STATISTICAL POWER — read before trusting a pass.
+#
+# 20 trades cannot detect the effect sizes this system actually produces.
+# Measured on the pooled stock backtest: mean +$0.033/trade with a per-trade
+# standard deviation of $0.449 — the noise is 13x the effect.
+#
+#     n=20    95% band  ±$0.197   effect $0.033   invisible
+#     n=40    95% band  ±$0.139   effect $0.033   invisible
+#     n=1000  95% band  ±$0.028   effect $0.033   detectable
+#
+# A 20-trade win rate carries a ±22 point interval, so "55%" is statistically
+# indistinguishable from anything between 33% and 77%.
+#
+# This gate therefore does NOT establish an edge. It is a floor that filters
+# out the obviously broken — a strategy losing badly, or one with a catastrophic
+# single trade — and nothing more. Passing it means "not visibly broken", not
+# "profitable". Treat a pass as permission to risk a small amount of real money
+# in order to check that live execution matches simulation, not as evidence the
+# strategy works.
+#
+# Raising MIN_TRADES to a statistically honest number would put graduation
+# years away at current rates. The threshold is kept low deliberately, with the
+# limitation documented here rather than hidden behind a passing score.
+
 MIN_TRADES = 20
 MIN_WIN_RATE = 55.0          # percent
 MIN_NET_PNL = 0.0            # dollars, must be strictly greater
