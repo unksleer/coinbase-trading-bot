@@ -24,7 +24,12 @@ and liquidity genuinely differ per asset. What must NOT vary per asset is the
 safety machinery, which is why it lives above this boundary rather than inside
 each bot.
 """
+
+import logging
 from decimal import Decimal
+
+
+logger = logging.getLogger("coinbase_bot.venue")
 
 
 class Venue:
@@ -124,12 +129,32 @@ class AlpacaVenue(Venue):
         return self._client
 
     def is_open(self):
-        """Ask the venue rather than inferring from the clock — holidays and
-        early closes are not derivable from a weekday check."""
+        """
+        Whether the venue accepts orders right now.
+
+        Asks the venue rather than inferring from a weekday check, because
+        holidays and early closes are not derivable from the clock.
+
+        Fails CLOSED on error, which is right for a trading gate — but it
+        makes an outage indistinguishable from a genuine close, so the error
+        is logged. Use `market_status()` where that distinction matters.
+        """
+        return self.market_status() == "open"
+
+    def market_status(self):
+        """
+        "open", "closed", or "unknown" when the venue could not be reached.
+
+        Display needs the third value. Reporting "closed" for an unreachable
+        API tells the viewer the market is shut when the truth is that we do
+        not know, which is exactly the class of silent wrong answer this
+        project keeps finding.
+        """
         try:
-            return bool(self.client().get_clock().is_open)
-        except Exception:
-            return False
+            return "open" if bool(self.client().get_clock().is_open) else "closed"
+        except Exception as e:
+            logger.warning(f"Could not read the Alpaca market clock: {e}")
+            return "unknown"
 
     def submit_buy(self, symbol, notional_usd, client_order_id):
         from alpaca.trading.requests import MarketOrderRequest

@@ -28,6 +28,8 @@ except Exception as _e:          # never let config loading stop the dashboard
     logging.getLogger("dashboard").warning(f"Could not load .env: {_e}")
 
 PRICE_CACHE_TTL_SECONDS = 30
+# The market clock changes twice a day; polling it harder buys nothing.
+MARKET_STATUS_TTL_SECONDS = 60
 # Back off a symbol that just failed rather than retrying on every poll.
 PRICE_UNAVAILABLE_BACKOFF_SECONDS = 300
 # Alpaca's free IEX feed is delayed, so a stock price is never "live"; it is
@@ -446,7 +448,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             # A stock bot asleep outside market hours is not "waiting for a
             # setup" — it is not evaluating at all, and saying otherwise implies
             # activity that is not happening.
-            market_closed = any("Market closed" in ln for ln in (lines or [])[-8:])
+            market_closed = DashboardHandler._market_status() == "closed"
 
             entry = {
                 "bot": bot_name,
@@ -707,6 +709,45 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # Closest to eligible first — that is the one worth watching.
         coins.sort(key=lambda c: (-c["score"], -c["trades"]))
         return coins
+
+    _market_cache = (None, 0.0)      # (status, fetched_at)
+
+    @classmethod
+    def _market_status(cls):
+        """
+        "open", "closed" or "unknown", from the venue's own clock.
+
+        Previously derived by scraping the last 8 log lines of each bot for the
+        string "Market closed". That is not a status, it is an echo: once the
+        market opened the stale line kept the dashboard saying CLOSED until it
+        scrolled off, and a quiet bot never scrolled it off at all.
+
+        Asking the venue also handles holidays and early closes, which no
+        weekday-and-clock rule gets right. Cached because it is an API call on
+        a page that polls.
+
+        "unknown" is deliberately distinct from "closed": reporting a shut
+        market when the truth is an unreachable API is the same silent wrong
+        answer this dashboard keeps producing elsewhere.
+        """
+        status, fetched = cls._market_cache
+        if status is not None and time.time() - fetched < MARKET_STATUS_TTL_SECONDS:
+            return status
+        result = "unknown"
+        try:
+            from alpaca.trading.client import TradingClient
+            key = os.getenv("ALPACA_API_KEY", "")
+            secret = os.getenv("ALPACA_SECRET_KEY", "")
+            if key and secret:
+                paper = os.getenv("ALPACA_PAPER", "True").lower() in ("true", "1", "yes")
+                clock = TradingClient(key, secret, paper=paper).get_clock()
+                result = "open" if clock.is_open else "closed"
+            else:
+                logger.warning("No Alpaca credentials; market status unknown.")
+        except Exception as e:
+            logger.warning(f"Could not read the market clock: {e}")
+        cls._market_cache = (result, time.time())
+        return result
 
     @staticmethod
     def _cached_correlations():
