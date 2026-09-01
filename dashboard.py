@@ -17,7 +17,22 @@ PORT = 8080
 
 # Live prices are cached briefly because the browser polls /api/metrics every
 # 10s and every open position would otherwise issue its own request.
+# The dashboard reads .env like the bots do. Without it there are no Alpaca
+# credentials in this process, so every stock price lookup fails and each
+# equity position falls back to its entry price — displaying a P&L of exactly
+# $0.00, which reads as "flat" rather than "unknown".
+try:
+    from utils import env_loader
+    env_loader.load()
+except Exception as _e:          # never let config loading stop the dashboard
+    logging.getLogger("dashboard").warning(f"Could not load .env: {_e}")
+
 PRICE_CACHE_TTL_SECONDS = 30
+# Back off a symbol that just failed rather than retrying on every poll.
+PRICE_UNAVAILABLE_BACKOFF_SECONDS = 300
+# Alpaca's free IEX feed is delayed, so a stock price is never "live"; it is
+# published as a candle with its real age so the UI can label it honestly.
+FREE_FEED_DELAY_SECONDS = 20 * 60
 PRICE_REQUEST_TIMEOUT = 4
 
 # Beyond this, a price is old enough that P&L computed from it is misleading
@@ -47,8 +62,22 @@ class PriceResolver:
         self._cache = {}          # pair -> (price, fetched_at)
         self._unavailable = {}    # pair -> until_timestamp
 
-    def get(self, pair, entry_price):
-        """Return (price, source, age_seconds). Never raises."""
+    def get(self, pair, entry_price, market="crypto"):
+        """
+        Return (price, source, age_seconds). Never raises.
+
+        market matters because the venues are different. Every stock position
+        previously fell through to "entry" — this class only ever asked
+        Coinbase — so twelve equity bots showed a P&L of exactly $0.00, which
+        reads as a real value rather than a missing one.
+        """
+        if market == "stocks":
+            price = self._stock_price(pair)
+            if price is not None:
+                # The free IEX feed is delayed, so this is never "live".
+                return price, "candle", FREE_FEED_DELAY_SECONDS
+            return entry_price, "entry", None
+
         live = self._live_price(pair)
         if live is not None:
             return live, "live", 0
@@ -59,6 +88,28 @@ class PriceResolver:
             return price, "candle", age
 
         return entry_price, "entry", None
+
+    def _stock_price(self, ticker):
+        """Last close from Alpaca, cached — one API call per ticker per TTL."""
+        now = time.time()
+        cached = self._cache.get(ticker)
+        if cached and now - cached[1] < PRICE_CACHE_TTL_SECONDS:
+            return cached[0]
+        if now < self._unavailable.get(ticker, 0):
+            return None
+        try:
+            from utils import stock_data
+            closes = stock_data.closes(ticker, "Hour", 5)
+            if len(closes) == 0:
+                raise ValueError("no bars returned")
+            price = float(closes[-1])
+        except Exception as e:
+            logger.warning(f"No stock price for {ticker}: {e}")
+            self._unavailable[ticker] = now + PRICE_UNAVAILABLE_BACKOFF_SECONDS
+            return None
+        self._cache[ticker] = (price, now)
+        self._unavailable.pop(ticker, None)
+        return price
 
     def _live_price(self, pair):
         now = time.time()
@@ -951,17 +1002,31 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         state = json.load(f)
                     
                     if state.get("position") == "LONG":
-                        raw_coin = filename.replace("state_", "").replace(".json", "").upper()
-                        is_dry = raw_coin.endswith("_DRY") or state.get("dry_run", True)
-                        coin = raw_coin.replace("_DRY", "")
-                        # Split pair representation (e.g. BTC-USDC -> BTC)
-                        coin_symbol = coin.split("-")[0]
-                        
+                        # Stock state files are state_stock_<ticker>_paper.json
+                        # and hold `shares`; crypto files are
+                        # state_<pair>_dry.json and hold `holdings_base`.
+                        # Treating them alike produced STOCK_WMT_PAPER as a
+                        # symbol — which no price feed can resolve — and read
+                        # holdings as 0, so every equity position displayed a
+                        # P&L of exactly $0.00. A missing number that renders
+                        # as a real one is the failure mode this dashboard
+                        # keeps hitting.
+                        stem = filename.replace("state_", "").replace(".json", "")
+                        market = "stocks" if stem.startswith("stock_") else "crypto"
+                        is_dry = (stem.endswith("_dry") or stem.endswith("_paper")
+                                  or state.get("dry_run", True))
+                        if market == "stocks":
+                            coin = stem[len("stock_"):].replace("_paper", "") \
+                                                        .replace("_live", "").upper()
+                            holdings = float(state.get("shares", 0.0))
+                        else:
+                            coin = stem.replace("_dry", "").upper()
+                            holdings = float(state.get("holdings_base", 0.0))
+
                         entry_price = float(state.get("entry_price", 0.0))
-                        holdings = float(state.get("holdings_base", 0.0))
 
                         current_price, price_source, price_age = (
-                            self.price_resolver.get(coin, entry_price)
+                            self.price_resolver.get(coin, entry_price, market)
                         )
 
                         unrealized_pnl = 0.0
@@ -973,6 +1038,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
                         data["active_positions"].append({
                             "coin": coin,
+                            "market": market,
                             "mode": "Simulated" if is_dry else "Live",
                             "holdings": holdings,
                             "entry_price": entry_price,
