@@ -13,6 +13,82 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-01 — A discretionary exit may not close at a loss
+
+**Prompted by an intuition that turned out to be right:** "they enter fine and
+exit too early." The mechanism was worse than early exit — part of the exit
+logic was arithmetically incapable of profit.
+
+### The trap
+
+The trailing stop arms at `ACTIVATION` and exits `TRAIL` below the peak. On
+crypto that is 1.5 / 1.5 against a **1.206% round trip**:
+
+| peak reached | exits at | net after fee |
+|---:|---:|---:|
+| +1.5% | 0.0% | **−1.21%** |
+| +2.0% | +0.5% | **−0.71%** |
+| +2.7% | +1.2% | −0.01% |
+| +4.0% | +2.5% | +1.29% |
+
+**Break-even needs a peak above 2.71%, but the stop arms at 1.5%.** Every trade
+peaking in between was a guaranteed net loss the moment it fired.
+
+Stocks had the same shape at 1.0 / 1.5 on a **commission-free** venue: any peak
+between +1.0% and +1.5% closed *below entry* — a losing exit where the venue
+charges nothing.
+
+Confirmed on 53 real trades: **22 cleared the fee at some point, only 10 closed
+positive**, giving back **2.94%** from peak on average.
+
+### The fix
+
+An invariant, not retuned percentages:
+
+> A discretionary exit — trailing stop or strategy signal — may not close a
+> position at a net loss. Protective exits (stop-loss, ATR stop, break-even)
+> are exempt; realising a loss is their purpose.
+
+Retuning the two numbers would work until someone edits `.env`, and the trap
+returns silently. The invariant holds for any values. Held-back exits are
+logged, because a silently suppressed exit is indistinguishable from a bot that
+stopped working.
+
+### Walk-forward, 9 coins × 5 folds, 500 days
+
+| exit rule | trades | net | beat hold |
+|---|---:|---:|---:|
+| current | 99 | −$2.64 | 17/45 |
+| gate at break-even | 88 | −$2.42 | 17/45 |
+| gate at 2× fee | 86 | −$1.52 | 17/45 |
+| gate at 2.71% | 85 | −$1.13 | 17/45 |
+
+Monotonic, which is the trustworthy shape — not a lucky cell. **It cuts the
+loss by 57% and still does not cross zero, and beat-hold is unchanged at 17/45
+in every variant.** Holding captures all of the underlying drift; gating
+captures more of it, and still less than all.
+
+### Two consequences to watch
+
+- **Fewer trades, not more.** 99 → 85. Positions are held longer, so round
+  trips are rarer. This slows evidence collection.
+- **Losses get larger, not fewer.** Average loss moved −$0.409 → −$0.524.
+  Small losses are converted into fewer, bigger ones capped by the 5% stop.
+  If average loss grows faster than average win, this has become the
+  loss-aversion trap and must be reverted. Recorded in the v2 registration.
+
+### Also
+
+Every six-hour analysis before today used 400 candles (100 days). Coinbase
+serves **2000 (500 days)**. Prior six-hour conclusions rest on a quarter of the
+available history.
+
+The stock registration was **voided four days in** — it was measuring a
+known-broken exit — and re-registered as `2026-09-stocks-mean-reversion-v2`,
+stopping 2026-10-01.
+
+---
+
 ## 2026-08-31 — Build the measurement layer
 
 **Why.** Three months of tuning produced 56 paper trades and −$2.21, and no

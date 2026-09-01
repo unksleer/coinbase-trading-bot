@@ -700,6 +700,21 @@ def main():
                 entry_price = state["entry_price"]
                 chg_pct = (price - entry_price) / entry_price * 100
 
+                # A discretionary exit may not close a position at a net loss.
+                # The stop loss is exempt — realising a loss is its whole job.
+                #
+                # Alpaca equities are commission-free, so "covers costs" here
+                # is simply "above entry". The trap it prevents is the same one
+                # measured on the crypto side: the trailing stop arms at
+                # TRAILING_ACTIVATION_PCT and exits TRAILING_STOP_PCT below the
+                # peak, so at 1.0/1.5 any trade peaking between +1.0% and +1.5%
+                # exits BELOW entry — a losing exit on a venue that charges
+                # nothing, which should have been free money.
+                #
+                # An invariant rather than retuned percentages, so a later
+                # settings change cannot silently restore the trap.
+                covers_costs = chg_pct >= 0.0
+
                 exit_reason = None
                 if chg_pct <= -STOP_LOSS_PCT:
                     exit_reason = "Stop Loss Triggered"
@@ -713,12 +728,19 @@ def main():
                         save_state(state)
                     if chg_pct >= TRAILING_ACTIVATION_PCT:
                         trail_price = highest * (1.0 - TRAILING_STOP_PCT / 100.0)
-                        if price <= trail_price:
+                        if price <= trail_price and covers_costs:
                             exit_reason = f"Trailing Stop (peak=${highest:.4f}, trail={TRAILING_STOP_PCT}%)"
                         else:
-                            log.info(f"Trailing stop active: peak=${highest:.4f}, stop=${trail_price:.4f}, current=${price:.4f}")
+                            held = "" if covers_costs else "  [held: below entry]"
+                            log.info(f"Trailing stop active: peak=${highest:.4f}, "
+                                     f"stop=${trail_price:.4f}, current=${price:.4f}{held}")
                 if exit_reason is None:
-                    exit_reason = strategy_exit_reason(ind)
+                    strategy_exit = strategy_exit_reason(ind)
+                    if strategy_exit and not covers_costs:
+                        log.info(f"Holding through strategy exit — {strategy_exit} — "
+                                 f"net {chg_pct:+.2f}% is below entry. Stop loss still active.")
+                    elif strategy_exit:
+                        exit_reason = strategy_exit
 
                 if exit_reason:
                     log.info(f"🔴 SELL SIGNAL — {exit_reason} | chg={chg_pct:+.3f}% | Price=${price:.4f}")

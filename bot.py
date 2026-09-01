@@ -467,6 +467,26 @@ def main():
                     trailing_stop_price = (highest_price * (1.0 - Settings.TRAILING_STOP_PERCENT / 100.0)
                                            if trailing_armed else None)
 
+                    # A discretionary exit may not close a position at a net
+                    # loss. Protective exits — stop-loss, ATR stop, break-even —
+                    # are exempt; they exist precisely to realise a loss.
+                    #
+                    # Without this the trailing stop is arithmetically incapable
+                    # of profit over part of its range. It arms at
+                    # TRAILING_STOP_ACTIVATION_PERCENT and exits
+                    # TRAILING_STOP_PERCENT below the peak, so with 1.5/1.5
+                    # against a 1.206% round trip, any trade peaking between
+                    # +1.5% and +2.71% is a GUARANTEED net loss the moment it
+                    # fires — it is armed below the level where it can pay.
+                    # Measured on 53 real trades: 22 cleared the fee at some
+                    # point and only 10 closed positive, giving back 2.94% from
+                    # peak on average.
+                    #
+                    # Expressed as an invariant rather than by retuning the two
+                    # percentages, because a future settings change would
+                    # silently reintroduce the trap; this holds for any values.
+                    covers_costs = net_pl_pct >= 0.0
+
                     if break_even_active and latest_price <= net_breakeven_price:
                         signal = "SELL"
                         sell_reason = f"BREAK_EVEN (Price fell to break-even price ${net_breakeven_price:.4f})"
@@ -483,7 +503,7 @@ def main():
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                     # Trailing stop: activates once price has risen enough, then sells if it drops back
-                    elif trailing_armed and latest_price <= trailing_stop_price:
+                    elif trailing_armed and latest_price <= trailing_stop_price and covers_costs:
                         signal = "SELL"
                         sell_reason = f"TRAILING_STOP (Peak=${highest_price:.4f}, trail={Settings.TRAILING_STOP_PERCENT}%, trigger=${trailing_stop_price:.4f})"
                     elif Settings.DISABLE_BUYS and net_pl_pct >= 0.0:
@@ -491,9 +511,17 @@ def main():
                         sell_reason = "EXIT_ONLY_BREAK_EVEN"
 
                     if trailing_armed and signal != "SELL":
-                        logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}")
+                        held = "" if covers_costs else "  [held: below break-even]"
+                        logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}{held}")
 
                     # If strategy requested SELL, verify strategy exits aren't disabled
+                    if signal == "SELL" and sell_reason == "STRATEGY" and not covers_costs:
+                        logger.info(
+                            f"Holding through strategy exit: net {net_pl_pct:+.2f}% "
+                            f"does not yet cover the {Settings.FEE_RATE_PERCENT*2:.2f}% "
+                            f"round trip. Stop-loss still active.")
+                        signal = "HOLD"
+
                     if signal == "SELL" and sell_reason == "STRATEGY":
                         if Settings.DISABLE_STRATEGY_EXITS:
                             is_profitable = (net_pl_pct > 0.0)
