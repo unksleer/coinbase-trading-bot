@@ -126,8 +126,15 @@ class RiskEngine:
                 t_dt = datetime.strptime(t["timestamp"].rstrip('Z').split('.')[0], "%Y-%m-%dT%H:%M:%S")
                 if now_dt - t_dt < timedelta(days=1):
                     trades_last_24h += 1
-            except Exception:
-                pass
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
+                # Count it. An unparseable timestamp previously meant the trade
+                # was invisible to this limit, so a run of bad timestamps would
+                # quietly RAISE the number of trades allowed. A safety limit
+                # must fail toward permitting less, not more.
+                trades_last_24h += 1
+                logger.warning(f"Unparseable trade timestamp {t.get('timestamp')!r} "
+                               f"({e}); counted toward the daily trade limit.")
+
                 
         max_trades = getattr(self.settings, "MAX_TRADES_PER_DAY", 20)
         if trades_last_24h >= max_trades:
@@ -173,8 +180,15 @@ class RiskEngine:
                     raise RiskLimitViolation(f"Consecutive loss cooldown active. {consecutive_losses} consecutive losses. Cooldown remaining: {remaining:.0f}s")
             except RiskLimitViolation:
                 raise
-            except Exception:
-                pass
+            except (ValueError, TypeError, AttributeError) as e:
+                # Keep the cooldown in force. Failing to parse the time of the
+                # last loss previously cancelled the cooldown outright, which
+                # resumed trading precisely when it was meant to stop.
+                logger.warning(f"Unparseable last-loss timestamp {last_loss_time!r} "
+                               f"({e}); holding the cooldown.")
+                raise RiskLimitViolation(
+                    f"Consecutive loss cooldown held: {consecutive_losses} losses "
+                    f"and the last loss time could not be read.")
 
     def check_daily_drawdown(self):
         """
@@ -190,8 +204,15 @@ class RiskEngine:
                 t_dt = datetime.strptime(t["timestamp"].rstrip('Z').split('.')[0], "%Y-%m-%dT%H:%M:%S")
                 if now_dt - t_dt < timedelta(days=1):
                     daily_realized_pnl += Decimal(str(t.get("realized_pnl_usd", 0.0)))
-            except Exception:
-                pass
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
+                # Include any LOSS whose timestamp cannot be read. Skipping it
+                # understated the day's drawdown, so trading continued past the
+                # loss limit. Gains are not credited on the same guess.
+                pnl = Decimal(str(t.get("realized_pnl_usd", 0.0) or 0.0))
+                if pnl < 0:
+                    daily_realized_pnl += pnl
+                logger.warning(f"Unparseable trade timestamp {t.get('timestamp')!r} "
+                               f"({e}); any loss counted toward daily drawdown.")
 
         # 2. Calculate daily drawdown limit
         max_daily_loss = Decimal(str(getattr(self.settings, "MAX_DAILY_LOSS", 100.0)))
