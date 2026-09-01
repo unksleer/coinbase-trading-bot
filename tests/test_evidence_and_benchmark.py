@@ -125,3 +125,36 @@ def test_beating_hold_completes_the_gate():
     assert result["ready"] is True
     assert result["score"] == graduation.MAX_SCORE
     assert result["total"] == 6
+
+
+# ── history window ──────────────────────────────────────────────────────────
+# Every crypto analysis used 400 candles until 2026-09-01 — 100 days at
+# SIX_HOUR, and only 16.7 days at ONE_HOUR. The shorter window flattered the
+# results materially: six-hour's gross edge measured 1.71% over 83 days, 1.48%
+# over 100, and 1.22% over 500, against a 1.206% round trip. The apparent
+# margin was a small-sample artifact that shrank to nothing as history grew.
+
+def test_full_history_window_is_used_everywhere():
+    import auto_learner
+    assert auto_learner.MAX_CANDLES >= 2000
+
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in ("walkforward.py", "analyze_correlation.py", "add_crypto.py",
+                 "auto_learner.py"):
+        with open(os.path.join(root, name)) as handle:
+            body = handle.read()
+        assert "fetch_candles(" not in body or "MAX_CANDLES" in body, \
+            f"{name} fetches candles without using the full window"
+
+
+def test_no_hardcoded_short_window_remains():
+    import glob, os, re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    offenders = []
+    for path in glob.glob(os.path.join(root, "*.py")):
+        with open(path) as handle:
+            for n, line in enumerate(handle, 1):
+                if re.search(r"fetch_candles\([^)]*,\s*\d{1,4}\s*\)", line):
+                    offenders.append(f"{os.path.basename(path)}:{n}")
+    assert not offenders, f"hardcoded candle counts: {offenders}"

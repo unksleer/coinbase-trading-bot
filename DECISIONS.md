@@ -13,6 +13,53 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-01 — The short history window was flattering everything
+
+Every crypto analysis in this project fetched **400 candles**. Coinbase serves
+**2000**. That is 100 days at `SIX_HOUR` — and only **16.7 days** at
+`ONE_HOUR`, which is what the timeframe comparison that parked crypto was
+decided on.
+
+### Re-run on the same 83-day window, both resolutions
+
+| timeframe | candles | trades | net | gross/trade |
+|---|---:|---:|---:|---:|
+| `ONE_HOUR` | 2000 | 129 | −$16.55 | **1.07%** |
+| `SIX_HOUR` | 333 | 13 | +$6.58 | **1.71%** |
+
+The parking decision **holds** on 5× the data: hourly's average gross move
+(1.07%) sits below the 1.206% round trip, six-hour's does not.
+
+### But six-hour's margin shrinks as history grows
+
+| window | candles | trades | net | gross/trade |
+|---|---:|---:|---:|---:|
+| 83 days | 333 | 13 | +$6.58 | 1.71% |
+| 100 days | 400 | 19 | +$5.31 | 1.48% |
+| **500 days** | **2000** | **116** | **+$2.84** | **1.22%** |
+
+Against a 1.206% fee, the 500-day figure is a margin of **0.014%** — nothing.
+Beat-hold is 3 of 9 coins.
+
+**The earlier "six-hour clears the fee" result was a small-sample artifact.**
+It did not overturn the decision to park crypto; it removed the last reason to
+think crypto was close to working.
+
+### Fixed
+
+`MAX_CANDLES = 2000` in `auto_learner`, used by `walkforward.py`,
+`analyze_correlation.py`, `add_crypto.py` and the learner (which was on 1500).
+A test fails on any hardcoded candle count. `add_crypto --check` now backtests
+16 out-of-sample trades where it saw 2.
+
+Crypto correlation re-measured on the full window: **1.3 effective bets of 9**
+(mean rho 0.769), down from 1.4.
+
+**The general lesson, and it applies to the stock arm too:** the shorter the
+history, the better a strategy looks. Any result should state its window.
+
+---
+
 ## 2026-09-01 — A discretionary exit may not close at a loss
 
 **Prompted by an intuition that turned out to be right:** "they enter fine and

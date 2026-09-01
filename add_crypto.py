@@ -148,7 +148,7 @@ def check(symbol, granularity):
 
     pair = pair_for(symbol)
     lines = []
-    frame = al.fetch_candles(pair, granularity, 400)
+    frame = al.fetch_candles(pair, granularity, al.MAX_CANDLES)
     enough = not frame.empty and len(frame) >= MIN_CANDLES
     lines.append(("PASS" if enough else "FAIL",
                   f"{0 if frame.empty else len(frame)} {granularity} candles "
@@ -169,7 +169,7 @@ def backtest(symbol, granularity, env):
     import pandas as pd
 
     cs.FEE = cs.CRYPTO_FEE
-    frame = al.fetch_candles(pair_for(symbol), granularity, 400)
+    frame = al.fetch_candles(pair_for(symbol), granularity, al.MAX_CANDLES)
     if frame.empty or len(frame) < MIN_CANDLES:
         return
     closes = pd.to_numeric(frame["close"]).to_numpy()

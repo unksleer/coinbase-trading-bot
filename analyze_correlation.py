@@ -55,7 +55,7 @@ def crypto_returns(pairs):
     import numpy as np
     series = {}
     for pair in pairs:
-        frame = al.fetch_candles(pair, "SIX_HOUR", 400)
+        frame = al.fetch_candles(pair, "SIX_HOUR", al.MAX_CANDLES)
         if frame.empty or "close" not in frame:
             continue
         closes = pd.to_numeric(frame["close"])

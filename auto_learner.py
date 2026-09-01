@@ -136,6 +136,18 @@ from utils.graduation import (
 # Only the granularities the Exchange candles endpoint accepts. THIRTY_MINUTE
 # (1800s) and TWO_HOUR (7200s) appear in scanner.py's map but are rejected with
 # a 400, so they are deliberately absent here rather than silently falling back.
+# Coinbase serves up to ~2000 candles per pair. Everything here used 400 until
+# 2026-09-01, which is 100 days at SIX_HOUR and only 16.7 days at ONE_HOUR —
+# and the shorter window flattered the results materially: six-hour's gross
+# edge measured 1.71% over 83 days, 1.48% over 100, and 1.22% over 500, against
+# a 1.206% round trip. The apparent margin was a small-sample artifact that
+# shrank to nothing as history grew.
+#
+# Expressed in candles because that is what the API takes; the comment states
+# what it buys, because "400" hides the fact that it means a fortnight on
+# hourly data.
+MAX_CANDLES = 2000          # 500 days at SIX_HOUR, 83 days at ONE_HOUR
+
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
     "ONE_HOUR": 3600, "SIX_HOUR": 21600, "ONE_DAY": 86400,
@@ -753,7 +765,9 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
     Returns best parameter set found, or {} if no valid result.
     """
     log.info(f"Optimizing {pair} ({granularity})...")
-    df = fetch_candles(pair, granularity, 1500)
+    # Was 1500. Uses the full window now for the same reason everything else
+    # does: the shorter the history, the better the strategy looks.
+    df = fetch_candles(pair, granularity, MAX_CANDLES)
     if df.empty or len(df) < 100:
         log.warning(f"  Not enough candle data for {pair}")
         return {}

@@ -148,7 +148,7 @@ def main():
         symbols = registry.crypto_pairs()
 
         def loader(s):
-            frame = al.fetch_candles(s, "SIX_HOUR", 400)
+            frame = al.fetch_candles(s, "SIX_HOUR", al.MAX_CANDLES)
             return (pd.to_numeric(frame["close"]).to_numpy()
                     if not frame.empty else [])
         builder, builder_args = cs.sma_crossover, (10, 40, 100.0, 30.0)
