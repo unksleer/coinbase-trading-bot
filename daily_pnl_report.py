@@ -152,7 +152,17 @@ def main():
         if status != "online" or name == "hgtv-automation":
             continue
             
-        pair = p_env.get("TRADING_PAIR") or p_env.get("STOCK_TICKER")
+        # Identify by SCRIPT, not by whichever env var is set first. Stock
+        # bots inherit TRADING_PAIR from .env, so reading it first labelled all
+        # twelve of them "BTC-USDC" — xlu-bot reported its P&L as BTC. This is
+        # the same defect utils/registry.py exists to prevent; use it.
+        script = os.path.basename(p_env.get("pm_exec_path", "") or "")
+        if script == "stock_bot.py":
+            pair = p_env.get("STOCK_TICKER")
+        elif script == "bot.py":
+            pair = p_env.get("TRADING_PAIR")
+        else:
+            continue
         if not pair:
             continue
         state_file_name = p_env.get("STATE_FILE", "")

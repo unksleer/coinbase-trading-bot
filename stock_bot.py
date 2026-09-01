@@ -419,6 +419,10 @@ def place_buy(price: float) -> float:
     shares = round(TRADE_AMOUNT / price, 6)
     if IS_PAPER:
         log.info(f"[{MODE}] BUY {shares:.6f} {TICKER} @ ~${price:.4f}  (${TRADE_AMOUNT:.2f})")
+        # Stock bots sent no notification of any kind, live or paper, so twelve
+        # of them could trade all week in silence. Alpaca equities are
+        # commission-free, hence the zero fee.
+        _notify("BUY", price, TRADE_AMOUNT, shares)
         return shares
 
     client_order_id = f"{TICKER.lower()}-buy-{uuid.uuid4().hex[:16]}"
@@ -520,10 +524,43 @@ def reconcile_orders():
         _journal_result(client_order_id, parsed)
 
 
+def _realized_pnl(exit_price: float, shares: float) -> float:
+    """P&L against the recorded entry, or 0.0 when there is no open entry."""
+    try:
+        entry = float(load_state().get("entry_price") or 0.0)
+    except Exception:
+        return 0.0
+    if entry <= 0 or shares <= 0:
+        return 0.0
+    return (exit_price - entry) * shares
+
+
+def _notify(side: str, price: float, amount_usd: float, shares: float,
+            realized_pnl: float = 0.0):
+    """
+    Email on an actual entry or exit.
+
+    Deliberately only on a real fill. A separate watchlist scanner used to mail
+    "BUY SIGNAL" whenever a coin merely approached a setup, which reads exactly
+    like a trade confirmation and was not one — so alerts here fire when a
+    position genuinely opens or closes, and never on a signal.
+
+    A notification must never take a bot down: an SMTP outage is not a reason
+    to stop trading, so failures are logged and swallowed.
+    """
+    try:
+        from utils.notifications import send_trade_notification
+        send_trade_notification(side, TICKER, float(price), float(amount_usd),
+                                float(shares), 0.0, IS_PAPER, float(realized_pnl))
+    except Exception as e:
+        log.warning(f"Trade notification failed ({side} {TICKER}): {e}")
+
+
 def place_sell(shares: float, price: float, reason: str):
     """Submit a market sell for all held shares."""
     if IS_PAPER:
         log.info(f"[{MODE}] SELL {shares:.6f} {TICKER} @ ~${price:.4f}  reason={reason}")
+        _notify("SELL", price, shares * price, shares, realized_pnl=_realized_pnl(price, shares))
         return
     try:
         from alpaca.trading.client import TradingClient

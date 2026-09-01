@@ -554,6 +554,17 @@ def main():
                                     fee_usd=mock_fee, reason="SMA Bullish Cross", indicators=indicators_dict
                                 )
                                 logger.info(f"[DRY RUN] BUY: {acquired_base:.8f} base acquired.")
+                                # Paper entries notify too. Previously only the
+                                # live path did, so a fleet running entirely in
+                                # simulation never announced a single trade —
+                                # while a separate watchlist scanner emailed
+                                # "BUY SIGNAL" for setups nothing acted on. The
+                                # one email that arrived was the one that did
+                                # not mean a trade had happened.
+                                send_trade_notification(
+                                    "BUY", Settings.TRADING_PAIR, float(latest_price),
+                                    float(net_spend), float(acquired_base),
+                                    float(mock_fee), True)
                         else:
                             # Live BUY
                             try:
@@ -680,6 +691,10 @@ def main():
                                     fee_usd=mock_fee, reason=sell_reason
                                 )
                                 logger.info(f"[DRY RUN] Sold {holdings:.8f} base. PnL: ${trade['realized_pnl_usd']:.2f}")
+                                send_trade_notification(
+                                    "SELL", Settings.TRADING_PAIR, float(latest_price),
+                                    float(gross_usd), float(holdings), float(mock_fee),
+                                    True, float(trade.get('realized_pnl_usd', 0.0)))
                         else:
                             # Live SELL
                             try:
