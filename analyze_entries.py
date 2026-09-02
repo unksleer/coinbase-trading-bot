@@ -31,7 +31,7 @@ from collections import defaultdict
 # Fee drag per round trip as a percentage of notional. An entry must clear
 # this before it can net anything, which makes it the natural pass/fail line
 # for "did this entry go anywhere".
-DEFAULT_FEE_PCT = 1.207
+DEFAULT_FEE_PCT = 0.80
 
 
 def load_completed_trades(pattern="completed_trades_*_dry.csv"):

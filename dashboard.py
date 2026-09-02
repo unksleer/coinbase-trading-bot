@@ -1034,70 +1034,42 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Error loading market metrics JSON: {e}")
 
-        # 2. Read active positions from state files in root directory
-        for filename in os.listdir(project_root):
-            if filename.startswith("state_") and filename.endswith(".json"):
-                state_path = os.path.join(project_root, filename)
-                try:
-                    with open(state_path, 'r') as f:
-                        state = json.load(f)
-                    
-                    if state.get("position") == "LONG":
-                        # Stock state files are state_stock_<ticker>_paper.json
-                        # and hold `shares`; crypto files are
-                        # state_<pair>_dry.json and hold `holdings_base`.
-                        # Treating them alike produced STOCK_WMT_PAPER as a
-                        # symbol — which no price feed can resolve — and read
-                        # holdings as 0, so every equity position displayed a
-                        # P&L of exactly $0.00. A missing number that renders
-                        # as a real one is the failure mode this dashboard
-                        # keeps hitting.
-                        stem = filename.replace("state_", "").replace(".json", "")
-                        market = "stocks" if stem.startswith("stock_") else "crypto"
-                        is_dry = (stem.endswith("_dry") or stem.endswith("_paper")
-                                  or state.get("dry_run", True))
-                        if market == "stocks":
-                            coin = stem[len("stock_"):].replace("_paper", "") \
-                                                        .replace("_live", "").upper()
-                            holdings = float(state.get("shares", 0.0))
-                        else:
-                            coin = stem.replace("_dry", "").upper()
-                            holdings = float(state.get("holdings_base", 0.0))
+        # 2. Open positions, parsed by utils.positions.
+        #
+        # That parsing lived here and in daily_pnl_report.py and was wrong the
+        # same two ways in both: stock state records `shares` not
+        # `holdings_base`, and the symbol needs `stock_`/`_paper` stripped or
+        # it becomes STOCK_WMT_PAPER, which no feed resolves. Either alone
+        # yields $0.00 — a missing number rendering as a real one. One reader
+        # now, so a third consumer gets it right for free.
+        from utils import positions as position_reader
 
-                        entry_price = float(state.get("entry_price", 0.0))
+        for held in position_reader.open_positions(project_root):
+            current_price, price_source, price_age = self.price_resolver.get(
+                held["symbol"], held["entry_price"], held["market"])
 
-                        current_price, price_source, price_age = (
-                            self.price_resolver.get(coin, entry_price, market)
-                        )
+            value = position_reader.unrealised(
+                held, current_price if price_source != "entry" else None)
 
-                        unrealized_pnl = 0.0
-                        if entry_price > 0:
-                            unrealized_pnl = (current_price - entry_price) * holdings
-                            # Subtract entry fee
-                            entry_fee = float(state.get("entry_fee_usd", 0.0))
-                            unrealized_pnl -= entry_fee
-
-                        data["active_positions"].append({
-                            "coin": coin,
-                            "market": market,
-                            "mode": "Simulated" if is_dry else "Live",
-                            "holdings": holdings,
-                            "entry_price": entry_price,
-                            "current_price": current_price,
-                            "unrealized_pnl": unrealized_pnl,
-                            "entry_time": state.get("entry_time", ""),
-                            # Provenance travels with the number so the UI can
-                            # flag a P&L that should not be read as current.
-                            "price_source": price_source,
-                            "price_age_seconds": price_age,
-                            "price_stale": (
-                                price_source == "entry"
-                                or (price_age is not None
-                                    and price_age > PRICE_STALE_AFTER_SECONDS)
-                            ),
-                        })
-                except Exception as e:
-                    logger.error(f"Error reading state file {filename}: {e}")
+            data["active_positions"].append({
+                "coin": held["symbol"],
+                "market": held["market"],
+                "mode": "Simulated" if held["dry_run"] else "Live",
+                "holdings": held["quantity"],
+                "entry_price": held["entry_price"],
+                "current_price": current_price,
+                # None when the price is unknown, so the UI can say so rather
+                # than rendering an unpriced position as flat.
+                "unrealized_pnl": value if value is not None else 0.0,
+                "unrealized_known": value is not None,
+                "entry_time": held["entry_time"],
+                "price_source": price_source,
+                "price_age_seconds": price_age,
+                "price_stale": (
+                    price_source == "entry"
+                    or (price_age is not None
+                        and price_age > PRICE_STALE_AFTER_SECONDS)),
+            })
 
         # 3. Read completed trades CSV files to populate performance cards
         def read_pnl_csv_files(files):

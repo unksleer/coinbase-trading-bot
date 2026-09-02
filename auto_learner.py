@@ -113,7 +113,10 @@ def _discover_coins():
 
 MIN_IMPROVEMENT_PCT = 5.0   # New params must beat old by ≥5% net profit
 MIN_TRADES          = 5     # Optimizer result must have ≥5 backtest trades to count
-REAL_FEE_RATE       = 0.006 # Actual Coinbase Advanced Trade taker fee (0.60%)
+# Coinbase Advanced base-tier MAKER fee. The bots place post_only limit orders,
+# so this is what they pay. Was 0.006 — the taker rate — which over-charged
+# every backtest by 0.40% per round trip.
+REAL_FEE_RATE       = 0.004
 DEFAULT_SLIPPAGE_BPS = 10.0 # Conservative 0.10% adverse execution per side
 MIN_VALIDATION_TRADES = 4
 MIN_STABILITY_PASS_RATE = 0.60

@@ -17,7 +17,7 @@ down. That profile scores well on entry frequency and is precisely the failure
 mode, so frequency alone is never enough to qualify a symbol here.
 
 Crypto and stocks are screened under their own cost model. Equities are
-commission-free (~0.20% round trip, slippage only); Coinbase is ~1.207%. The
+commission-free (~0.20% round trip, slippage only); Coinbase is ~0.80% maker. The
 same symbol behaviour can qualify in one market and fail in the other purely on
 that, so results never transfer between them.
 
@@ -188,7 +188,7 @@ def main():
                 else (STOCK_UNIVERSE if is_stocks else CRYPTO_UNIVERSE))
 
     label = "RSI mean reversion" if args.strategy == "mr" else "SMA crossover"
-    cost = "commission-free (~0.20% round trip)" if is_stocks else "1.207% round trip"
+    cost = "commission-free (~0.20% round trip)" if is_stocks else "0.80% round trip (maker)"
     print(f"\n  Screening {len(universe)} {args.market} symbols · {label} · "
           f"{timeframe}")
     print(f"  Cost model: {cost}. Results do not transfer between markets.")

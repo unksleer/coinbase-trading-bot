@@ -354,7 +354,9 @@ class VenueAdapterTests(unittest.TestCase):
         from utils.venue import CoinbaseVenue, AlpacaVenue
         self.assertEqual(AlpacaVenue().fee_rate_per_side, 0.0)
         self.assertGreater(CoinbaseVenue().fee_rate_per_side, 0.0)
-        self.assertAlmostEqual(CoinbaseVenue().round_trip_cost_pct(), 1.2, places=2)
+        # 0.40% maker per side. Was asserted at 1.2 — the taker round trip —
+        # which is the error this pinned in place rather than caught.
+        self.assertAlmostEqual(CoinbaseVenue().round_trip_cost_pct(), 0.8, places=2)
         self.assertEqual(AlpacaVenue().round_trip_cost_pct(), 0.0)
 
     def test_for_market_returns_the_right_adapter(self):

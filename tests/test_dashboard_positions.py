@@ -40,15 +40,16 @@ def test_crypto_state_filename_still_yields_its_pair():
 
 
 def test_reader_branches_on_market():
-    src = open(os.path.join(DIR, "dashboard.py")).read()
-    assert 'market = "stocks" if stem.startswith("stock_") else "crypto"' in src
-    assert 'holdings = float(state.get("shares", 0.0))' in src
-    assert 'holdings = float(state.get("holdings_base", 0.0))' in src
+    """Parsing moved to utils.positions once it had been wrong in two files."""
+    src = open(os.path.join(DIR, "utils", "positions.py")).read()
+    assert 'stem.startswith("stock_")' in src
+    assert 'state.get("shares", 0.0)' in src
+    assert 'state.get("holdings_base", 0.0)' in src
 
 
 def test_price_resolver_is_asked_for_the_right_venue():
     src = open(os.path.join(DIR, "dashboard.py")).read()
-    assert "self.price_resolver.get(coin, entry_price, market)" in src
+    assert 'held["symbol"], held["entry_price"], held["market"]' in src
     assert "def _stock_price(self, ticker):" in src
 
 
@@ -101,7 +102,7 @@ def test_every_open_position_on_disk_is_reported():
                     on_disk += 1
         except (OSError, ValueError):
             continue
-    src = open(os.path.join(DIR, "dashboard.py")).read()
-    # The reader must not filter by market before counting.
-    assert 'if state.get("position") == "LONG":' in src
-    assert on_disk >= 0
+    from utils import positions
+    reported = positions.open_positions(DIR)
+    assert len(reported) == on_disk, \
+        "every LONG state file must be reported, regardless of market"

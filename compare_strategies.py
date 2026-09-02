@@ -42,7 +42,7 @@ _FALLBACK_PAIRS = ["BTC-USDC", "ETH-USDC", "SOL-USDC", "ADA-USDC", "LINK-USDC",
                    "NEAR-USDC", "SUI-USDC", "XRP-USDC", "RENDER-USDC"]
 PAIRS = _default_pairs()
 
-CRYPTO_FEE = al.REAL_FEE_RATE     # 0.60% per side, Coinbase tier 1
+CRYPTO_FEE = al.REAL_FEE_RATE     # 0.40% per side maker, Coinbase base tier
 STOCK_FEE = 0.0                   # Alpaca equities are commission-free
 SLIPPAGE = al.DEFAULT_SLIPPAGE_BPS / 10000.0
 TRADE_USD = 10.0

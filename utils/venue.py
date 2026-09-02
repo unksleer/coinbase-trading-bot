@@ -70,13 +70,17 @@ class CoinbaseVenue(Venue):
     """
     Coinbase Advanced Trade.
 
-    fee_rate_per_side is the tier-1 MAKER rate, which is the bot's normal path
+    fee_rate_per_side is the base-tier MAKER rate — the bot places post_only
+    limit orders, so it is what actually gets charged. This comment previously
+    described 0.006 as the maker rate while auto_learner described the same
+    number as the taker rate; the venue's own schedule says maker is 0.40% and
+    taker 0.60%, so this was the wrong half
     since it places limit_order_gtc. The market-order exit fallback pays the
     taker rate, roughly double.
     """
 
     name = "coinbase"
-    fee_rate_per_side = 0.006
+    fee_rate_per_side = 0.004
     always_open = True
 
     def __init__(self, client=None):

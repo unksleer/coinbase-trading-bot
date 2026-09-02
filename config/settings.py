@@ -192,9 +192,11 @@ class Settings:
         COOLDOWN_HOURS_AFTER_LOSS = 0.0
 
     try:
-        FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "1.20"))
+        # Per SIDE, not round trip. The old default of 1.20 would have charged a
+        # 2.40% round trip had .env ever gone missing.
+        FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "0.40"))
     except ValueError:
-        FEE_RATE_PERCENT = 1.20
+        FEE_RATE_PERCENT = 0.40
 
     STRATEGY_TYPE = get_env_with_profile("STRATEGY_TYPE", "SMA_CROSSOVER").strip().upper()
 
