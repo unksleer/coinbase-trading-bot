@@ -46,6 +46,7 @@ GRANULARITY_SECONDS = {
     "SIX_HOUR": 21600,
     "ONE_DAY": 86400,
     # Equities, named as the venue names them.
+    "Min15": 900,
     "Hour": 3600,
     "Day": 86400,
 }

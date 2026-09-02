@@ -20,7 +20,7 @@ import pandas as pd
 # error rather than an empty tail.
 FREE_FEED_DELAY_MINUTES = 20
 
-TIMEFRAMES = ("Hour", "Day")
+TIMEFRAMES = ("Min15", "Hour", "Day")
 
 
 def _client():
@@ -49,7 +49,16 @@ def fetch_bars(ticker, timeframe="Hour", lookback_days=400):
 
     if timeframe not in TIMEFRAMES:
         raise ValueError(f"timeframe must be one of {TIMEFRAMES}, got {timeframe!r}")
-    unit = TimeFrame.Hour if timeframe == "Hour" else TimeFrame.Day
+    # Min15 added for the opening-range experiment. Alpaca serves ~2 years of
+    # 15-minute IEX bars, which is what makes a session-based backtest possible
+    # at all; hourly bars cannot express a 09:30-09:45 opening range.
+    if timeframe == "Min15":
+        from alpaca.data.timeframe import TimeFrameUnit
+        unit = TimeFrame(15, TimeFrameUnit.Minute)
+    elif timeframe == "Hour":
+        unit = TimeFrame.Hour
+    else:
+        unit = TimeFrame.Day
 
     end = datetime.now(timezone.utc) - timedelta(minutes=FREE_FEED_DELAY_MINUTES)
     request = StockBarsRequest(
