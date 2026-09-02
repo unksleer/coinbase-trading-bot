@@ -41,3 +41,8 @@ state.json.bak
 
 # Scratch directory
 scratch/
+
+# Local candle store. Regenerable from the venue and it grows without bound —
+# the point of it is history accumulated on this machine, not in the repo.
+data/*.sqlite
+data/*.sqlite-journal

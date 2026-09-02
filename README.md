@@ -41,6 +41,30 @@ This bot is engineered with strict production safety safeguards to protect capit
 
 ---
 
+### Local candle store
+
+The exchange caps a response at ~2000 candles, and that cap flatters results:
+the same strategy measured 1.71% gross edge over 83 days, 1.48% over 100 and
+1.22% over 500, against a 1.206% round trip. `market_data/` appends each
+**closed** candle to a local store, accumulating history the API will not
+serve.
+
+```bash
+.venv/bin/python -m market_data.coinbase_candle_collector            # hourly, via pm2
+.venv/bin/python -m market_data.coinbase_candle_collector --backfill # full API window
+.venv/bin/python -m market_data.coinbase_candle_collector --report   # integrity check
+```
+
+It never stores a candle still forming — a partial high/low/close is revised
+later, so a backtest built on one reads prices no trader could have acted on,
+and it errs optimistically every time. Duplicates are ignored, so overlapping
+runs are safe. A venue returning different values for a stored timestamp is
+recorded as a conflict rather than applied. Gaps are reported, never repaired.
+
+**The store is research infrastructure and no bot reads from it** — a test
+asserts neither bot imports `market_data`. Wiring it into a trading path would
+turn a stale store into a trading fault.
+
 ### Measurement discipline
 
 Three months of tuning produced 56 paper trades and no statement about whether

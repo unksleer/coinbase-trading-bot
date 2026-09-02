@@ -13,6 +13,60 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-02 — Local candle store
+
+**Why:** the exchange caps a response at ~2000 candles, and that cap flatters
+results — six-hour gross edge read 1.71% over 83 days, 1.48% over 100, and
+1.22% over 500 against a 1.206% fee. A store that appends each closed candle
+accumulates history the API will never serve, and it compounds without further
+work.
+
+**Scope deliberately limited to collector, store and quality tests.** A larger
+proposal included a feature pipeline and dataset builder for model training.
+Declined for now: crypto's problem is a fee floor, which no model fixes, and
+stocks have five completed trades — there is nothing to train on. Building the
+consumer before the data exists is the pattern this project keeps repeating.
+
+### Isolation
+
+The store shares no code path with the bots. `bot.py` and `stock_bot.py` fetch
+their own candles and do not import `market_data`; a test asserts it by parsing
+their imports. The moment a bot reads from the store, a stale or gapped store
+becomes a trading fault rather than a research inconvenience — and it would
+void the pre-registered stock run, whose sealed config carries no data-source
+field.
+
+### Three invariants
+
+| invariant | failure it prevents |
+|---|---|
+| only closed candles | a forming candle has a partial high/low/close revised later, so a backtest reads prices no trader could act on — and errs optimistically every time |
+| no duplicates | a re-run or overlapping backfill double-counting a bar changes every average built on it |
+| no silent revision | a venue returning different values for a stored timestamp is surfaced as a conflict, not absorbed |
+
+Gaps are reported, never repaired. An outage and a venue halt need different
+responses, and the store cannot tell them apart; inventing a bar to close a gap
+puts fabricated prices into research.
+
+### A bug worth recording
+
+The first collector read the frame **index** instead of the `start` **column**,
+producing timestamps of 0, 1, 2. **All 6318 were accepted** — because "has this
+candle closed" is trivially true for 1970. An invariant checking only the near
+edge of a range does not notice a value at the far end. Fixed, and a
+plausibility floor added; the store now refuses anything before 2009 or more
+than a day in the future.
+
+### Result
+
+498 days of six-hour history and 83 of hourly, across 9 pairs — 35,892 candles,
+**zero gaps**. The unfinished-candle guard fires on every run, refusing exactly
+one forming candle per series.
+
+Collector runs hourly at :07 under pm2, `--no-autorestart`, writes only.
+
+---
+
 ## 2026-09-01 — The short history window was flattering everything
 
 Every crypto analysis in this project fetched **400 candles**. Coinbase serves
