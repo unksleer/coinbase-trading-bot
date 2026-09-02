@@ -90,7 +90,7 @@ def fetch_historical_data(product_id: str, granularity: str, total_candles: int 
 def run_backtest(df: pd.DataFrame, short_window: int, long_window: int, min_spread: float, stop_loss: float, take_profit: float,
                  rsi_enabled: bool = False, rsi_period: int = 14, rsi_buy_max: float = 60.0, rsi_sell_min: float = 40.0,
                  ema_enabled: bool = False, ema_period: int = 200, start_cash: float = 100.0, gran_seconds: int = 3600,
-                 trade_amount_usd: float = 10.0, fee_rate: float = 0.006, strategy_type: str = "SMA_CROSSOVER",
+                 trade_amount_usd: float = 10.0, fee_rate: float = 0.004, strategy_type: str = "SMA_CROSSOVER",
                  rsi_oversold: float = 30.0, rsi_overbought: float = 70.0,
                  stop_loss_atr_multiple: float = 0.0, take_profit_atr_multiple: float = 0.0) -> dict:
     """
@@ -272,7 +272,7 @@ def main():
     parser.add_argument("--candles", type=int, default=1000, help="Total candles to backtest (default: 1000)")
     parser.add_argument("--optimize", action="store_true", help="Run grid search optimizer to find best parameters")
     parser.add_argument("--trade-amount", type=float, default=10.0, help="USD trade size (default: 10.0, set to 0 to use all available cash)")
-    parser.add_argument("--fee-rate", type=float, default=0.006, help="Fee rate per trade, e.g. 0.006 for 0.6 percent (default: 0.006)")
+    parser.add_argument("--fee-rate", type=float, default=0.004, help="Fee rate per trade, e.g. 0.004 for 0.4 percent maker (default: 0.004)")
     args = parser.parse_args()
     
     # Set TRADING_PAIR environment variable so Settings loaded dynamically matches the backtested pair

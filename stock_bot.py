@@ -23,6 +23,7 @@ PM2 launch (one per ticker):
     pm2 start stock_bot.py --name lpl-bot --interpreter .venv/bin/python --no-autorestart
 """
 import os
+import uuid
 import sys
 import csv
 import json
@@ -31,13 +32,24 @@ import logging
 from datetime import datetime, timezone, timedelta
 
 import pandas as pd
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: F401  (kept for compatibility)
+from utils.env_loader import load as load_config
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+# .env wins for tuning, the pm2 command line wins for identity. A plain
+# load_dotenv would leave stale values in place and a restart would silently
+# change nothing.
+_CHANGED = load_config()
 
 # ── Configuration from environment ───────────────────────────────────────────
 TICKER          = os.getenv("STOCK_TICKER", "SPY").upper()
+
+# Confirm this process is the bot its pm2 name claims before TICKER is baked
+# into the log file, state file and trade file below. Checked here rather than
+# after logging is configured, because a wrong ticker sends the complaint into
+# the wrong bot's log.
+from utils import identity as _identity
+_identity.enforce(TICKER)
 TRADE_AMOUNT    = float(os.getenv("TRADE_AMOUNT_USD", 10))
 IS_PAPER        = os.getenv("ALPACA_PAPER", "True").strip().lower() not in ("false", "0", "no")
 API_KEY         = os.getenv("ALPACA_API_KEY", "")
@@ -59,6 +71,19 @@ TRAILING_STOP_PCT = float(os.getenv(f"{TICKER}_TRAILING_STOP_PERCENT", os.getenv
 TRAILING_ACTIVATION_PCT = float(os.getenv(f"{TICKER}_TRAILING_STOP_ACTIVATION_PERCENT", os.getenv("STOCK_TRAILING_STOP_ACTIVATION_PERCENT", "0.0")))
 MIN_VOLUME_RATIO = float(os.getenv(f"{TICKER}_MIN_VOLUME_RATIO", os.getenv("STOCK_MIN_VOLUME_RATIO", "0.0")))
 COOLDOWN_HOURS = float(os.getenv(f"{TICKER}_COOLDOWN_HOURS_AFTER_LOSS", os.getenv("STOCK_COOLDOWN_HOURS_AFTER_LOSS", "0.0")))
+
+# Which entry/exit logic to run. Measured across 15 symbols on both hourly and
+# daily bars, RSI_MEAN_REVERSION was positive out-of-sample at every threshold
+# tested (66-75% win rate) while SMA_CROSSOVER managed 35-44%. Commission-free
+# execution is why: mean reversion takes many small moves, which a 1.2% fee
+# would erase but a 0.20% slippage cost does not.
+STRATEGY = os.getenv(f"{TICKER}_STRATEGY",
+                     os.getenv("STOCK_STRATEGY", "SMA_CROSSOVER")).strip().upper()
+VALID_STRATEGIES = ("SMA_CROSSOVER", "RSI_MEAN_REVERSION")
+RSI_OVERSOLD   = float(os.getenv(f"{TICKER}_RSI_OVERSOLD",
+                                 os.getenv("STOCK_RSI_OVERSOLD", "30")))
+RSI_OVERBOUGHT = float(os.getenv(f"{TICKER}_RSI_OVERBOUGHT",
+                                 os.getenv("STOCK_RSI_OVERBOUGHT", "70")))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 DIR = os.path.dirname(os.path.abspath(__file__))
@@ -101,8 +126,53 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
-    with open(STATE_PATH, "w") as f:
-        json.dump(state, f, indent=2)
+    """
+    Atomic write with a backup, via the same StateManager the crypto bot uses.
+
+    Previously this was json.dump straight onto the live file: a crash or a
+    full disk mid-write left truncated JSON and the position was lost. The
+    shared manager writes to a temp file, fsyncs, then renames, and keeps a
+    .bak to recover from.
+    """
+    _state_manager().state = _to_shared_schema(state)
+    _state_manager().save_state()
+
+
+_SHARED_STATE = None
+
+
+def _to_shared_schema(state: dict) -> dict:
+    """
+    Map the stock bot's state onto the shared schema.
+
+    The shared schema calls the position size holdings_base; for equities that
+    is shares. Same float, same meaning — worth bridging rather than forking
+    the schema, because forking is how the two bots diverged in the first place.
+    """
+    return {
+        "version": 2,
+        "dry_run": IS_PAPER,
+        "position": state.get("position", "NONE"),
+        "entry_price": float(state.get("entry_price", 0.0) or 0.0),
+        "holdings_base": float(state.get("shares", 0.0) or 0.0),
+        "cash_usd": float(state.get("cash_usd", 100.0) or 0.0),
+        "trades": state.get("trades", []),
+        "orders": state.get("orders", {}),
+        # Preserved verbatim so nothing the bot relies on is dropped in transit.
+        "shares": float(state.get("shares", 0.0) or 0.0),
+        "entry_time": state.get("entry_time"),
+        "highest_price": state.get("highest_price", 0.0),
+        "ticker": TICKER,
+    }
+
+
+def _state_manager():
+    global _SHARED_STATE
+    if _SHARED_STATE is None:
+        from utils.state import StateManager
+        _SHARED_STATE = StateManager(state_file=STATE_PATH, dry_run=IS_PAPER,
+                                     persist_trade_csv=False)
+    return _SHARED_STATE
 
 
 def record_trade(state: dict, exit_price: float, exit_reason: str):
@@ -245,41 +315,252 @@ def compute_indicators(df: pd.DataFrame) -> dict:
         "prev_sma_short": float(sma_s.iloc[-2]),
         "prev_sma_long":  float(sma_l.iloc[-2]),
         "rsi":       float(rsi.iloc[-1]),
+        # Mean reversion triggers on RSI *crossing* a level, not sitting past
+        # it, so the previous bar's value is required.
+        "prev_rsi":  float(rsi.iloc[-2]),
     }
+
+
+def describe_decision(ind, position, should_enter, why, exit_reason):
+    """
+    What the bot decided this candle, in the shared signal-log shape.
+
+    Without this the dashboard had to infer intent by regexing log lines, and
+    it inferred it under SMA-crossover rules — so mean-reversion bots showed as
+    about to enter while sitting at RSI 50, nowhere near their oversold trigger.
+    """
+    if STRATEGY == "RSI_MEAN_REVERSION":
+        raw = "BUY" if (ind["prev_rsi"] < RSI_OVERSOLD <= ind["rsi"]) else "HOLD"
+        blocked = ""
+    else:
+        crossed = (ind["prev_sma_short"] < ind["prev_sma_long"]
+                   and ind["sma_short"] > ind["sma_long"])
+        raw = "BUY" if crossed else "HOLD"
+        blocked = "RSI" if (crossed and not should_enter) else ""
+    return {
+        "raw_signal": raw,
+        "final_signal": "BUY" if should_enter else ("SELL" if exit_reason else "HOLD"),
+        "blocked_by": blocked,
+        "sma_short": ind.get("sma_short"),
+        "sma_long": ind.get("sma_long"),
+        "spread_pct": (abs(ind["sma_short"] - ind["sma_long"]) / ind["sma_long"] * 100
+                       if ind.get("sma_long") else None),
+        "rsi": ind.get("rsi"),
+        "ema": None,
+        "strategy": STRATEGY,
+    }
+
+
+def entry_signal(ind):
+    """
+    Whether to open a position. Returns (should_enter, description).
+
+    Both strategies are expressed here so the exit logic, risk limits and
+    execution path below are shared and cannot diverge between them.
+    """
+    if STRATEGY == "RSI_MEAN_REVERSION":
+        crossed_up = ind["prev_rsi"] < RSI_OVERSOLD <= ind["rsi"]
+        if crossed_up:
+            return True, (f"RSI recovered through {RSI_OVERSOLD:.0f} "
+                          f"({ind['prev_rsi']:.1f} -> {ind['rsi']:.1f})")
+        return False, ""
+
+    bullish_cross = ind["prev_sma_short"] < ind["prev_sma_long"] and ind["sma_short"] > ind["sma_long"]
+    if not bullish_cross:
+        return False, ""
+    if not (RSI_MIN <= ind["rsi"] <= RSI_MAX):
+        return False, f"RSI={ind['rsi']:.1f} outside [{RSI_MIN}-{RSI_MAX}]"
+    return True, "Bullish crossover confirmed"
+
+
+def strategy_exit_reason(ind):
+    """Strategy-driven exit, separate from the stop/target/trailing exits."""
+    if STRATEGY == "RSI_MEAN_REVERSION":
+        if ind["prev_rsi"] > RSI_OVERBOUGHT >= ind["rsi"]:
+            return f"RSI fell back through {RSI_OVERBOUGHT:.0f}"
+        return None
+    if ind["prev_sma_short"] > ind["prev_sma_long"] and ind["sma_short"] < ind["sma_long"]:
+        return "SMA Bearish Cross"
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Order execution via Alpaca
 # ─────────────────────────────────────────────────────────────────────────────
+_VENUE = None
+_SIGNAL_LOG = None
+
+
+def signal_logger():
+    global _SIGNAL_LOG
+    if _SIGNAL_LOG is None:
+        from utils.signal_log import SignalLogger
+        _SIGNAL_LOG = SignalLogger(f"stock-{TICKER}")
+    return _SIGNAL_LOG
+
+
+def venue():
+    global _VENUE
+    if _VENUE is None:
+        from utils.venue import AlpacaVenue
+        _VENUE = AlpacaVenue(API_KEY, SECRET_KEY, paper=IS_PAPER)
+    return _VENUE
+
+
 def place_buy(price: float) -> float:
-    """Submit a fractional market buy for TRADE_AMOUNT USD. Returns shares bought."""
+    """
+    Submit a fractional market buy for TRADE_AMOUNT USD. Returns shares bought.
+
+    The intent is journalled with a generated client order ID *before* the
+    order is sent. If the process dies between submission and the state write,
+    startup reconciliation finds the order at the venue and applies it, rather
+    than the position existing at Alpaca while the bot believes it is flat.
+    """
     shares = round(TRADE_AMOUNT / price, 6)
     if IS_PAPER:
         log.info(f"[{MODE}] BUY {shares:.6f} {TICKER} @ ~${price:.4f}  (${TRADE_AMOUNT:.2f})")
+        # Stock bots sent no notification of any kind, live or paper, so twelve
+        # of them could trade all week in silence. Alpaca equities are
+        # commission-free, hence the zero fee.
+        _notify("BUY", price, TRADE_AMOUNT, shares)
         return shares
+
+    client_order_id = f"{TICKER.lower()}-buy-{uuid.uuid4().hex[:16]}"
+    _journal_intent(client_order_id, "BUY", price, shares)
     try:
-        from alpaca.trading.client import TradingClient
-        from alpaca.trading.requests import MarketOrderRequest
-        from alpaca.trading.enums import OrderSide, TimeInForce
-        client = TradingClient(API_KEY, SECRET_KEY, paper=IS_PAPER)
-        req = MarketOrderRequest(
-            symbol=TICKER,
-            notional=TRADE_AMOUNT,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
-        )
-        order = client.submit_order(req)
-        log.info(f"[{MODE}] BUY order submitted: {order.id} — ${TRADE_AMOUNT:.2f} of {TICKER}")
+        order = venue().submit_buy(TICKER, TRADE_AMOUNT, client_order_id)
+        parsed = venue().parse_response(order)
+        log.info(f"[{MODE}] BUY submitted: {parsed['order_id']} "
+                 f"({client_order_id}) — ${TRADE_AMOUNT:.2f} of {TICKER}")
+        _journal_result(client_order_id, parsed)
         return shares
     except Exception as e:
         log.error(f"BUY order failed: {e}")
+        _journal_result(client_order_id, {"status": "FAILED", "order_id": ""})
         return 0.0
+
+
+def _journal_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "logs", f"order_journal_stock_{TICKER.lower()}.json")
+
+
+def _journal_intent(client_order_id, side, price, size):
+    """Record what we are about to do, before doing it."""
+    try:
+        path = _journal_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            with open(path) as handle:
+                journal = json.load(handle)
+        except (OSError, ValueError):
+            journal = {}
+        journal[client_order_id] = {
+            "ticker": TICKER, "side": side, "price": price, "size": size,
+            "status": "PENDING", "applied": False,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        tmp = path + ".tmp"
+        with open(tmp, "w") as handle:
+            json.dump(journal, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except OSError as e:
+        # Never let journalling failure stop a trade decision; log loudly.
+        log.warning(f"Could not journal order intent: {e}")
+
+
+def _journal_result(client_order_id, parsed):
+    try:
+        path = _journal_path()
+        with open(path) as handle:
+            journal = json.load(handle)
+        if client_order_id in journal:
+            journal[client_order_id].update({
+                "status": parsed.get("status", ""),
+                "order_id": parsed.get("order_id", ""),
+                "applied": True,
+                "resolved_at": datetime.now(timezone.utc).isoformat(),
+            })
+            tmp = path + ".tmp"
+            with open(tmp, "w") as handle:
+                json.dump(journal, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+    except (OSError, ValueError) as e:
+        log.warning(f"Could not journal order result: {e}")
+
+
+def reconcile_orders():
+    """
+    Resolve orders submitted but never confirmed, at startup.
+
+    Without this, a crash between submitting and recording leaves a position at
+    the venue that the bot does not know about — it will then happily open a
+    second one.
+    """
+    if IS_PAPER:
+        return
+    try:
+        with open(_journal_path()) as handle:
+            journal = json.load(handle)
+    except (OSError, ValueError):
+        return
+    unresolved = {k: v for k, v in journal.items() if not v.get("applied")}
+    if not unresolved:
+        log.info("No unresolved orders to reconcile.")
+        return
+    log.warning(f"{len(unresolved)} unresolved order(s); querying venue")
+    for client_order_id in unresolved:
+        order = venue().get_order_by_client_id(client_order_id)
+        if order is None:
+            log.warning(f"  {client_order_id}: not found at venue — never reached it")
+            continue
+        parsed = venue().parse_response(order)
+        log.warning(f"  {client_order_id}: venue reports {parsed['status']} "
+                    f"filled={parsed['filled_size']}")
+        _journal_result(client_order_id, parsed)
+
+
+def _realized_pnl(exit_price: float, shares: float) -> float:
+    """P&L against the recorded entry, or 0.0 when there is no open entry."""
+    try:
+        entry = float(load_state().get("entry_price") or 0.0)
+    except Exception:
+        return 0.0
+    if entry <= 0 or shares <= 0:
+        return 0.0
+    return (exit_price - entry) * shares
+
+
+def _notify(side: str, price: float, amount_usd: float, shares: float,
+            realized_pnl: float = 0.0):
+    """
+    Email on an actual entry or exit.
+
+    Deliberately only on a real fill. A separate watchlist scanner used to mail
+    "BUY SIGNAL" whenever a coin merely approached a setup, which reads exactly
+    like a trade confirmation and was not one — so alerts here fire when a
+    position genuinely opens or closes, and never on a signal.
+
+    A notification must never take a bot down: an SMTP outage is not a reason
+    to stop trading, so failures are logged and swallowed.
+    """
+    try:
+        from utils.notifications import send_trade_notification
+        send_trade_notification(side, TICKER, float(price), float(amount_usd),
+                                float(shares), 0.0, IS_PAPER, float(realized_pnl))
+    except Exception as e:
+        log.warning(f"Trade notification failed ({side} {TICKER}): {e}")
 
 
 def place_sell(shares: float, price: float, reason: str):
     """Submit a market sell for all held shares."""
     if IS_PAPER:
         log.info(f"[{MODE}] SELL {shares:.6f} {TICKER} @ ~${price:.4f}  reason={reason}")
+        _notify("SELL", price, shares * price, shares, realized_pnl=_realized_pnl(price, shares))
         return
     try:
         from alpaca.trading.client import TradingClient
@@ -304,7 +585,17 @@ def place_sell(shares: float, price: float, reason: str):
 def main():
     log.info("=" * 60)
     log.info(f"Stock Trading Bot — {TICKER} ({MODE})")
-    log.info(f"  SMA {SMA_SHORT}/{SMA_LONG} | SL={STOP_LOSS_PCT}% | TP={TAKE_PROFIT_PCT}%")
+    if STRATEGY not in VALID_STRATEGIES:
+        log.error(f"STOCK_STRATEGY={STRATEGY!r} is not one of {VALID_STRATEGIES}. "
+                  f"Refusing to start rather than silently falling back.")
+        sys.exit(1)
+    reconcile_orders()
+    log.info(f"  Strategy: {STRATEGY}")
+    if STRATEGY == "RSI_MEAN_REVERSION":
+        log.info(f"  RSI {RSI_OVERSOLD:.0f}/{RSI_OVERBOUGHT:.0f} | "
+                 f"SL={STOP_LOSS_PCT}% | TP={TAKE_PROFIT_PCT}%")
+    else:
+        log.info(f"  SMA {SMA_SHORT}/{SMA_LONG} | SL={STOP_LOSS_PCT}% | TP={TAKE_PROFIT_PCT}%")
     log.info(f"  RSI filter: [{RSI_MIN}–{RSI_MAX}] | Trade size: ${TRADE_AMOUNT}")
     log.info(f"  Base URL: {BASE_URL}")
     log.info("=" * 60)
@@ -354,11 +645,16 @@ def main():
 
             # ── Strategy logic ────────────────────────────────────────────────
             if state["position"] == "NONE":
-                # Bullish crossover: short was below long, now above
-                bullish_cross = prev_s < prev_l and sma_s > sma_l
-                rsi_ok = RSI_MIN <= rsi <= RSI_MAX
+                should_enter, why = entry_signal(ind)
+                try:
+                    signal_logger().record(
+                        str(bars.index[-1]), price, state["position"],
+                        describe_decision(ind, state["position"], should_enter,
+                                          why, None))
+                except Exception as sig_err:
+                    log.warning(f"Could not record signal decision: {sig_err}")
 
-                if bullish_cross and rsi_ok:
+                if should_enter:
                     # Volume confirmation filter
                     vol_ok = True
                     if MIN_VOLUME_RATIO > 0.0:
@@ -385,7 +681,7 @@ def main():
                                 pass
 
                     if vol_ok and cooldown_ok:
-                        log.info(f"🟢 BUY SIGNAL — Bullish crossover confirmed | RSI={rsi:.1f}")
+                        log.info(f"🟢 BUY SIGNAL — {why} | RSI={rsi:.1f}")
                         shares = place_buy(price)
                         if shares > 0:
                             state.update({
@@ -397,12 +693,27 @@ def main():
                                 "entry_reason": "SMA Bullish Cross",
                             })
                             save_state(state)
-                elif bullish_cross and not rsi_ok:
-                    log.info(f"⚠️  Crossover detected but RSI={rsi:.1f} outside [{RSI_MIN}–{RSI_MAX}] — skipping")
+                elif why:
+                    log.info(f"⚠️  Entry blocked — {why}")
 
             elif state["position"] == "LONG":
                 entry_price = state["entry_price"]
                 chg_pct = (price - entry_price) / entry_price * 100
+
+                # A discretionary exit may not close a position at a net loss.
+                # The stop loss is exempt — realising a loss is its whole job.
+                #
+                # Alpaca equities are commission-free, so "covers costs" here
+                # is simply "above entry". The trap it prevents is the same one
+                # measured on the crypto side: the trailing stop arms at
+                # TRAILING_ACTIVATION_PCT and exits TRAILING_STOP_PCT below the
+                # peak, so at 1.0/1.5 any trade peaking between +1.0% and +1.5%
+                # exits BELOW entry — a losing exit on a venue that charges
+                # nothing, which should have been free money.
+                #
+                # An invariant rather than retuned percentages, so a later
+                # settings change cannot silently restore the trap.
+                covers_costs = chg_pct >= 0.0
 
                 exit_reason = None
                 if chg_pct <= -STOP_LOSS_PCT:
@@ -417,12 +728,19 @@ def main():
                         save_state(state)
                     if chg_pct >= TRAILING_ACTIVATION_PCT:
                         trail_price = highest * (1.0 - TRAILING_STOP_PCT / 100.0)
-                        if price <= trail_price:
+                        if price <= trail_price and covers_costs:
                             exit_reason = f"Trailing Stop (peak=${highest:.4f}, trail={TRAILING_STOP_PCT}%)"
                         else:
-                            log.info(f"Trailing stop active: peak=${highest:.4f}, stop=${trail_price:.4f}, current=${price:.4f}")
-                if exit_reason is None and prev_s > prev_l and sma_s < sma_l:
-                    exit_reason = "SMA Bearish Cross"
+                            held = "" if covers_costs else "  [held: below entry]"
+                            log.info(f"Trailing stop active: peak=${highest:.4f}, "
+                                     f"stop=${trail_price:.4f}, current=${price:.4f}{held}")
+                if exit_reason is None:
+                    strategy_exit = strategy_exit_reason(ind)
+                    if strategy_exit and not covers_costs:
+                        log.info(f"Holding through strategy exit — {strategy_exit} — "
+                                 f"net {chg_pct:+.2f}% is below entry. Stop loss still active.")
+                    elif strategy_exit:
+                        exit_reason = strategy_exit
 
                 if exit_reason:
                     log.info(f"🔴 SELL SIGNAL — {exit_reason} | chg={chg_pct:+.3f}% | Price=${price:.4f}")

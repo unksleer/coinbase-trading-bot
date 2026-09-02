@@ -152,7 +152,17 @@ def main():
         if status != "online" or name == "hgtv-automation":
             continue
             
-        pair = p_env.get("TRADING_PAIR") or p_env.get("STOCK_TICKER")
+        # Identify by SCRIPT, not by whichever env var is set first. Stock
+        # bots inherit TRADING_PAIR from .env, so reading it first labelled all
+        # twelve of them "BTC-USDC" — xlu-bot reported its P&L as BTC. This is
+        # the same defect utils/registry.py exists to prevent; use it.
+        script = os.path.basename(p_env.get("pm_exec_path", "") or "")
+        if script == "stock_bot.py":
+            pair = p_env.get("STOCK_TICKER")
+        elif script == "bot.py":
+            pair = p_env.get("TRADING_PAIR")
+        else:
+            continue
         if not pair:
             continue
         state_file_name = p_env.get("STATE_FILE", "")
@@ -163,28 +173,40 @@ def main():
         position = "NONE"
         entry_price = 0.0
         holdings = 0.0
+        # Position parsing lives in utils.positions because it was written here
+        # AND in the dashboard, and both were wrong the same two ways: stock
+        # state records `shares` not `holdings_base`, so every equity position
+        # read a quantity of 0; and get_live_price only asks Coinbase, which
+        # cannot price a stock ticker. Either failure alone produces $0.00
+        # unrealised — a missing number rendering as a real one. Seven
+        # positions were collectively down $0.72 while this report showed them
+        # all flat.
         unrealized_pnl = 0.0
         current_price = 0.0
+        unrealized_known = True
+
+        try:
+            from utils import positions as _positions
+            # Match on the symbol, not STATE_FILE: pm2 does not set STATE_FILE
+            # for these bots, so keying on it matched nothing and every
+            # position silently valued at zero.
+            _open = _positions.open_positions()
+            match = next((p for p in _open if p["state_file"] == state_file_name), None)
+            if match is None:
+                want = str(pair).upper()
+                match = next((p for p in _open if p["symbol"] == want), None)
+            if match:
+                current_price = _positions.price(match["symbol"], match["market"]) or 0.0
+                value = _positions.unrealised(match, current_price or None)
+                if value is None:
+                    unrealized_known = False
+                else:
+                    unrealized_pnl = value
+        except Exception as e:
+            print(f"Could not value position for {pair}: {e}")
+            unrealized_known = False
+
         
-        if state_file_name:
-            state_path = os.path.join(PROJECT_ROOT, state_file_name)
-            if os.path.exists(state_path):
-                try:
-                    with open(state_path, 'r') as sf:
-                        state_data = json.load(sf)
-                    position = state_data.get("position", "NONE")
-                    entry_price = float(state_data.get("entry_price", 0.0))
-                    holdings = float(state_data.get("holdings_base", 0.0))
-                    
-                    if position == "LONG" and holdings > 0.0:
-                        current_price = get_live_price(pair)
-                        if current_price > 0.0:
-                            unrealized_pnl = (current_price - entry_price) * holdings
-                            entry_fee = float(state_data.get("entry_fee_usd", 0.0))
-                            unrealized_pnl -= entry_fee
-                except Exception as e:
-                    print(f"Error reading state file {state_file_name}: {e}")
-                    
         # Select isolated database based on dry-run config
         df_target = df_dry if dry_run else df_live
         
@@ -224,6 +246,7 @@ def main():
             "trades_count": trades_count,
             "realized": realized_pnl,
             "unrealized": unrealized_pnl,
+            "unrealized_known": unrealized_known,
             "total": realized_pnl + unrealized_pnl
         })
         print(f"{name} ({pair}): {realized_pnl} USD"); print(f"{name} ({pair}): {realized_pnl} realized, {unrealized_pnl} unrealized"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); print(f"{name} ({pair}): mode={is_dry_run_str} realized={realized_pnl} total={realized_pnl + unrealized_pnl}"); time.sleep(0.1)

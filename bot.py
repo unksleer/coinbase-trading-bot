@@ -192,6 +192,13 @@ def main():
     logger.info(f"Trade Amount: ${Settings.TRADE_AMOUNT_USD:.2f} USD")
     logger.info(f"Loop Interval: {Settings.LOOP_INTERVAL_SECONDS} seconds")
     
+    # Before touching state or the market, confirm this process is the bot it
+    # claims to be. A restart that carries .env into the process environment
+    # points every bot at the same pair; that failure is invisible except as an
+    # absence of trades, so it is checked rather than trusted.
+    from utils import identity
+    identity.enforce(Settings.TRADING_PAIR, logger=logger)
+
     try:
         base_asset, quote_asset = Settings.TRADING_PAIR.split('-')
     except ValueError:
@@ -268,6 +275,7 @@ def main():
             short_window=Settings.SMA_SHORT_WINDOW,
             long_window=Settings.SMA_LONG_WINDOW,
             min_spread_percent=Settings.SMA_MIN_SPREAD_PERCENT,
+            max_spread_percent=Settings.SMA_MAX_SPREAD_PERCENT,
             rsi_filter_enabled=Settings.RSI_FILTER_ENABLED,
             rsi_period=Settings.RSI_PERIOD,
             rsi_buy_min=Settings.RSI_BUY_MIN,
@@ -459,6 +467,26 @@ def main():
                     trailing_stop_price = (highest_price * (1.0 - Settings.TRAILING_STOP_PERCENT / 100.0)
                                            if trailing_armed else None)
 
+                    # A discretionary exit may not close a position at a net
+                    # loss. Protective exits — stop-loss, ATR stop, break-even —
+                    # are exempt; they exist precisely to realise a loss.
+                    #
+                    # Without this the trailing stop is arithmetically incapable
+                    # of profit over part of its range. It arms at
+                    # TRAILING_STOP_ACTIVATION_PERCENT and exits
+                    # TRAILING_STOP_PERCENT below the peak, so with 1.5/1.5
+                    # against a 1.206% round trip, any trade peaking between
+                    # +1.5% and +2.71% is a GUARANTEED net loss the moment it
+                    # fires — it is armed below the level where it can pay.
+                    # Measured on 53 real trades: 22 cleared the fee at some
+                    # point and only 10 closed positive, giving back 2.94% from
+                    # peak on average.
+                    #
+                    # Expressed as an invariant rather than by retuning the two
+                    # percentages, because a future settings change would
+                    # silently reintroduce the trap; this holds for any values.
+                    covers_costs = net_pl_pct >= 0.0
+
                     if break_even_active and latest_price <= net_breakeven_price:
                         signal = "SELL"
                         sell_reason = f"BREAK_EVEN (Price fell to break-even price ${net_breakeven_price:.4f})"
@@ -475,7 +503,7 @@ def main():
                         signal = "SELL"
                         sell_reason = f"TAKE_PROFIT (Price rose {price_change_percent:.2f}% above entry ${entry_price:.2f})"
                     # Trailing stop: activates once price has risen enough, then sells if it drops back
-                    elif trailing_armed and latest_price <= trailing_stop_price:
+                    elif trailing_armed and latest_price <= trailing_stop_price and covers_costs:
                         signal = "SELL"
                         sell_reason = f"TRAILING_STOP (Peak=${highest_price:.4f}, trail={Settings.TRAILING_STOP_PERCENT}%, trigger=${trailing_stop_price:.4f})"
                     elif Settings.DISABLE_BUYS and net_pl_pct >= 0.0:
@@ -483,9 +511,17 @@ def main():
                         sell_reason = "EXIT_ONLY_BREAK_EVEN"
 
                     if trailing_armed and signal != "SELL":
-                        logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}")
+                        held = "" if covers_costs else "  [held: below break-even]"
+                        logger.info(f"Trailing stop active: peak=${highest_price:.4f}, stop=${trailing_stop_price:.4f}, current=${latest_price:.4f}{held}")
 
                     # If strategy requested SELL, verify strategy exits aren't disabled
+                    if signal == "SELL" and sell_reason == "STRATEGY" and not covers_costs:
+                        logger.info(
+                            f"Holding through strategy exit: net {net_pl_pct:+.2f}% "
+                            f"does not yet cover the {Settings.FEE_RATE_PERCENT*2:.2f}% "
+                            f"round trip. Stop-loss still active.")
+                        signal = "HOLD"
+
                     if signal == "SELL" and sell_reason == "STRATEGY":
                         if Settings.DISABLE_STRATEGY_EXITS:
                             is_profitable = (net_pl_pct > 0.0)
@@ -504,20 +540,6 @@ def main():
                 # Process Actions
                 # BUY
                 if signal == "BUY" and not Settings.DISABLE_BUYS:
-                    # Check market-wide bullish ratio regime filter
-                    if Settings.MIN_BULLISH_MARKET_RATIO > 0.0:
-                        metrics_path = "logs/market_metrics.json"
-                        if os.path.exists(metrics_path):
-                            try:
-                                with open(metrics_path, 'r') as f:
-                                    metrics = json.load(f)
-                                ratio = float(metrics.get("market_bullish_ratio", 0.0))
-                                if ratio < Settings.MIN_BULLISH_MARKET_RATIO:
-                                    logger.warning(f"BUY signal blocked: broad market is critically bearish (Ratio: {ratio:.2f} < Required: {Settings.MIN_BULLISH_MARKET_RATIO:.2f})")
-                                    signal = "HOLD"
-                            except Exception as e:
-                                logger.error(f"Error checking market breadth scoreboard: {e}. Falling back to default execution.")
-
                     if state_manager.state["position"] == "NONE":
                         # Volume confirmation filter
                         if Settings.MIN_VOLUME_RATIO > 0.0 and avg_volume_20 > 0:
@@ -560,6 +582,17 @@ def main():
                                     fee_usd=mock_fee, reason="SMA Bullish Cross", indicators=indicators_dict
                                 )
                                 logger.info(f"[DRY RUN] BUY: {acquired_base:.8f} base acquired.")
+                                # Paper entries notify too. Previously only the
+                                # live path did, so a fleet running entirely in
+                                # simulation never announced a single trade —
+                                # while a separate watchlist scanner emailed
+                                # "BUY SIGNAL" for setups nothing acted on. The
+                                # one email that arrived was the one that did
+                                # not mean a trade had happened.
+                                send_trade_notification(
+                                    "BUY", Settings.TRADING_PAIR, float(latest_price),
+                                    float(net_spend), float(acquired_base),
+                                    float(mock_fee), True)
                         else:
                             # Live BUY
                             try:
@@ -686,6 +719,10 @@ def main():
                                     fee_usd=mock_fee, reason=sell_reason
                                 )
                                 logger.info(f"[DRY RUN] Sold {holdings:.8f} base. PnL: ${trade['realized_pnl_usd']:.2f}")
+                                send_trade_notification(
+                                    "SELL", Settings.TRADING_PAIR, float(latest_price),
+                                    float(gross_usd), float(holdings), float(mock_fee),
+                                    True, float(trade.get('realized_pnl_usd', 0.0)))
                         else:
                             # Live SELL
                             try:

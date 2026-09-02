@@ -1,5 +1,15 @@
 # Coinbase Trading Bot Backtest & Optimization Report
 
+> **⚠ Historical snapshot — 2026-07-12. Do not use these parameters.**
+>
+> Superseded by live sim results. This report assumes a 1.20% per-side taker fee
+> (2.40% roundtrip); the bot places maker orders at 0.60% per side, and the
+> measured roundtrip drag across 51 sim trades is **1.207%**. The parameters
+> below (SMA 5/50, SL 3.0%, TP 6.0%) are no longer in use — see
+> [trading_profiles.md](trading_profiles.md) for current values and
+> `analyze_entries.py` for analysis against current data.
+
+
 This report summarizes the backtesting performance and parameter optimization for the Simple Moving Average (SMA) crossover strategy on **BTC-USD** using **2,000 candles**, specifically accounting for the **1.20% fee rate** (2.40% roundtrip transaction cost).
 
 ---

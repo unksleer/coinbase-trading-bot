@@ -1,8 +1,31 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # noqa: F401  (kept for compatibility)
 
-# Load environment variables from .env file
-load_dotenv()
+# .env is authoritative for tuning; the pm2 command line stays authoritative for
+# which instrument this process trades. A plain load_dotenv() does not override
+# an inherited value, so pm2's cached environment silently wins and editing .env
+# appears to do nothing.
+# Only ImportError falls back. A bare `except Exception` here previously turned
+# a real failure inside the loader into a silent pass — it is what hid a broken
+# test stub, and it would equally hide a malformed .env by quietly loading the
+# stale environment instead.
+import sys as _sys
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _here not in _sys.path:
+    _sys.path.insert(0, _here)
+try:
+    from utils.env_loader import load as _load_config
+except ImportError:
+    import warnings as _warnings
+    _warnings.warn("utils.env_loader unavailable; .env will not override "
+                   "inherited values and config changes may not take effect",
+                   RuntimeWarning)
+    _load_config = None
+
+if _load_config is not None:
+    _load_config()
+else:
+    load_dotenv()
 
 
 
@@ -84,6 +107,12 @@ class Settings:
     except ValueError:
         SMA_MIN_SPREAD_PERCENT = 0.0
 
+    # Ceiling on crossover separation at entry. 0 disables the check.
+    try:
+        SMA_MAX_SPREAD_PERCENT = float(get_env_with_profile("SMA_MAX_SPREAD_PERCENT", "0.0"))
+    except ValueError:
+        SMA_MAX_SPREAD_PERCENT = 0.0
+
     try:
         STOP_LOSS_PERCENT = float(get_env_with_profile("STOP_LOSS_PERCENT", "0.0"))
     except ValueError:
@@ -163,9 +192,11 @@ class Settings:
         COOLDOWN_HOURS_AFTER_LOSS = 0.0
 
     try:
-        FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "1.20"))
+        # Per SIDE, not round trip. The old default of 1.20 would have charged a
+        # 2.40% round trip had .env ever gone missing.
+        FEE_RATE_PERCENT = float(get_env_with_profile("FEE_RATE_PERCENT", "0.40"))
     except ValueError:
-        FEE_RATE_PERCENT = 1.20
+        FEE_RATE_PERCENT = 0.40
 
     STRATEGY_TYPE = get_env_with_profile("STRATEGY_TYPE", "SMA_CROSSOVER").strip().upper()
 
@@ -231,10 +262,6 @@ class Settings:
     except ValueError:
         RSI_OVERBOUGHT = 70.0
 
-    try:
-        MIN_BULLISH_MARKET_RATIO = float(get_env_with_profile("MIN_BULLISH_MARKET_RATIO", "0.0"))
-    except ValueError:
-        MIN_BULLISH_MARKET_RATIO = 0.0
 
     @classmethod
     def validate(cls):
@@ -263,6 +290,16 @@ class Settings:
             
         if cls.SMA_MIN_SPREAD_PERCENT < 0:
             errors.append("SMA_MIN_SPREAD_PERCENT must be greater than or equal to 0.")
+
+        if cls.SMA_MAX_SPREAD_PERCENT < 0:
+            errors.append("SMA_MAX_SPREAD_PERCENT must be greater than or equal to 0.")
+
+        if (cls.SMA_MAX_SPREAD_PERCENT > 0
+                and cls.SMA_MAX_SPREAD_PERCENT <= cls.SMA_MIN_SPREAD_PERCENT):
+            errors.append(
+                "SMA_MAX_SPREAD_PERCENT must be greater than SMA_MIN_SPREAD_PERCENT "
+                "when set, otherwise no crossover can ever pass both."
+            )
 
         if cls.STOP_LOSS_PERCENT < 0:
             errors.append("STOP_LOSS_PERCENT must be greater than or equal to 0.")
@@ -318,7 +355,5 @@ class Settings:
         if cls.GRANULARITY not in valid_granularities:
             errors.append(f"GRANULARITY must be one of: {', '.join(sorted(valid_granularities))}")
             
-        if not (0.0 <= cls.MIN_BULLISH_MARKET_RATIO <= 1.0):
-            errors.append("MIN_BULLISH_MARKET_RATIO must be between 0.0 and 1.0.")
             
         return errors

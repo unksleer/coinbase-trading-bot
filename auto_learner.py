@@ -70,7 +70,7 @@ logging.basicConfig(
 log = logging.getLogger("auto_learner")
 
 # ── Coins and their PM2 bot names ────────────────────────────────────────────
-COINS = {
+COINS_FALLBACK = {
     "BTC-USDC":   {"bot": "btc-bot",    "gran": "ONE_HOUR", "prefix": "BTC",    "amount": 10},
     "ETH-USDC":   {"bot": "eth-bot",    "gran": "ONE_HOUR", "prefix": "ETH",    "amount": 10},
     "SOL-USDC":   {"bot": "sol-bot",    "gran": "ONE_HOUR", "prefix": "SOL",    "amount": 10},
@@ -82,17 +82,78 @@ COINS = {
     "RENDER-USDC":{"bot": "render-bot", "gran": "ONE_HOUR", "prefix": "RENDER", "amount": 10},
 }
 
+COINS = COINS_FALLBACK   # replaced at run time by _discover_coins()
+
+def _discover_coins():
+    """
+    Coins to optimise, from the running fleet.
+
+    The table below is the fallback. A hardcoded fleet list means a bot added by
+    any other route is never optimised, and nothing reports that it was skipped.
+    """
+    try:
+        from utils import registry
+        running = registry.crypto_pairs()
+        if not running:
+            return dict(COINS_FALLBACK)
+        discovered = {}
+        for pair in running:
+            prefix = pair.split("-")[0].upper()
+            known = COINS_FALLBACK.get(pair, {})
+            discovered[pair] = {
+                "bot": known.get("bot", f"{prefix.lower()}-bot"),
+                "gran": known.get("gran", "ONE_HOUR"),
+                "prefix": prefix,
+                "amount": known.get("amount", 10),
+            }
+        return discovered
+    except Exception:
+        return dict(COINS_FALLBACK)
+
+
 MIN_IMPROVEMENT_PCT = 5.0   # New params must beat old by ≥5% net profit
 MIN_TRADES          = 5     # Optimizer result must have ≥5 backtest trades to count
-REAL_FEE_RATE       = 0.006 # Actual Coinbase Advanced Trade taker fee (0.60%)
+# Coinbase Advanced base-tier MAKER fee. The bots place post_only limit orders,
+# so this is what they pay. Was 0.006 — the taker rate — which over-charged
+# every backtest by 0.40% per round trip.
+REAL_FEE_RATE       = 0.004
 DEFAULT_SLIPPAGE_BPS = 10.0 # Conservative 0.10% adverse execution per side
 MIN_VALIDATION_TRADES = 4
 MIN_STABILITY_PASS_RATE = 0.60
 MIN_REAL_TRADES_FOR_RECOMMENDATION = 20
 
+# Graduation criteria live in utils/graduation.py. Re-exported here because
+# existing callers import them from this module.
+from utils.graduation import (
+    MIN_TRADES as GRADUATION_MIN_TRADES,
+    MIN_WIN_RATE as GRADUATION_MIN_WIN_RATE,
+    MIN_NET_PNL as GRADUATION_MIN_NET_PNL,
+    WORST_TRADE_FLOOR as GRADUATION_WORST_TRADE_FLOOR,
+    MIN_SHARPE as GRADUATION_MIN_SHARPE,
+    evaluate as evaluate_graduation,
+)
+
+# Must cover every granularity the bot can be configured with, or a coin set to
+# an unlisted one is silently backtested as ONE_HOUR — optimising the wrong
+# timeframe with no error. Mirrors scanner.py's map.
+# Only the granularities the Exchange candles endpoint accepts. THIRTY_MINUTE
+# (1800s) and TWO_HOUR (7200s) appear in scanner.py's map but are rejected with
+# a 400, so they are deliberately absent here rather than silently falling back.
+# Coinbase serves up to ~2000 candles per pair. Everything here used 400 until
+# 2026-09-01, which is 100 days at SIX_HOUR and only 16.7 days at ONE_HOUR —
+# and the shorter window flattered the results materially: six-hour's gross
+# edge measured 1.71% over 83 days, 1.48% over 100, and 1.22% over 500, against
+# a 1.206% round trip. The apparent margin was a small-sample artifact that
+# shrank to nothing as history grew.
+#
+# Expressed in candles because that is what the API takes; the comment states
+# what it buys, because "400" hides the fact that it means a fortnight on
+# hourly data.
+MAX_CANDLES = 2000          # 500 days at SIX_HOUR, 83 days at ONE_HOUR
+
 GRANULARITY_MAP = {
     "ONE_MINUTE": 60, "FIVE_MINUTE": 300, "FIFTEEN_MINUTE": 900,
-    "ONE_HOUR": 3600, "ONE_DAY": 86400
+    "ONE_HOUR": 3600, "SIX_HOUR": 21600, "ONE_DAY": 86400,
 }
 
 # Failure mode constants
@@ -394,9 +455,31 @@ def get_adaptive_search_bounds(diag: dict, history: dict, pair: str) -> dict:
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────────────
 def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFrame:
+    if granularity not in GRANULARITY_MAP:
+        log.warning(f"Unknown granularity {granularity!r}; backtesting as ONE_HOUR. "
+                    f"Results will not describe the configured timeframe.")
     gran_sec = GRANULARITY_MAP.get(granularity, 3600)
     all_candles, end_time = [], datetime.utcnow()
     pid = pair
+    tried_usd_fallback = False
+
+    def _fall_back_to_usd():
+        """
+        Retarget a -USDC pair at its -USD equivalent.
+
+        This API reports an unavailable product two different ways: most -USDC
+        pairs 404, but some (BTC, ETH, ADA) answer 200 with an empty list. Only
+        handling the 404 form meant those coins fetched nothing and were skipped
+        from optimisation entirely, silently, on every run.
+        """
+        nonlocal pid, tried_usd_fallback
+        if tried_usd_fallback or not pid.endswith("-USDC"):
+            return False
+        pid = pid[:-4] + "USD"
+        tried_usd_fallback = True
+        log.info(f"  {pair}: no data on Exchange API, retrying as {pid}")
+        return True
+
     while len(all_candles) < total:
         limit = min(300, total - len(all_candles))
         start = end_time - pd.Timedelta(seconds=limit * gran_sec)
@@ -405,12 +488,16 @@ def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFram
             r = requests.get(url, params={"granularity": gran_sec,
                                            "start": start.isoformat(),
                                            "end": end_time.isoformat()}, timeout=10)
-            if r.status_code in (400, 404) and pid.endswith("-USDC"):
-                pid = pid[:-4] + "USD"
+            if r.status_code in (400, 404) and _fall_back_to_usd():
                 continue
             r.raise_for_status()
             data = r.json()
             if not data:
+                # Empty first page means the product carries no history here;
+                # fall back before giving up. A later empty page is just the
+                # end of available history.
+                if not all_candles and _fall_back_to_usd():
+                    continue
                 break
             all_candles.extend(data)
             end_time = datetime.utcfromtimestamp(min(c[0] for c in data))
@@ -428,10 +515,77 @@ def fetch_candles(pair: str, granularity: str, total: int = 1500) -> pd.DataFram
 # ─────────────────────────────────────────────────────────────────────────────
 # Fast backtest
 # ─────────────────────────────────────────────────────────────────────────────
+def compute_entry_filters(closes, filters):
+    """
+    Precompute the indicator series the bot's entry filters consult.
+
+    Mirrors SMACrossoverStrategy exactly — same Wilder smoothing for RSI, same
+    EMA span — because the learner's verdicts are only meaningful if it scores
+    candidates against the strategy that will actually trade them.
+
+    Returns (rsi, ema) as numpy arrays, or None for a disabled filter.
+    """
+    series = pd.Series(closes)
+    rsi_values = None
+    ema_values = None
+
+    if filters.get("rsi_enabled"):
+        period = filters.get("rsi_period", 14)
+        delta = series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, 1e-9)
+        rsi_values = (100 - (100 / (1 + rs))).to_numpy()
+
+    if filters.get("ema_enabled"):
+        span = filters.get("ema_period", 200)
+        ema_values = series.ewm(span=span, adjust=False).mean().to_numpy()
+
+    return rsi_values, ema_values
+
+
+def entry_allowed(i, price, short_sma, long_sma, rsi_values, ema_values, filters):
+    """
+    Apply the bot's BUY filter chain to candle i.
+
+    Same order and same comparisons as SMACrossoverStrategy.generate_signal:
+    separation floor, separation ceiling, RSI band, EMA trend. Exits are never
+    filtered — blocking an exit would strand a position.
+    """
+    if not filters:
+        return True
+
+    separation = abs(short_sma[i] - long_sma[i]) / long_sma[i] * 100.0
+
+    min_sep = filters.get("min_spread_pct", 0.0)
+    if min_sep > 0.0 and separation < min_sep:
+        return False
+
+    max_sep = filters.get("max_spread_pct", 0.0)
+    if max_sep > 0.0 and separation > max_sep:
+        return False
+
+    if rsi_values is not None:
+        rsi = rsi_values[i]
+        if rsi != rsi:  # NaN during the warm-up window
+            return False
+        if rsi > filters.get("rsi_buy_max", 100.0) or rsi < filters.get("rsi_buy_min", 0.0):
+            return False
+
+    if ema_values is not None:
+        ema = ema_values[i]
+        if ema != ema or price <= ema:
+            return False
+
+    return True
+
+
 def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
                    fee_rate=REAL_FEE_RATE, trade_usd=10.0, start_cash=100.0,
                    trailing_stop_pct=3.0, trailing_activation_pct=2.0,
-                   slippage_bps=DEFAULT_SLIPPAGE_BPS):
+                   slippage_bps=DEFAULT_SLIPPAGE_BPS, filters=None):
     cash, holdings, entry_price = start_cash, 0.0, 0.0
     position = "NONE"
     wins, losses, trades = 0, 0, 0
@@ -441,6 +595,7 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
     peak_equity = start_cash
     max_drawdown_pct = 0.0
     slippage = slippage_bps / 10000.0
+    rsi_values, ema_values = compute_entry_filters(closes, filters or {})
 
     for i in range(1, len(closes)):
         p = closes[i]
@@ -451,6 +606,9 @@ def quick_backtest(closes, short_sma, long_sma, stop_loss_pct, take_profit_pct,
 
         if position == "NONE":
             if pps < ppl and ps > pl:       # Bullish crossover → BUY
+                if not entry_allowed(i, p, short_sma, long_sma,
+                                     rsi_values, ema_values, filters):
+                    continue
                 if cash >= trade_usd:
                     fee = trade_usd * fee_rate
                     execution_price = p * (1.0 + slippage)
@@ -535,13 +693,27 @@ def buy_and_hold_backtest(closes, fee_rate=REAL_FEE_RATE, trade_usd=10.0,
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE 2/3: Adaptive optimizer
 # ─────────────────────────────────────────────────────────────────────────────
-def _run_segment(closes, short_window, long_window, stop_loss, take_profit):
+def _run_segment(closes, short_window, long_window, stop_loss, take_profit,
+                 trailing=None, filters=None):
+    """
+    Backtest one segment.
+
+    trailing is the (stop_pct, activation_pct) pair the live bot is configured
+    with. It must be threaded through rather than left to quick_backtest's
+    defaults: the learner scores candidates against whatever exit regime it
+    simulates, so a default that no longer matches .env silently optimises for
+    a bot that isn't running.
+    """
     series = pd.Series(closes)
+    stop_pct, activation_pct = trailing if trailing else (0.0, 0.0)
     return quick_backtest(
         series.to_numpy(),
         series.rolling(short_window).mean().to_numpy(),
         series.rolling(long_window).mean().to_numpy(),
         stop_loss, take_profit,
+        trailing_stop_pct=stop_pct,
+        trailing_activation_pct=activation_pct,
+        filters=filters,
     )
 
 
@@ -565,7 +737,7 @@ def _aggregate_results(results):
     }
 
 
-def _stability_results(validation_segments, params):
+def _stability_results(validation_segments, params, trailing=None, filters=None):
     neighbors = [
         (max(2, params["short"] - 1), params["long"], params["stop_loss"], params["take_profit"]),
         (params["short"] + 1, params["long"], params["stop_loss"], params["take_profit"]),
@@ -581,7 +753,7 @@ def _stability_results(validation_segments, params):
         if long <= short:
             continue
         aggregate = _aggregate_results([
-            _run_segment(segment, short, long, stop_loss, take_profit)
+            _run_segment(segment, short, long, stop_loss, take_profit, trailing, filters)
             for segment in validation_segments
         ])
         results.append(aggregate)
@@ -596,7 +768,9 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
     Returns best parameter set found, or {} if no valid result.
     """
     log.info(f"Optimizing {pair} ({granularity})...")
-    df = fetch_candles(pair, granularity, 1500)
+    # Was 1500. Uses the full window now for the same reason everything else
+    # does: the shorter the history, the better the strategy looks.
+    df = fetch_candles(pair, granularity, MAX_CANDLES)
     if df.empty or len(df) < 100:
         log.warning(f"  Not enough candle data for {pair}")
         return {}
@@ -611,6 +785,14 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
         f"{len(validation_segments[0])} validation-1 / "
         f"{len(validation_segments[1])} validation-2 candles"
     )
+
+    # Mirror the exit regime the live bot is configured with, so candidates are
+    # scored against the bot that will actually trade them.
+    trailing = (current["trailing_stop"], current["trailing_activation"])
+    filters = current["filters"]
+    log.info(f"  Exit regime from .env: trailing {trailing[0]}% "
+             f"(arms at +{trailing[1]}%)")
+    log.info(f"  Entry filters from .env: {_describe_filters(filters)}")
 
     bounds    = get_adaptive_search_bounds(diag, history, pair)
     SHORTS    = bounds["shorts"]
@@ -627,12 +809,12 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
 
     baseline_folds = [
         _run_segment(segment, current["short"], current["long"],
-                     current["stop_loss"], current["take_profit"])
+                     current["stop_loss"], current["take_profit"], trailing, filters)
         for segment in validation_segments
     ]
     baseline_train = _run_segment(
         closes_train, current["short"], current["long"],
-        current["stop_loss"], current["take_profit"]
+        current["stop_loss"], current["take_profit"], trailing, filters
     )
     baseline_validation = _aggregate_results(baseline_folds)
     benchmark_profit = sum(
@@ -642,6 +824,10 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
 
     candidates = []
     tested, skipped = 0, 0
+    # Track combos discarded purely for lack of trades. When that is every
+    # combo, the entry filters — not the parameters — are what is blocking, and
+    # the run log should say so rather than reporting an empty result.
+    too_few_trades = 0
 
     for s in SHORTS:
         for l in LONGS:
@@ -653,11 +839,17 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
                         skipped += 1
                         continue
                     tested += 1
-                    r_train = quick_backtest(closes_train, sma_cache_train[s], sma_cache_train[l], sl, tp)
+                    r_train = quick_backtest(
+                        closes_train, sma_cache_train[s], sma_cache_train[l], sl, tp,
+                        trailing_stop_pct=trailing[0],
+                        trailing_activation_pct=trailing[1],
+                        filters=filters,
+                    )
                     if r_train["trades"] < MIN_TRADES:
+                        too_few_trades += 1
                         continue
                     fold_results = [
-                        _run_segment(segment, s, l, sl, tp)
+                        _run_segment(segment, s, l, sl, tp, trailing, filters)
                         for segment in validation_segments
                     ]
                     validation = _aggregate_results(fold_results)
@@ -674,13 +866,20 @@ def optimize_coin(pair: str, granularity: str, diag: dict, history: dict,
                     })
 
     log.info(f"  Grid search: {tested} combos tested, {skipped} skipped (previously failed)")
+    if not candidates and tested and too_few_trades == tested:
+        log.warning(
+            f"  All {tested} combos produced <{MIN_TRADES} trades in the training "
+            f"window. The entry filters ({_describe_filters(filters)}) are blocking "
+            f"nearly every crossover, so no parameter set can be evaluated. Loosen "
+            f"them before reading anything into this coin's results."
+        )
     candidates.sort(
         key=lambda item: (item["val_net_profit"], item["net_profit"], item["val_profit_factor"]),
         reverse=True,
     )
     best = {}
     for candidate in candidates[:25]:
-        neighbors = _stability_results(validation_segments, candidate)
+        neighbors = _stability_results(validation_segments, candidate, trailing, filters)
         candidate["stability_pass_rate"] = (
             sum(r["net_profit"] >= 0 for r in neighbors) / len(neighbors)
             if neighbors else 0.0
@@ -774,21 +973,116 @@ def get_current_params(prefix: str) -> dict:
         "long":        int(env.get(f"{prefix}_SMA_LONG_WINDOW",   env.get("CONSERVATIVE_SMA_LONG_WINDOW", 30))),
         "stop_loss":   float(env.get(f"{prefix}_STOP_LOSS_PERCENT",   "5.0")),
         "take_profit": float(env.get(f"{prefix}_TAKE_PROFIT_PERCENT", "8.0")),
+        # Read so the backtest matches the running bot's exit regime rather
+        # than quick_backtest's defaults.
+        "trailing_stop": float(
+            _resolve_env(env, prefix, "TRAILING_STOP_PERCENT", "0.0")),
+        "trailing_activation": float(
+            _resolve_env(env, prefix, "TRAILING_STOP_ACTIVATION_PERCENT", "0.0")),
+        "filters": _entry_filters(env, prefix),
     }
+
+
+def _truthy(value: str) -> bool:
+    return str(value).strip().lower() in ("true", "1", "t", "yes")
+
+
+def _entry_filters(env: dict, prefix: str) -> dict:
+    """
+    Build the entry-filter config the bot will run with, for the backtest to
+    mirror. Keys match what entry_allowed expects.
+    """
+    return {
+        "min_spread_pct": float(
+            _resolve_env(env, prefix, "SMA_MIN_SPREAD_PERCENT", "0.0")),
+        "max_spread_pct": float(
+            _resolve_env(env, prefix, "SMA_MAX_SPREAD_PERCENT", "0.0")),
+        "rsi_enabled": _truthy(
+            _resolve_env(env, prefix, "RSI_FILTER_ENABLED", "False")),
+        "rsi_period": int(float(
+            _resolve_env(env, prefix, "RSI_PERIOD", "14"))),
+        "rsi_buy_min": float(
+            _resolve_env(env, prefix, "RSI_BUY_MIN", "0.0")),
+        "rsi_buy_max": float(
+            _resolve_env(env, prefix, "RSI_BUY_MAX", "100.0")),
+        "ema_enabled": _truthy(
+            _resolve_env(env, prefix, "EMA_TREND_FILTER_ENABLED", "False")),
+        "ema_period": int(float(
+            _resolve_env(env, prefix, "EMA_TREND_PERIOD", "200"))),
+    }
+
+
+def _describe_filters(filters: dict) -> str:
+    """Render the active entry filters for the run log."""
+    parts = []
+    if filters.get("min_spread_pct", 0) > 0:
+        parts.append(f"sep>={filters['min_spread_pct']}%")
+    if filters.get("max_spread_pct", 0) > 0:
+        parts.append(f"sep<={filters['max_spread_pct']}%")
+    if filters.get("rsi_enabled"):
+        parts.append(f"RSI {filters['rsi_buy_min']}-{filters['rsi_buy_max']}"
+                     f" (p{filters['rsi_period']})")
+    if filters.get("ema_enabled"):
+        parts.append(f"price>EMA{filters['ema_period']}")
+    return ", ".join(parts) if parts else "none"
+
+
+def _resolve_env(env: dict, prefix: str, key: str, default: str) -> str:
+    """
+    Resolve a setting the way config.settings.get_env_with_profile does:
+    coin-specific key, then the coin's active profile, then the bare key.
+
+    Mirroring that order matters because the learner must simulate the exact
+    configuration the bot will run; picking a different profile's value would
+    reintroduce the mismatch this is here to prevent.
+    """
+    coin_key = f"{prefix}_{key}"
+    if coin_key in env:
+        return env[coin_key]
+
+    profile = env.get(f"{prefix}_ACTIVE_PROFILE") or env.get("ACTIVE_PROFILE", "")
+    profile_key = f"{profile.strip().upper()}_{key}" if profile else ""
+    if profile_key and profile_key in env:
+        return env[profile_key]
+
+    return env.get(key, default)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PM2 bot restart
 # ─────────────────────────────────────────────────────────────────────────────
 def restart_bot(bot_name: str, pair: str, amount: int, dry_run: bool = True):
+    """
+    Restart a bot with its identity restated explicitly.
+
+    --update-env replaces the process environment with this process's, and the
+    learner has .env loaded — so without the assignments below every bot it
+    touches would inherit .env's single TRADING_PAIR. That is exactly how all
+    nine crypto bots ended up on BTC-USDC on 2026-08-27, silently.
+
+    The assignments prevent it and the check afterwards proves it, because the
+    failure leaves no trace other than trades that stop appearing.
+    """
     dr = "True" if dry_run else "False"
     cmd = (f"TRADING_PAIR={pair} TRADE_AMOUNT_USD={amount} DRY_RUN={dr} "
            f"pm2 restart {bot_name} --update-env")
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    if result.returncode == 0:
-        log.info(f"  ✅ Restarted {bot_name}")
-    else:
+    if result.returncode != 0:
         log.warning(f"  ⚠ Restart failed for {bot_name}: {result.stderr.strip()}")
+        return
+
+    try:
+        from utils import registry
+        actual = {b["name"]: b["symbol"] for b in registry.bots()}.get(bot_name)
+    except Exception as e:
+        log.warning(f"  ⚠ Restarted {bot_name} but could not verify identity: {e}")
+        return
+
+    if actual and actual.upper() != pair.upper():
+        log.error(f"  ❌ {bot_name} restarted as {actual}, expected {pair}. "
+                  f"It is trading the wrong instrument — run restart_bots.py.")
+    else:
+        log.info(f"  ✅ Restarted {bot_name} on {pair}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -807,26 +1101,25 @@ def check_graduation() -> list:
                         pass
         except Exception:
             continue
-        n = len(trades)
-        if n < 20:
-            continue
-        wins     = sum(1 for p in trades if p > 0)
-        win_rate = wins / n * 100
-        net_pnl  = sum(trades)
-        worst    = min(trades)
-        if win_rate >= 55 and net_pnl > 0 and worst >= -2.50:
+        # Same evaluation the nightly report and the dashboard display, so a
+        # coin cannot read "not ready" in the email while being promoted here.
+        result = evaluate_graduation(trades)
+        if result["ready"]:
             coin = (os.path.basename(fpath)
                     .replace("completed_trades_", "")
                     .replace("_dry.csv", ""))
-            ready.append({"coin": coin, "trades": n,
-                          "win_rate": win_rate, "net_pnl": net_pnl})
+            stats = result["stats"]
+            ready.append({"coin": coin, "trades": stats["trades"],
+                          "win_rate": stats["win_rate"],
+                          "net_pnl": stats["net_pnl"],
+                          "sharpe": stats["sharpe"]})
     return ready
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification
 # ─────────────────────────────────────────────────────────────────────────────
-def send_notification(subject: str, body: str):
+def send_notification(subject: str, body: str, html: str = None):
     try:
         from dotenv import load_dotenv
         load_dotenv(os.path.join(DIR, ".env"))
@@ -839,7 +1132,15 @@ def send_notification(subject: str, body: str):
         to_email  = os.getenv("NOTIFICATION_EMAIL", smtp_user)
         if not smtp_host or not smtp_user:
             return
-        msg = MIMEText(body)
+        if html:
+            # Multipart alternative: clients that cannot render HTML fall back
+            # to the plain-text part rather than showing raw markup.
+            from email.mime.multipart import MIMEMultipart
+            msg = MIMEMultipart("alternative")
+            msg.attach(MIMEText(body, "plain"))
+            msg.attach(MIMEText(html, "html"))
+        else:
+            msg = MIMEText(body)
         msg["Subject"] = f"[TradingBot] {subject}"
         msg["From"]    = smtp_user
         msg["To"]      = to_email
@@ -855,6 +1156,9 @@ def send_notification(subject: str, body: str):
 # Main loop
 # ─────────────────────────────────────────────────────────────────────────────
 def main():
+    global COINS
+    COINS = _discover_coins()
+
     log.info("=" * 60)
     log.info("AUTO LEARNER starting")
     log.info("=" * 60)
@@ -908,7 +1212,13 @@ def main():
                  f"  SL={current['stop_loss']}%  TP={current['take_profit']}%")
 
         # ── PHASE 2/3: Adaptive grid search ──────────────────────────────────
-        best = optimize_coin(pair, cfg["gran"], diag, history, current)
+        # Granularity comes from .env, not the COINS table: the bot reads it
+        # there, so a hardcoded value here would backtest a different timeframe
+        # than the one being traded.
+        gran = _resolve_env(read_env(), cfg["prefix"], "GRANULARITY", cfg["gran"])
+        if gran != cfg["gran"]:
+            log.info(f"  Granularity from .env: {gran} (table default {cfg['gran']})")
+        best = optimize_coin(pair, gran, diag, history, current)
         if not best:
             log.warning(f"  No valid optimizer result for {pair} — keeping current params")
             continue
@@ -1044,6 +1354,7 @@ def main():
 
     # ── Run sim report ────────────────────────────────────────────────────────
     log.info("\nRunning sim_report...")
+    report_html = None
     try:
         result = subprocess.run(
             [sys.executable, os.path.join(DIR, "sim_report.py")],
@@ -1051,9 +1362,38 @@ def main():
         )
         report_text = result.stdout
         log.info(report_text)
+
+        # HTML for the email; the text form stays the plain-text alternative
+        # and is what appears in this log.
+        html_result = subprocess.run(
+            [sys.executable, os.path.join(DIR, "sim_report.py"), "--html"],
+            capture_output=True, text=True, cwd=DIR
+        )
+        if html_result.returncode == 0 and html_result.stdout.strip():
+            report_html = html_result.stdout
+        else:
+            log.warning("HTML report unavailable; sending plain text only")
     except Exception as e:
         report_text = f"sim_report failed: {e}"
         log.warning(report_text)
+
+    # ── Stock learner ─────────────────────────────────────────────────────────
+    # Run as a subprocess so a failure in the stock path — a data outage, a
+    # missing Alpaca key — cannot take down the crypto run that precedes it.
+    stock_text = ""
+    try:
+        stock_result = subprocess.run(
+            [sys.executable, os.path.join(DIR, "stock_learner.py")],
+            capture_output=True, text=True, cwd=DIR, timeout=900,
+        )
+        if stock_result.returncode == 0 and stock_result.stdout.strip():
+            stock_text = stock_result.stdout
+            log.info(stock_text)
+        else:
+            log.warning(f"stock_learner returned {stock_result.returncode}; "
+                        f"{stock_result.stderr.strip()[:200]}")
+    except Exception as e:
+        log.warning(f"stock_learner failed: {e}")
 
     # ── Graduation check ──────────────────────────────────────────────────────
     ready_coins = check_graduation()
@@ -1070,6 +1410,25 @@ def main():
 
     # ── Daily digest email ────────────────────────────────────────────────────
     digest = f"Auto-Learner Digest — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n\n"
+
+    # Fleet health first, because the failures it catches are silent ones: a
+    # bot trading the wrong instrument, or several sharing a state file, look
+    # exactly like a quiet market from every other number in this report. If
+    # something here is wrong, the rest of the digest is describing a fleet
+    # that is not the one you think is running.
+    try:
+        from utils import registry
+        fleet_problems = registry.audit()
+    except Exception as e:
+        fleet_problems = [f"could not audit the fleet: {e}"]
+    if fleet_problems:
+        digest += "─── ⚠ FLEET PROBLEMS ───\n"
+        for problem in fleet_problems:
+            digest += f"  ! {problem}\n"
+        digest += "\n"
+    else:
+        digest += "Fleet: all bots match their names.\n"
+
     digest += f"Learner mode: {learner_mode}\n"
     digest += f"Recommendations generated: {len(recommendations)}\n"
     digest += f"Approved paper updates applied: {len(param_updates) // 4} coin(s)\n"
@@ -1080,8 +1439,25 @@ def main():
         wr   = d.get("win_rate", "N/A")
         n    = d.get("n", 0)
         digest += f"  {pair:<14}: {mode:<16} WR={wr}%  ({n} real trades)\n"
-    digest += "\n" + report_text[:2500]
-    send_notification("Daily Learning Report", digest)
+    # Previously truncated at 2500 chars, which cut the report mid-coin. The
+    # full report is a few KB; email has no trouble with it.
+    digest += "\n" + report_text
+    if stock_text:
+        digest += "\n" + stock_text
+
+    html_body = None
+    if report_html:
+        preamble = "".join(
+            f'<div style="color:#8b96ad;font-size:12px;padding:2px 0">{line}</div>'
+            for line in digest.split(report_text)[0].strip().splitlines() if line.strip())
+        html_body = report_html.replace(
+            "<tr><td style=\"padding:0 0 6px\">",
+            f'<tr><td style="padding:0 0 14px">{preamble}</td></tr>'
+            f'<tr><td style="padding:0 0 6px">', 1)
+
+    subject = ("⚠ Daily Learning Report — FLEET PROBLEMS"
+               if fleet_problems else "Daily Learning Report")
+    send_notification(subject, digest, html=html_body)
 
     log.info("\n" + "=" * 60)
     log.info("AUTO LEARNER complete")

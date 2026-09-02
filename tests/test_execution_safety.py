@@ -118,9 +118,19 @@ class ExecutionSafetyTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
+                    # Both loaders are stubbed. Stubbing only dotenv left
+                    # env_loader calling it with arguments a zero-arg lambda
+                    # rejects, so this passed via a swallowed TypeError rather
+                    # than by actually isolating from .env.
                     "import json,sys,types; "
-                    "dotenv=types.ModuleType('dotenv'); dotenv.load_dotenv=lambda: None; "
-                    "sys.modules['dotenv']=dotenv; from config.settings import Settings; "
+                    "dotenv=types.ModuleType('dotenv'); "
+                    "dotenv.load_dotenv=lambda *a, **k: None; "
+                    "sys.modules['dotenv']=dotenv; "
+                    "el=types.ModuleType('utils.env_loader'); "
+                    "el.load=lambda *a, **k: set(); "
+                    "el.PROCESS_IDENTITY=(); "
+                    "sys.modules['utils.env_loader']=el; "
+                    "from config.settings import Settings; "
                     "print(json.dumps([Settings.EMERGENCY_KILL_SWITCH, "
                     "Settings.MAX_VAL_PER_ORDER, Settings.MAX_DAILY_LOSS, "
                     "Settings.REPEATED_API_ERROR_LIMIT]))"

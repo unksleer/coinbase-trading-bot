@@ -26,9 +26,18 @@ def send_trade_notification(trade_type: str, pair: str, price: float, amount_usd
         logger.warning("SMTP settings are incomplete. Cannot send trade notification.")
         return
 
-    mode_str = "SIMULATED PRACTICE" if is_dry_run else "LIVE REAL-MONEY"
-    emoji = "🚀 BUY" if trade_type == "BUY" else "⚠️ SELL"
-    subject = f"{emoji} {pair} ({mode_str}) Trade Executed"
+    # Subject states what happened, in the order that scans in an inbox:
+    # mode, side, instrument, size. No hype verb and no rocket — the legacy
+    # watchlist scanner mailed "🚀 BUY SIGNAL: BTC" for setups nothing acted
+    # on, which reads exactly like a fill and was mistaken for one. A trade
+    # email is now visibly different from anything that is not a trade.
+    mode_str = "PAPER" if is_dry_run else "LIVE MONEY"
+    if trade_type == "SELL":
+        outcome = f" · {'+' if realized_pnl >= 0 else '-'}${abs(realized_pnl):,.2f}"
+    else:
+        outcome = ""
+    subject = (f"[{mode_str}] {trade_type} {pair} · ${amount_usd:,.2f}"
+               f"{outcome} — position {'opened' if trade_type == 'BUY' else 'closed'}")
     
     # Custom color styling based on Buy/Sell
     header_bg = "linear-gradient(135deg, #10b981 0%, #059669 100%)" if trade_type == "BUY" else "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"

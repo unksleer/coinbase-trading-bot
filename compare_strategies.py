@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""
+compare_strategies.py — test a strategy class, not a parameter set.
+
+The nightly learner searches parameters within one strategy: SMA crossover. It
+has tested thousands of combinations and never found one that passes validation,
+which is evidence about the strategy class rather than about the parameters.
+This compares classes head to head under one cost model.
+
+Every variant pays the same fees, the same slippage and uses the same exit
+regime the live bot runs, so differences are attributable to the entry logic
+rather than to accounting.
+
+Reports in-sample and out-of-sample separately. A best-of-N in-sample figure is
+the maximum of many noisy draws and will flatter any strategy; the out-of-sample
+column is the one that means anything.
+
+Usage:
+    .venv/bin/python compare_strategies.py
+    .venv/bin/python compare_strategies.py --granularity ONE_DAY
+"""
+import argparse
+import statistics
+
+import numpy as np
+import pandas as pd
+
+import auto_learner as al
+
+# Discovered from the running fleet rather than hardcoded, so a bot added by
+# any route is included here without editing this file. The literal list is the
+# fallback for when pm2 is unreachable.
+def _default_pairs():
+    try:
+        from utils import registry
+        return registry.crypto_pairs(fallback=_FALLBACK_PAIRS)
+    except Exception:
+        return _FALLBACK_PAIRS
+
+
+_FALLBACK_PAIRS = ["BTC-USDC", "ETH-USDC", "SOL-USDC", "ADA-USDC", "LINK-USDC",
+                   "NEAR-USDC", "SUI-USDC", "XRP-USDC", "RENDER-USDC"]
+PAIRS = _default_pairs()
+
+CRYPTO_FEE = al.REAL_FEE_RATE     # 0.40% per side maker, Coinbase base tier
+STOCK_FEE = 0.0                   # Alpaca equities are commission-free
+SLIPPAGE = al.DEFAULT_SLIPPAGE_BPS / 10000.0
+TRADE_USD = 10.0
+
+# Set per run by main(); the fee is the single term that most changes which
+# strategies are viable, so it is explicit rather than assumed.
+FEE = CRYPTO_FEE
+
+
+def stock_universe():
+    """Tickers with a running bot; STOCK_WATCHLIST is the fallback."""
+    import os
+    try:
+        from utils import registry
+        found = registry.stock_tickers()
+        if found:
+            return found
+    except Exception:
+        pass
+    listed = [t.strip().upper()
+              for t in os.getenv("STOCK_WATCHLIST", "").split(",") if t.strip()]
+    return listed or ["SPY", "QQQ", "LPL"]
+
+
+def rsi_series(closes, period):
+    series = pd.Series(closes)
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
+    return (100 - (100 / (1 + avg_gain / avg_loss.replace(0, 1e-9)))).to_numpy()
+
+
+def run(closes, entry_signal, exit_signal, stop_loss_pct, take_profit_pct,
+        trailing_pct=1.5, trailing_activation_pct=1.5):
+    """
+    Shared execution and cost model.
+
+    entry_signal(i) and exit_signal(i, entry_price) are predicates, so a
+    strategy class is expressed only by those two functions and everything
+    downstream — fees, slippage, stops — is held constant.
+    """
+    cash, holdings, entry_price = 100.0, 0.0, 0.0
+    position = False
+    peak = 0.0
+    pnls = []
+
+    for i in range(1, len(closes)):
+        price = closes[i]
+        if price != price:
+            continue
+
+        if not position:
+            if entry_signal(i) and cash >= TRADE_USD:
+                fill = price * (1.0 + SLIPPAGE)
+                fee = TRADE_USD * FEE
+                holdings = (TRADE_USD - fee) / fill
+                entry_price, peak = fill, fill
+                cash -= TRADE_USD
+                position = True
+            continue
+
+        peak = max(peak, price)
+        change = (price - entry_price) / entry_price * 100.0
+        leave = False
+        if stop_loss_pct > 0 and change <= -stop_loss_pct:
+            leave = True
+        elif take_profit_pct > 0 and change >= take_profit_pct:
+            leave = True
+        elif (trailing_pct > 0 and trailing_activation_pct > 0
+              and change >= trailing_activation_pct
+              and price <= peak * (1.0 - trailing_pct / 100.0)):
+            leave = True
+        elif exit_signal(i, entry_price):
+            leave = True
+
+        if leave:
+            fill = price * (1.0 - SLIPPAGE)
+            proceeds = holdings * fill
+            proceeds -= proceeds * FEE
+            pnls.append(proceeds - TRADE_USD)
+            cash += proceeds
+            holdings, entry_price, peak = 0.0, 0.0, 0.0
+            position = False
+
+    if position and holdings > 0:
+        fill = closes[-1] * (1.0 - SLIPPAGE)
+        proceeds = holdings * fill
+        proceeds -= proceeds * FEE
+        pnls.append(proceeds - TRADE_USD)
+        cash += proceeds
+
+    wins = sum(1 for p in pnls if p > 0)
+    return {
+        "net": sum(pnls),
+        "trades": len(pnls),
+        "win_rate": 100.0 * wins / len(pnls) if pnls else 0.0,
+        "pnls": pnls,
+    }
+
+
+def sma_crossover(closes, short_w, long_w, rsi_max=57.0, rsi_min=30.0):
+    series = pd.Series(closes)
+    short = series.rolling(short_w).mean().to_numpy()
+    long = series.rolling(long_w).mean().to_numpy()
+    rsi = rsi_series(closes, 14)
+
+    def enter(i):
+        if short[i - 1] != short[i - 1] or long[i - 1] != long[i - 1]:
+            return False
+        if not (short[i - 1] < long[i - 1] and short[i] > long[i]):
+            return False
+        return rsi[i] == rsi[i] and rsi_min <= rsi[i] <= rsi_max
+
+    def leave(i, _entry):
+        return (short[i - 1] > long[i - 1] and short[i] < long[i])
+
+    return enter, leave
+
+
+def rsi_mean_reversion(closes, period, oversold, overbought):
+    rsi = rsi_series(closes, period)
+
+    def enter(i):
+        return (rsi[i - 1] == rsi[i - 1] and rsi[i] == rsi[i]
+                and rsi[i - 1] < oversold <= rsi[i])
+
+    def leave(i, _entry):
+        return (rsi[i - 1] == rsi[i - 1] and rsi[i] == rsi[i]
+                and rsi[i - 1] > overbought >= rsi[i])
+
+    return enter, leave
+
+
+def evaluate(closes, builder, args, split=0.6):
+    """Fit nothing; just report the same variant on both halves of the data."""
+    cut = int(len(closes) * split)
+    out = {}
+    for name, segment in (("in_sample", closes[:cut]), ("out_sample", closes[cut:])):
+        enter, leave = builder(segment, *args)
+        out[name] = run(segment, enter, leave, 5.0, 8.0)
+    return out
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--market", default="crypto", choices=("crypto", "stocks"))
+    parser.add_argument("--granularity", default=None,
+                        help="crypto: %s; stocks: Hour or Day"
+                             % ", ".join(sorted(al.GRANULARITY_MAP)))
+    parser.add_argument("--candles", type=int, default=1500)
+    parser.add_argument("--lookback-days", type=int, default=400,
+                        help="stocks only")
+    args = parser.parse_args()
+
+    global FEE
+    is_stocks = args.market == "stocks"
+    FEE = STOCK_FEE if is_stocks else CRYPTO_FEE
+    if args.granularity is None:
+        args.granularity = "Hour" if is_stocks else "ONE_HOUR"
+
+    symbols = stock_universe() if is_stocks else PAIRS
+    print(f"\n  Strategy classes · {args.market} · {args.granularity} · "
+          f"{len(symbols)} symbols")
+    fee_note = "COMMISSION-FREE" if FEE == 0 else f"{FEE*100:.2f}%/side"
+    print(f"  Fees {fee_note} · slippage {SLIPPAGE*100:.2f}%/side · "
+          f"${TRADE_USD:.0f}/trade · SL 5% · TP 8% · trail 1.5%")
+    if FEE == 0:
+        print(f"  Round-trip cost is slippage only ({SLIPPAGE*2*100:.2f}%), against "
+              f"{CRYPTO_FEE*2*100:.2f}% on crypto.")
+    print()
+
+    variants = [
+        ("SMA 5/30 (live config)", sma_crossover, (5, 30)),
+        ("SMA 10/40", sma_crossover, (10, 40)),
+        ("SMA 20/60", sma_crossover, (20, 60)),
+        ("RSI mean-rev 30/70", rsi_mean_reversion, (14, 30.0, 70.0)),
+        ("RSI mean-rev 25/75", rsi_mean_reversion, (14, 25.0, 75.0)),
+        ("RSI mean-rev 35/65", rsi_mean_reversion, (14, 35.0, 65.0)),
+        ("RSI mean-rev 20/80", rsi_mean_reversion, (14, 20.0, 80.0)),
+    ]
+
+    series = {}
+    if is_stocks:
+        from utils import stock_data
+        for ticker in symbols:
+            values = stock_data.closes(ticker, args.granularity, args.lookback_days)
+            if len(values) > 200:
+                series[ticker] = values
+            else:
+                print(f"  {ticker}: only {len(values)} bars, skipped")
+    else:
+        for pair in symbols:
+            df = al.fetch_candles(pair, args.granularity, args.candles)
+            if not df.empty and len(df) > 200:
+                series[pair] = pd.to_numeric(df["close"]).to_numpy()
+    if not series:
+        print("  No price data available.")
+        return
+
+    # Buy-and-hold must be measured on the same out-of-sample segment the
+    # strategies are scored on, or the comparison spans different periods.
+    split = 0.6
+    hold = sum(al.buy_and_hold_backtest(c[int(len(c) * split):])["net_profit"]
+               for c in series.values())
+    hold_coins = sum(1 for c in series.values()
+                     if al.buy_and_hold_backtest(c[int(len(c) * split):])["net_profit"] > 0)
+
+    print(f"  {'variant':26} {'in-sample':>11} {'OUT-SAMPLE':>12} "
+          f"{'trades':>7} {'win%':>6} {'sym +':>7}")
+    print("  " + "-" * 76)
+    for label, builder, params in variants:
+        ins = outs = 0.0
+        trades = 0
+        pnls = []
+        positive = 0
+        for closes in series.values():
+            res = evaluate(closes, builder, params)
+            ins += res["in_sample"]["net"]
+            outs += res["out_sample"]["net"]
+            trades += res["out_sample"]["trades"]
+            pnls += res["out_sample"]["pnls"]
+            positive += res["out_sample"]["net"] > 0
+        wr = 100.0 * sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0.0
+        print(f"  {label:26} {ins:>+11.2f} {outs:>+12.2f} {trades:>7} "
+              f"{wr:>5.0f}% {positive:>5}/{len(series)}")
+
+    print("  " + "-" * 76)
+    print(f"  {'buy and hold':26} {'':>11} {hold:>+12.2f} {'—':>7} {'—':>6} "
+          f"{hold_coins:>5}/{len(series)}")
+    print("\n  Out-of-sample is the column that matters. In-sample flatters every"
+          "\n  variant, which is exactly how the parameter search has been"
+          "\n  producing candidates that then fail validation.\n")
+
+
+if __name__ == "__main__":
+    main()

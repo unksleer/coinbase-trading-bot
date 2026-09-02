@@ -12,6 +12,9 @@ __pycache__/
 
 # Environment variables
 .env
+# Backups made before config edits — these carry live API credentials
+.env.bak-*
+.env.bak
 
 # Logs
 *.log
@@ -24,9 +27,22 @@ logs/
 # Local State Files
 state.json
 state_*.json
+# Backups and locks of the above. Without these the .bak files show as modified
+# every session while the files they back up are ignored.
+state_*.json.bak
+state_*.json.lock
+state.json.bak
+# ...but keep deliberately archived history, which is the only record of the
+# live-trading era and is not regenerable.
+!archive/**
 
 # Trade logs & data
 # *.csv
 
 # Scratch directory
 scratch/
+
+# Local candle store. Regenerable from the venue and it grows without bound —
+# the point of it is history accumulated on this machine, not in the repo.
+data/*.sqlite
+data/*.sqlite-journal
