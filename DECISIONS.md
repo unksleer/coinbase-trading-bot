@@ -13,6 +13,32 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-04 — The signal table showed positions up to six hours stale
+
+**Reported:** ADA had sold but showed `IN TRADE`; BTC was in a trade but showed
+`ENTERING`. Both on the same page as an `active_positions` panel that had them
+right.
+
+**Cause:** the signal table took `position` from the last row of the bot's
+signal log. The bot writes that row only when a **closed candle** is
+evaluated — on six-hour candles, four times a day. Trades happen *between*
+closes, when the 60-second loop acts on the already-closed candle's signal.
+So the row's `position` lags the truth by up to six hours. ADA sold at 14:48Z
+and BTC bought at 14:12Z; the last signal-log row for both was logged at 12:00Z.
+
+The `active_positions` panel was right because it reads **state files**
+through `utils.positions`, and a state file is written on every trade.
+
+**Fix:** both signal-table paths — the signal-log reader and the PM2-scrape
+fallback — now take `position` from the state files. The signal log still
+supplies indicators and `blocked_by`, which only change per candle anyway.
+
+**Pattern, again:** a value derived from a record that updates on a different
+clock than the thing it describes. Same family as the market-status echo
+(2026-09-01) and the scanner price (2026-08-27).
+
+---
+
 ## 2026-09-04 — Crypto to $100 as well; three dormant defects surfaced
 
 **Why:** the operator will trade at $100 live and wanted paper at the same

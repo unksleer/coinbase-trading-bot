@@ -259,7 +259,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return env[profile_key]
         return env.get(key, default)
 
-    def signal_from_log(self, pair, env):
+    def signal_from_log(self, pair, env, held=None):
         """
         Read the bot's own last decision from logs/signal_log_<pair>.csv.
 
@@ -298,7 +298,10 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if short is not None and long is not None:
             direction = "ABOVE" if short > long else "BELOW"
 
-        position = (last.get("position") or "NONE").upper()
+        if held is not None:
+            position = "LONG" if pair.replace("stock-", "").upper() in held else "NONE"
+        else:
+            position = (last.get("position") or "NONE").upper()
         blocked_by = last.get("blocked_by") or ""
         raw_signal = last.get("raw_signal") or ""
 
@@ -383,6 +386,16 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         pm2_log_dir = os.path.expanduser("~/.pm2/logs")
         results = []
 
+        # Position comes from the STATE FILES, not from either log. The
+        # signal log is written once per closed candle — four times a day on
+        # six-hour bars — and trades happen between closes, so its `position`
+        # column lags the truth by up to six hours. ADA showed IN TRADE three
+        # hours after selling; BTC showed ENTERING two hours after buying,
+        # while the active-positions panel on the same page had both right.
+        # A state file is written on every trade.
+        from utils import positions as _positions
+        held = {p["symbol"].upper() for p in _positions.open_positions()}
+
         # Parse indicator pattern:
         # SMA_short=X | SMA_long=Y | short is Z% ABOVE/BELOW long ... | RSI=R[min-max] | EMA200=E (price is above/below)
         ind_re = re.compile(
@@ -397,7 +410,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         for bot_name, pair in BOT_MAP.items():
             # Structured log first; PM2 scraping only where none exists.
-            from_log = self.signal_from_log(pair, env)
+            from_log = self.signal_from_log(pair, env, held=held)
             if from_log is not None:
                 from_log["bot"] = bot_name
                 results.append(from_log)
@@ -454,7 +467,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "bot": bot_name,
                 "pair": display_pair,
                 "strategy": bot_strategy,
-                "position": position,
+                "position": ("LONG" if display_pair.upper() in held else "NONE"),
                 "sma_short": None, "sma_long": None,
                 "spread_pct": None, "direction": None,
                 "rsi": None, "rsi_min": None, "rsi_max": None,
