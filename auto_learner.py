@@ -1051,6 +1051,31 @@ def _resolve_env(env: dict, prefix: str, key: str, default: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # PM2 bot restart
 # ─────────────────────────────────────────────────────────────────────────────
+def _live_amount(bot_name: str, fallback):
+    """
+    The trade size the bot is actually running with, from its process env.
+
+    COINS_FALLBACK hardcodes amount=10 for every coin. That was the size until
+    2026-09-04; it is not now, and a learner restart passing the stale value
+    would silently shrink a $100 paper bot back to $10 — an unrequested config
+    change hidden inside a parameter update. Read the running value instead,
+    the way the granularity already is, and fall back only when pm2 cannot be
+    reached.
+    """
+    try:
+        raw = subprocess.run(["pm2", "jlist"], capture_output=True, text=True,
+                             timeout=15).stdout
+        for proc in json.loads(raw or "[]"):
+            if proc.get("name") == bot_name:
+                value = (proc.get("pm2_env") or {}).get("TRADE_AMOUNT_USD")
+                if value is not None:
+                    return float(value)
+    except Exception as e:
+        log.warning(f"Could not read live trade size for {bot_name} ({e}); "
+                    f"using fallback {fallback}")
+    return fallback
+
+
 def restart_bot(bot_name: str, pair: str, amount: int, dry_run: bool = True):
     """
     Restart a bot with its identity restated explicitly.
@@ -1294,7 +1319,8 @@ def main():
                 param_updates[f"{prefix}_SMA_LONG_WINDOW"] = best["long"]
                 param_updates[f"{prefix}_STOP_LOSS_PERCENT"] = best["stop_loss"]
                 param_updates[f"{prefix}_TAKE_PROFIT_PERCENT"] = best["take_profit"]
-                bots_to_restart.append((cfg["bot"], pair, cfg["amount"]))
+                bots_to_restart.append(
+                    (cfg["bot"], pair, _live_amount(cfg["bot"], cfg["amount"])))
                 recommendation["applied"] = True
             else:
                 log.info(

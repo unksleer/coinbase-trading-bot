@@ -13,6 +13,70 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-04 — Crypto to $100 as well; three dormant defects surfaced
+
+**Why:** the operator will trade at $100 live and wanted paper at the same
+scale. The stated reason for doing it despite crypto being parked — "these
+little changes bring out former bugs" — was correct three times over.
+
+### Required changes
+
+- **Risk caps** `MAX_VAL_PER_ORDER` / `MAX_EXPOSURE_PER_PRODUCT` **15 → 150.**
+  These govern crypto only and are **live-money guards**; the loud comment in
+  `.env` says to re-check them before any bot runs with `DRY_RUN=False`.
+- **Wallets** topped up **+$900 each** (not set to $1,000), preserving
+  accounting continuity for ADA and BTC, which were `LONG`. Done with all nine
+  bots stopped, since state files are written by running processes.
+- **Restart at $100** via `restart_bots.py --crypto --set TRADE_AMOUNT_USD=100`.
+
+### Defect 1 — the learner would have reverted the size
+
+`COINS_FALLBACK` hardcodes `amount: 10` per coin and passed it straight to
+`restart_bot()`. Granularity from the same dict was already resolved from
+`.env`; amount was not. An `APPLY_APPROVED` learner run would have silently
+shrunk every $100 bot back to $10 inside a parameter update. Now reads the
+running process's `TRADE_AMOUNT_USD`, falling back only when pm2 is unreachable.
+
+### Defect 2 — a per-coin override defeated process identity, and deleting it did not help
+
+`.env:219 BTC_TRADE_AMOUNT_USD=10`. `get_env_with_profile` checks
+`{COIN}_{KEY}` before the plain key, and the per-coin form is not in
+`PROCESS_IDENTITY`, so it outranked the pm2 command line. **btc-bot was started
+at $100 and ran at $10.**
+
+Removing the line from `.env` **did not fix it** — the bot restarted and still
+logged $10. `/proc/<pid>/environ` showed `BTC_TRADE_AMOUNT_USD=10` alongside
+`TRADE_AMOUNT_USD=100`, plus **97 other `.env` keys** snapshotted at the bot's
+original start during the 2026-08-27 identity incident. **pm2 stores the
+environment a process was first started with and replays it on every
+restart.** `override=True` overwrites keys `.env` has; it cannot delete keys
+`.env` lacks. All nine bots carry the snapshot; only BTC's prefix matched.
+
+Fixed in `env_loader`, which now **strips** any `*_{IDENTITY_KEY}` variant
+after loading, wherever it came from. A test asserts a contaminated
+environment resolves to the command-line value. A second test fails if a
+per-coin identity override reappears in `.env`.
+
+This also means every "restart picks up `.env`" claim since 2026-08-27 was
+only true for keys `.env` *sets*. A key *removed* from `.env` stayed live in
+every bot until this fix.
+
+### Defect 3 — restart counters are not evidence after a stop
+
+`pm2 stop` then `pm2 restart` does not increment `restart_time` or reset
+`pm_uptime`; nine bots showed 13-hour uptimes seconds after restarting. The
+counters I had been using as before/after proof are unreliable across a stop.
+`/proc/<pid>/environ` is authoritative — a restarted process has a new PID and
+its environ is fixed at exec — and is what verification uses now.
+
+### Verified
+
+All nine at $100 by process environ; ETH `$100` pre-flight passes where a `$15`
+cap rejected it; ADA and BTC still `LONG` with original `holdings_base`; audit
+clean; 22/22 online.
+
+---
+
 ## 2026-09-04 — Paper position size $10 → $100 (stocks and FCR only)
 
 **Why:** to see dollar figures at the intended scale. Percentage returns are

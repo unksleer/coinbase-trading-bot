@@ -49,5 +49,19 @@ def load(env_path=None, identity=PROCESS_IDENTITY):
     load_dotenv(env_path, override=True)
     os.environ.update(preserved)
 
+    # Strip per-coin and per-profile variants of identity keys, e.g.
+    # BTC_TRADE_AMOUNT_USD or SIM_DRY_RUN. Settings resolves {COIN}_{KEY}
+    # before the plain key, so such a variant outranks the value the process
+    # was started with — and removing it from .env does not help, because pm2
+    # stores the environment a process was FIRST started with and replays it
+    # on every restart. btc-bot was started at $100 and ran at $10 on a
+    # BTC_TRADE_AMOUNT_USD=10 that had been deleted from .env hours earlier;
+    # it lived on in pm2's snapshot. Identity comes from the command line only.
+    for key in list(os.environ):
+        for base in identity:
+            if key != base and key.endswith("_" + base):
+                os.environ.pop(key, None)
+                break
+
     return {key for key, value in os.environ.items()
             if before.get(key) != value and key not in preserved}
