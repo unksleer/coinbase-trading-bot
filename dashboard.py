@@ -687,11 +687,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         coins = []
         for pair, rows in by_pair.items():
             pnls = [r["pnl_usd"] for r in rows]
+            pcts = [r.get("net_pct") for r in rows]
+            pcts = pcts if all(p is not None for p in pcts) else None
             # Computed from the ledger's own entry/exit prices, so the
             # benchmark criterion is actually evaluated rather than failing by
             # default for want of a price feed.
             excess = benchmark.excess_from_trades(rows, pnls)
-            result = evaluate(pnls, benchmark_excess=excess)
+            result = evaluate(pnls, benchmark_excess=excess, pcts=pcts)
             coins.append({
                 "pair": pair,
                 "trades": result["stats"]["trades"],
@@ -808,7 +810,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         out = []
         for market, paths in markets.items():
-            pnls, symbols, rows_by_symbol = [], set(), {}
+            pnls, pcts, symbols, rows_by_symbol = [], [], set(), {}
             for path in paths:
                 try:
                     with open(path, newline="") as handle:
@@ -819,6 +821,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                                 continue
                             try:
                                 pnls.append(float(row.get("pnl_usd") or 0.0))
+                                pcts.append(float(row.get("net_pct") or 0.0))
                             except (TypeError, ValueError):
                                 continue
                             sym = (row.get("ticker") or row.get("pair") or "").upper()
@@ -844,7 +847,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 if strat is not None:
                     excess = strat - (sum(holds) / len(holds))
 
-            result = evaluate(pnls, benchmark_excess=excess)
+            result = evaluate(pnls, benchmark_excess=excess,
+                              pcts=pcts if len(pcts) == len(pnls) else None)
 
             # Correlated symbols do not each contribute a full trade's worth of
             # evidence. Correlation comes from PRICE returns, computed by

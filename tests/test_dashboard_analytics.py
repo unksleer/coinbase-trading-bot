@@ -15,6 +15,14 @@ import dashboard
 
 
 def trade(**kw):
+    """
+    A completed-trade row. net_pct is derived from pnl_usd at the fixture's
+    $10 position unless given explicitly — the gate now measures in percent,
+    and a fixture that says "$0.50 profit, 0% return" describes a trade that
+    cannot exist.
+    """
+    if "pnl_usd" in kw and "net_pct" not in kw:
+        kw["net_pct"] = kw["pnl_usd"] / 10.0 * 100.0
     """A completed-trade row with the fields build_analytics reads."""
     row = {
         "pair": "SUI-USDC", "mode": "Simulated", "asset_class": "crypto",

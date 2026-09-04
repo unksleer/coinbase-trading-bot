@@ -72,8 +72,10 @@ def graduation(trades):
     """
     from utils import benchmark
     pnls = [t["pnl_usd"] for t in trades]
+    pcts = [t.get("net_pct") for t in trades]
+    pcts = pcts if all(p is not None for p in pcts) else None
     excess = benchmark.excess_from_trades(trades, pnls)
-    result = evaluate_graduation(pnls, benchmark_excess=excess)
+    result = evaluate_graduation(pnls, benchmark_excess=excess, pcts=pcts)
     return result["score"], result["blockers"], result["ready"]
 
 W = 66          # email clients wrap monospace safely under ~72 columns

@@ -110,7 +110,7 @@ def per_trade_sharpe(pnls):
     return mean / spread
 
 
-def evaluate(pnls, benchmark_excess=None, position_usd=None):
+def evaluate(pnls, benchmark_excess=None, position_usd=None, pcts=None):
     """
     Score a coin's completed-trade P&Ls against the graduation criteria.
 
@@ -118,6 +118,15 @@ def evaluate(pnls, benchmark_excess=None, position_usd=None):
     same window, as a fraction. Pass None when no price series is available;
     the criterion then fails, since an unmeasured benchmark is not a passed
     one. utils.benchmark.compare produces this value.
+
+    pcts is the per-trade NET PERCENT return, and when given it is the basis
+    for win rate, Sharpe, the worst-trade floor and the sign of net P&L. This
+    matters the moment position size changes: identical percentage returns at
+    $10 and $100 give the same Sharpe on their own, but MIXED in one series the
+    dollar Sharpe collapses from +0.286 to +0.016 on nothing but the size
+    change. Dollars (pnls) are kept for display. Callers that pass only pnls
+    get the historical dollar behaviour, which is correct only while every
+    trade in the series is the same size.
 
     Returns a dict with:
       criteria  list of {key, label, passed, detail, weight}, in display order
@@ -139,15 +148,26 @@ def evaluate(pnls, benchmark_excess=None, position_usd=None):
                       "benchmark_excess": benchmark_excess},
         }
 
-    wins = sum(1 for p in pnls if p > 0)
+    basis = list(pcts) if pcts is not None and len(pcts) == count else None
+
+    wins = sum(1 for p in (basis or pnls) if p > 0)
     win_rate = 100.0 * wins / count
     net_pnl = sum(pnls)
     worst = min(pnls)
-    # The floor scales with position size. Without position_usd there is no
-    # way to know what -$2.50 means, so the historical $10 default is assumed
-    # and the dollar figure reads as it always did.
-    floor_usd = (position_usd if position_usd else 10.0) * WORST_TRADE_FLOOR_PCT / 100.0
-    sharpe = per_trade_sharpe(pnls)
+    if basis is not None:
+        worst_pct = min(basis)
+        worst_ok = worst_pct >= WORST_TRADE_FLOOR_PCT
+        worst_detail = f"{worst_pct:+.2f}% (${worst:+.2f})"
+        worst_blocker = f"Worst trade {worst_pct:.2f}% exceeds {WORST_TRADE_FLOOR_PCT}% limit"
+        sharpe = per_trade_sharpe(basis)
+    else:
+        # Dollar path, for callers that have no percentages. Only valid while
+        # every trade in the series is the same size.
+        floor_usd = (position_usd if position_usd else 10.0) * WORST_TRADE_FLOOR_PCT / 100.0
+        worst_ok = worst >= floor_usd
+        worst_detail = f"${worst:+.2f} (floor ${floor_usd:.2f})"
+        worst_blocker = f"Worst trade ${worst:.2f} exceeds ${floor_usd:.2f} limit"
+        sharpe = per_trade_sharpe(pnls)
 
     if benchmark_excess is None:
         hold_detail, hold_pass = "not measured", False
@@ -179,9 +199,9 @@ def evaluate(pnls, benchmark_excess=None, position_usd=None):
         },
         {
             "key": "worst_trade", "label": f"worst trade ≥ {WORST_TRADE_FLOOR_PCT:.1f}%",
-            "passed": worst >= floor_usd,
-            "detail": f"${worst:+.2f} (floor ${floor_usd:.2f})",
-            "blocker": f"Worst trade ${worst:.2f} exceeds ${floor_usd:.2f} limit",
+            "passed": worst_ok,
+            "detail": worst_detail,
+            "blocker": worst_blocker,
         },
         {
             "key": "sharpe", "label": f"Sharpe ≥ {MIN_SHARPE:.2f}",
@@ -211,5 +231,6 @@ def evaluate(pnls, benchmark_excess=None, position_usd=None):
             "trades": count, "win_rate": win_rate, "net_pnl": net_pnl,
             "worst_trade": worst, "sharpe": sharpe,
             "benchmark_excess": benchmark_excess,
+            "basis": "percent" if basis is not None else "dollars",
         },
     }

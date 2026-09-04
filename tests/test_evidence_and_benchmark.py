@@ -158,3 +158,57 @@ def test_no_hardcoded_short_window_remains():
                 if re.search(r"fetch_candles\([^)]*,\s*\d{1,4}\s*\)", line):
                     offenders.append(f"{os.path.basename(path)}:{n}")
     assert not offenders, f"hardcoded candle counts: {offenders}"
+
+
+# ── the gate must not care what size a trade was ─────────────────────────────
+# Position size went $10 -> $100 on 2026-09-04. The CSVs still hold the $10
+# trades, so from the next exit one series mixes both. On a dollar basis that
+# alone wrecks the per-trade Sharpe; on a percent basis it changes nothing.
+
+def _same_pct_returns():
+    return [0.8, -0.5, 1.2, -0.4, 0.9, -0.6] * 4            # 24 trades
+
+
+def test_sharpe_is_identical_at_any_single_size():
+    pcts = _same_pct_returns()
+    at_10 = [p / 100 * 10 for p in pcts]
+    at_100 = [p / 100 * 100 for p in pcts]
+    assert graduation.per_trade_sharpe(at_10) == pytest.approx(
+        graduation.per_trade_sharpe(at_100))
+
+
+def test_mixed_sizes_corrupt_a_dollar_sharpe():
+    """Documents the defect, so the reason for the percent basis survives."""
+    pcts = _same_pct_returns()
+    clean = graduation.per_trade_sharpe([p / 100 * 10 for p in pcts])
+    mixed = [p / 100 * 10 for p in pcts[:12]] + [p / 100 * 100 for p in pcts[12:]]
+    # How much it degrades depends on the sequence — 0.286 -> 0.016 on a 6-trade
+    # demo, 0.307 -> 0.233 here. The guaranteed property is the direction: the
+    # size change alone lowers the Sharpe of returns that did not change.
+    assert graduation.per_trade_sharpe(mixed) < clean
+
+
+def test_the_gate_on_a_percent_basis_ignores_size_mixing():
+    pcts = _same_pct_returns()
+    mixed_usd = [p / 100 * 10 for p in pcts[:12]] + [p / 100 * 100 for p in pcts[12:]]
+    clean_usd = [p / 100 * 100 for p in pcts]
+    a = graduation.evaluate(mixed_usd, benchmark_excess=0.01, pcts=pcts)
+    b = graduation.evaluate(clean_usd, benchmark_excess=0.01, pcts=pcts)
+    assert a["stats"]["sharpe"] == pytest.approx(b["stats"]["sharpe"])
+    assert a["stats"]["basis"] == "percent"
+    assert [c["passed"] for c in a["criteria"]] == [c["passed"] for c in b["criteria"]]
+
+
+def test_worst_trade_floor_is_a_percentage_of_position():
+    """-2.5% is -2.5% whether the trade was $10 or $100."""
+    small = graduation.evaluate([-0.30] + [0.5] * 24, pcts=[-3.0] + [5.0] * 24)
+    big = graduation.evaluate([-3.00] + [5.0] * 24, pcts=[-3.0] + [5.0] * 24)
+    for result in (small, big):
+        worst = next(c for c in result["criteria"] if c["key"] == "worst_trade")
+        assert worst["passed"] is False, "a -3% trade breaches a -2.5% floor at any size"
+
+
+def test_dollar_path_still_works_for_callers_without_percentages():
+    result = graduation.evaluate([0.5] * 25, benchmark_excess=0.01)
+    assert result["stats"]["basis"] == "dollars"
+    assert result["ready"] is True
