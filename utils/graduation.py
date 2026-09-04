@@ -42,7 +42,13 @@ import statistics
 MIN_TRADES = 20
 MIN_WIN_RATE = 55.0          # percent
 MIN_NET_PNL = 0.0            # dollars, must be strictly greater
-WORST_TRADE_FLOOR = -2.50    # dollars, no single trade worse than this
+# Percent of position size. Was -$2.50 in DOLLARS, which meant a -25% trade at
+# $10 and a -2.5% trade at $100 — the same rule, ten times stricter, depending
+# on a number that has nothing to do with the strategy. A floor on a single
+# trade is a statement about risk control, and risk control is a percentage.
+WORST_TRADE_FLOOR_PCT = -2.5
+# Retained for callers that still pass dollars; derived, not independent.
+WORST_TRADE_FLOOR = -2.50
 
 # Per-trade risk-adjusted return: mean P&L divided by its standard deviation.
 #
@@ -104,7 +110,7 @@ def per_trade_sharpe(pnls):
     return mean / spread
 
 
-def evaluate(pnls, benchmark_excess=None):
+def evaluate(pnls, benchmark_excess=None, position_usd=None):
     """
     Score a coin's completed-trade P&Ls against the graduation criteria.
 
@@ -137,6 +143,10 @@ def evaluate(pnls, benchmark_excess=None):
     win_rate = 100.0 * wins / count
     net_pnl = sum(pnls)
     worst = min(pnls)
+    # The floor scales with position size. Without position_usd there is no
+    # way to know what -$2.50 means, so the historical $10 default is assumed
+    # and the dollar figure reads as it always did.
+    floor_usd = (position_usd if position_usd else 10.0) * WORST_TRADE_FLOOR_PCT / 100.0
     sharpe = per_trade_sharpe(pnls)
 
     if benchmark_excess is None:
@@ -168,10 +178,10 @@ def evaluate(pnls, benchmark_excess=None):
             "blocker": f"Net P&L ${net_pnl:+.2f} not positive yet",
         },
         {
-            "key": "worst_trade", "label": f"worst trade ≥ ${WORST_TRADE_FLOOR:.2f}",
-            "passed": worst >= WORST_TRADE_FLOOR,
-            "detail": f"${worst:+.2f}",
-            "blocker": f"Worst trade ${worst:.2f} exceeds ${WORST_TRADE_FLOOR:.2f} limit",
+            "key": "worst_trade", "label": f"worst trade ≥ {WORST_TRADE_FLOOR_PCT:.1f}%",
+            "passed": worst >= floor_usd,
+            "detail": f"${worst:+.2f} (floor ${floor_usd:.2f})",
+            "blocker": f"Worst trade ${worst:.2f} exceeds ${floor_usd:.2f} limit",
         },
         {
             "key": "sharpe", "label": f"Sharpe ≥ {MIN_SHARPE:.2f}",

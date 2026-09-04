@@ -1,0 +1,41 @@
+{
+  "name": "2026-09-spy-first-candle-rule-v2",
+  "hypothesis": "EXPECTED TO FAIL. Backtested over 501 SPY sessions across two years of 15-minute bars: 25 trades, 20% win rate, net -$0.27, profit factor 0.30, false-breakout rate 72%, against +$3.99 for simply holding. Four of five walk-forward folds negative, 11 of 16 months negative, and removing any confirmation filter makes it worse. This run does NOT test whether the strategy works \u2014 that question is answered. It tests whether the live pipeline reproduces the backtest: same signals, same rejections, same rough loss rate. A large divergence means the harness is wrong, which is the finding worth having.",
+  "market": "stocks",
+  "symbols": [
+    "SPY"
+  ],
+  "config": {
+    "strategy": "FIRST_CANDLE_RULE",
+    "granularity": "Min15",
+    "session": "09:30-16:00 America/New_York",
+    "opening_range": "09:30-09:45",
+    "volume_multiple": 1.5,
+    "volume_lookback": 20,
+    "ema_period": 200,
+    "rsi_period": 14,
+    "rsi_min": 40,
+    "rsi_max": 70,
+    "atr_period": 14,
+    "min_reward_risk": 2.0,
+    "position_usd": 100.0,
+    "max_risk_usd": 5.0,
+    "fee_per_side": 0.0,
+    "slippage_per_side": 0.0005,
+    "execution": "simulated in-process; no order submission path exists",
+    "paper_enforced": "ALPACA_PAPER must parse to true; FCR_ALLOW_LIVE refused"
+  },
+  "success_criteria": {
+    "primary": "live signal counts and rejection reasons track the backtest rate of ~1 signal per 20 sessions",
+    "not_profitability": "profit is NOT a success criterion here and a profit would be evidence of luck, not of edge \u2014 the backtest expectancy is -$0.011/trade",
+    "pipeline_check": "every session must produce a logged decision, including no-trade sessions, with a named rejection reason",
+    "divergence_trigger": "if live rejection reasons differ materially from the backtest distribution \u2014 volume 283, no-breakout 140, EMA 23, RSI 19 over 501 sessions \u2014 the harness is suspect and the experiment stops"
+  },
+  "stopping_rule": "Stop at 2026-10-31 or 20 logged sessions, whichever is LATER. Stop immediately if it places any order, touches a production file, or the live rejection mix diverges materially. No parameter change during the run; a change voids this registration. Expected outcome is a small loss.",
+  "started": "2026-09-04",
+  "notes": "Position size raised $10 -> $100 on 2026-09-04 at the operator's request, to see dollar figures at the intended scale. Percentage returns are scale-invariant, so the evidence is unchanged; the registration is re-sealed because trade_amount_usd is a sealed field. Deployed while PR is open, so the working tree must remain on branch experiment/first-candle-rule until it merges. Checking out main would remove fcr_bot.py and stop this process \u2014 production bots are unaffected, their files exist on both branches.",
+  "status": "running",
+  "result": null,
+  "concluded": null,
+  "seal": "400b6e539e046a3d"
+}

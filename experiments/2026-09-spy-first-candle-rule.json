@@ -34,8 +34,12 @@
   "stopping_rule": "Stop at 2026-10-31 or 20 logged sessions, whichever is LATER. Stop immediately if it places any order, touches a production file, or the live rejection mix diverges materially. No parameter change during the run; a change voids this registration. Expected outcome is a small loss.",
   "started": "2026-09-02",
   "notes": "Deployed while PR is open, so the working tree must remain on branch experiment/first-candle-rule until it merges. Checking out main would remove fcr_bot.py and stop this process \u2014 production bots are unaffected, their files exist on both branches.",
-  "status": "running",
-  "result": null,
-  "concluded": null,
-  "seal": "63d948455258aed3"
+  "status": "concluded",
+  "result": {
+    "reason_ended": "voided \u2014 position size changed"
+  },
+  "concluded": "2026-09-04",
+  "seal": "63d948455258aed3",
+  "verdict": "VOIDED, not a result. Position size raised $10 -> $100 on 2026-09-04 at the operator's request, to see dollar figures at the intended scale. Percentage returns are scale-invariant, so the evidence is unchanged; the registration is re-sealed because trade_amount_usd is a sealed field. Superseded by 2026-09-spy-first-candle-rule-v2.",
+  "terms_intact": true
 }

@@ -13,6 +13,36 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-04 — Paper position size $10 → $100 (stocks and FCR only)
+
+**Why:** to see dollar figures at the intended scale. Percentage returns are
+scale-invariant, so this changes no evidence; a $0.08 win at $10 and a $0.80
+win at $100 are the same 0.8%.
+
+**Crypto stays at $10.** It is parked, and its simulated cash sits at $88–100
+per bot — a $100 order cannot be funded without editing state files under
+running processes. Not worth it for a market that is not being tuned.
+
+**Risk limits untouched.** `MAX_VAL_PER_ORDER` and `MAX_EXPOSURE_PER_PRODUCT`
+are $15, which would block a $100 order — but the stock and FCR bots never go
+through the risk engine (0 references), so the caps only govern crypto, which
+is unchanged.
+
+**Found while doing it:** the graduation gate's worst-trade floor was **−$2.50
+in dollars**. That is a −25% trade at $10 (never triggers) and a −2.5% trade at
+$100 (triggers on a normal stop) — the same rule, ten times stricter, depending
+on a number unrelated to the strategy. Converted to **−2.5% of position**.
+
+**Mechanics worth knowing:** `TRADE_AMOUNT_USD` is process identity, set on the
+pm2 command line and preserved by `env_loader`, so editing `.env` alone changes
+nothing. `restart_bots.py --set KEY=VALUE` now exists for exactly this.
+
+**Cost:** both registrations voided and re-sealed as v3 / FCR-v2, starting
+2026-09-04. Four days of the previous runs are discarded. Checkpoints move to
+**2026-10-04** (stocks) and 2026-10-31 (FCR, unchanged).
+
+---
+
 ## 2026-09-02 — Local candle store
 
 **Why:** the exchange caps a response at ~2000 candles, and that cap flatters

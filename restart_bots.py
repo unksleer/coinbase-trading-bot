@@ -99,6 +99,11 @@ def main():
     parser.add_argument("--stocks", action="store_true")
     parser.add_argument("--check", action="store_true",
                         help="report identity drift and change nothing")
+    parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                        help="override an identity value on restart, e.g. "
+                             "TRADE_AMOUNT_USD=100. Repeatable. Identity keys "
+                             "live in the process env, not .env, so this is the "
+                             "only way to change one without losing the rest.")
     args = parser.parse_args()
 
     running = running_identity()
@@ -134,9 +139,14 @@ def main():
         # the running value is exactly what may be corrupt.
         env = dict(running[name]["env"])
         env.update({k: v for k, v in saved.get(name, {}).items() if v is not None})
+        for item in args.set:
+            key, _, value = item.partition("=")
+            if key.strip() and value.strip():
+                env[key.strip()] = value.strip()
         ok, err = restart(name, env)
         key = "TRADING_PAIR" if running[name]["script"] == "bot.py" else "STOCK_TICKER"
-        print(f"    {'✓' if ok else '✗'} {name:14} {key}={env.get(key)}"
+        extra = "".join(f"  {i.split('=')[0]}={env.get(i.split('=')[0])}" for i in args.set)
+        print(f"    {'✓' if ok else '✗'} {name:14} {key}={env.get(key)}{extra}"
               + (f"  {err}" if not ok else ""))
         if not ok:
             failures.append(name)
