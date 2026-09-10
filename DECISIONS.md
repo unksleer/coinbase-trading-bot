@@ -13,6 +13,31 @@ from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
 ---
 
+## 2026-09-10 — The dashboard froze in the browser and said nothing
+
+**Reported:** email said SOL had stopped out; the dashboard still showed it
+`IN TRADE`. The server was right — state file `NONE`, sell in the CSV, API
+returning `position=NONE`, dashboard running the 09-04 fix since the minute it
+was committed. The browser was showing a render from before 12:37Z.
+
+**Cause:** the page polls every 30 s, and on any failed fetch it silently
+returns. The table keeps its last render and the `Updated:` stamp — set only on
+success — freezes with it. Browsers also throttle or suspend timers in
+background tabs. A tab left open across either shows hours-old positions
+under a small timestamp nobody reads. Nothing on the page distinguishes
+"current" from "frozen".
+
+**Fix:** track the last successful update per panel; after three missed polls
+the stamp becomes a visible warning with the true age; a failed fetch says so
+instead of pretending; and the page re-fetches immediately when the tab
+regains visibility.
+
+**Pattern:** the fourth instance of a value whose source updates on a
+different clock than the thing it describes — this time the clock was the
+browser's own timer, and the display was the source.
+
+---
+
 ## 2026-09-04 — The signal table showed positions up to six hours stale
 
 **Reported:** ADA had sold but showed `IN TRADE`; BTC was in a trade but showed

@@ -563,6 +563,14 @@
             .signal-legend dd { margin-bottom: 10px; }
         }
 
+        .stamp-stale {
+            color: var(--accent) !important;
+            font-weight: 600;
+            background: var(--accent-soft);
+            padding: 2px 8px;
+            border-radius: 3px;
+        }
+
         .fleet-banner {
             background: var(--accent-glow-red);
             border: 1px solid var(--accent-red);
@@ -915,8 +923,10 @@
                 const data = await response.json();
                 
                 updateDashboard(data);
+                markOk('metrics');
             } catch (err) {
                 console.error("Failed to load metrics scoreboard:", err);
+                markFail('metrics', err);
             }
         }
 
@@ -1530,11 +1540,13 @@
         async function fetchBotSignals() {
             try {
                 const res = await fetch('/api/bot_signals');
-                if (!res.ok) return;
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const signals = await res.json();
                 renderBotSignals(signals);
+                markOk('signals');
             } catch (e) {
                 console.error('Bot signals fetch failed:', e);
+                markFail('signals', e);
             }
         }
 
@@ -1631,12 +1643,74 @@
                 'Updated: ' + new Date().toLocaleTimeString();
         }
 
+        // ---- Staleness: a frozen panel must look frozen ----
+        //
+        // A failed fetch used to return silently, leaving the table on its last
+        // render with an "Updated:" stamp that only advanced on success. Browsers
+        // also throttle or suspend timers in background tabs. A tab left open
+        // across either showed hours-old positions under a timestamp nobody
+        // reads: SOL had stopped out and the page still said IN TRADE. Nothing
+        // on the page distinguished "current" from "frozen".
+        const POLL_MS = { metrics: 10000, signals: 30000 };
+        const STAMP_ID = { metrics: 'last-updated', signals: 'signal-updated' };
+        const lastOk = { metrics: 0, signals: 0 };
+        const lastFail = { metrics: null, signals: null };
+
+        function stampEl(panel) { return document.getElementById(STAMP_ID[panel]); }
+        function fmt(t) { return new Date(t).toLocaleTimeString(); }
+        function ageText(ms) {
+            const s = Math.round(ms / 1000);
+            if (s < 90) return s + 's';
+            const m = Math.round(s / 60);
+            if (m < 90) return m + ' min';
+            return (m / 60).toFixed(1) + ' h';
+        }
+
+        function markOk(panel) {
+            lastOk[panel] = Date.now();
+            lastFail[panel] = null;
+            const el = stampEl(panel);
+            if (el) el.classList.remove('stamp-stale');
+        }
+
+        function markFail(panel, err) {
+            lastFail[panel] = { at: Date.now(), err: String(err) };
+            const el = stampEl(panel);
+            if (!el) return;
+            const since = lastOk[panel] ? 'showing data from ' + fmt(lastOk[panel]) : 'no data yet';
+            el.textContent = 'UPDATE FAILED ' + fmt(lastFail[panel].at) + ' — ' + since;
+            el.classList.add('stamp-stale');
+        }
+
+        function checkStale() {
+            const now = Date.now();
+            for (const panel of Object.keys(POLL_MS)) {
+                if (!lastOk[panel] || lastFail[panel]) continue;   // failure already shown
+                const age = now - lastOk[panel];
+                if (age > 3 * POLL_MS[panel]) {
+                    const el = stampEl(panel);
+                    if (el) {
+                        el.textContent = 'STALE — last update ' + ageText(age) + ' ago (' + fmt(lastOk[panel]) + ')';
+                        el.classList.add('stamp-stale');
+                    }
+                }
+            }
+        }
+
         // Fetch metrics on load
         fetchMetrics();
         fetchBotSignals();
         // Poll metrics every 10 seconds, signals every 30 seconds
         setInterval(fetchMetrics, 10000);
         setInterval(fetchBotSignals, 30000);
+        setInterval(checkStale, 5000);
+
+        // A tab regaining focus re-fetches immediately rather than waiting out
+        // a throttled timer — the case where "stale" is most likely and least
+        // expected.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') { fetchMetrics(); fetchBotSignals(); }
+        });
     </script>
 </body>
 </html>
