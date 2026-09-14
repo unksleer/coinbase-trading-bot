@@ -11,6 +11,67 @@ reversal happened because a claim was checked rather than repeated.
 should be read as one. "Measured" means from live trades; "backtested" means
 from historical simulation, which is weaker. Effective trades ≠ pooled trades.
 
+**Entries are not rewritten.** Each records what was believed and measured at
+the time, including figures later shown to be wrong — the 1.206% fee used
+before 2026-09-02, for instance. A later entry corrects; the earlier one
+stands, because a log that edits its past cannot be audited. Reference
+documents (README, trading_profiles) are kept current instead.
+
+---
+
+## 2026-09-14 — Operational pass from an outside review
+
+An external review (ChatGPT Astra) of the repo produced seven operational
+findings and one analytical claim. **Six of seven findings were correct**; the
+analytical claim was wrong. The four findings that could not affect trading
+behaviour were fixed here; the rest wait.
+
+### The wrong claim, because it is instructive
+
+> "Crypto is slightly negative even before fees."
+
+Gross P&L summed in dollars is −$0.81 — one $100 trade (SOL, −$5.02 gross)
+against 55 trades at $10 (+$4.21 gross). The size-invariant gross is **+0.662%
+per trade**, positive. The review summed dollars across the 2026-09-04 size
+change, which is the exact defect the graduation gate was converted away from
+on the same day. Its conclusion — no demonstrated edge — happens to be right,
+for the reason it did not give: the interval includes zero. A reviewer
+without this log in front of it will make that mistake.
+
+### Fixed
+
+1. **Runtime trade CSVs untracked.** 29 files — every `completed_trades_*.csv`,
+   `trades.csv`, `trades_dry.csv`, and 17 `.lock` files that were gitignored
+   but still tracked. The checkout was permanently dirty and trade data sat
+   one `git add -A` from a commit. Backed up, `git rm --cached`, still on disk.
+2. **SPY gap report was counting every night as a gap** — 502 gap runs across
+   501 sessions. `gaps()` now takes a session key; only consecutive bars in
+   the same session are compared. Real result: **2 intra-session gaps**, at
+   **2024-12-24 13:30 ET and 2025-07-03 13:15 ET** — Christmas Eve and the day
+   before July 4th, both **early-close days** (13:00 ET). Those are not
+   missing regular-hours bars; they are *after-hours* bars the collector let
+   through, because `in_regular_session` uses a fixed 15:45 close. So the
+   report is now right and it exposed a smaller defect of the same family:
+   early-close days are contaminated with sparse after-hours prints. Roughly
+   four days a year; the opening range is unaffected. Needs the same market
+   calendar. Recorded, not fixed. A whole missing weekday is reported as a
+   count — 21 in the span, consistent with ~10 holidays a year — labelled
+   "holiday or missed collection" because the two are indistinguishable
+   without that calendar.
+3. **Collector output was filed in the learner log.** `auto_learner` called
+   `logging.basicConfig` at import, so six importers had their logging
+   hijacked. Moved into `configure_logging()`, called only from `__main__`.
+4. **Stale fee text** in README, SKILL.md and trading_profiles corrected to the
+   0.40% maker rate. This log's past entries are deliberately left as written.
+
+### Deferred, by choice
+
+- 5 of 9 crypto bots carry a 04:00 pm2 cron restart overlapping the learner.
+- 776 MB of pm2 logs, no rotation.
+- `shell=True` in four scripts.
+
+None affects trading. Next review point: **2026-10-04**.
+
 ---
 
 ## 2026-09-10 — The dashboard froze in the browser and said nothing

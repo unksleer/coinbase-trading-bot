@@ -58,16 +58,30 @@ HISTORY_PATH  = os.path.join(DIR, "logs", "param_history.json")
 RECOMMENDATIONS_PATH = os.path.join(DIR, "logs", "learner_recommendations.json")
 APPROVALS_PATH = os.path.join(DIR, "logs", "learner_approvals.json")
 
-os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [learner] %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH),
-        logging.StreamHandler(sys.stdout),
-    ]
-)
 log = logging.getLogger("auto_learner")
+
+
+def configure_logging():
+    """
+    Install the learner's file handler. Called from main(), not at import.
+
+    At module level this ran on every `import auto_learner`, so five research
+    scripts and the candle collector — which import it for fetch_candles —
+    had their logging silently redirected into logs/auto_learner.log. The
+    collector's "no data on Exchange API, retrying" lines were filed as
+    learner activity every hour. A module that configures the process-wide
+    logger as a side effect of being imported is deciding something that
+    belongs to whoever is actually running.
+    """
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [learner] %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(LOG_PATH),
+            logging.StreamHandler(sys.stdout),
+        ]
+    )
 
 # ── Coins and their PM2 bot names ────────────────────────────────────────────
 COINS_FALLBACK = {
@@ -1491,4 +1505,5 @@ def main():
 
 
 if __name__ == "__main__":
+    configure_logging()
     main()

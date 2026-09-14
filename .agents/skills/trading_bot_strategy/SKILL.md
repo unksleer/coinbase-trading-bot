@@ -91,7 +91,7 @@ Checkpoints: **2026-09-18** ~20 stock trades (first read) · **2026-10-10** ~40
 
 **Crypto is a control, not a candidate.** The best variant flips with the
 timeframe — SMA wins at six-hour, mean reversion at hourly — which is the
-signature of noise at a 1.207% round trip. Stocks are where the stable result
+signature of noise at a 0.80% round trip. Stocks are where the stable result
 is: mean reversion positive on both timeframes at all four thresholds.
 
 **Crypto is PARKED as of 2026-08-30** — finished, not pending. 53 forward

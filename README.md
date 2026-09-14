@@ -45,7 +45,9 @@ This bot is engineered with strict production safety safeguards to protect capit
 
 The exchange caps a response at ~2000 candles, and that cap flatters results:
 the same strategy measured 1.71% gross edge over 83 days, 1.48% over 100 and
-1.22% over 500, against a 1.206% round trip. `market_data/` appends each
+1.22% over 500. (Those were first compared against a 1.206% fee assumption,
+since corrected to 0.80% maker; the point — that the shorter the window, the
+better a strategy looks — does not depend on the fee.) `market_data/` appends each
 **closed** candle to a local store, accumulating history the API will not
 serve.
 
@@ -347,7 +349,8 @@ failure mode, so it is called out explicitly rather than ranked highly.
 ```
 
 Each market is screened under its own cost model — equities commission-free,
-Coinbase at 1.207% round trip — and results never transfer between them. Both
+Coinbase at 0.80% round trip (0.40% maker per side) — and results never transfer
+between them. Both
 run nightly under PM2 cron and appear on the dashboard.
 
 Verdicts: `check` clears every screen · `weak` marginal · `skip` too few entries

@@ -240,13 +240,21 @@ class CandleStore:
 
     # ── integrity ───────────────────────────────────────────────────────────
 
-    def gaps(self, venue, symbol, granularity):
+    def gaps(self, venue, symbol, granularity, session_of=None):
         """
         Missing intervals as (gap_start_ts, gap_end_ts, missing_count).
 
         Reported, not repaired: a gap from a collector outage and one from a
         venue halt want different responses, and guessing between them is how
         invented data enters a dataset.
+
+        session_of(ts) -> a hashable session key. When given, only consecutive
+        candles in the SAME session are compared. A 24/7 venue needs nothing;
+        for equities a session is the trading day, and the interval between
+        15:45 and the next 09:30 is the market being closed, not a gap. Without
+        this the SPY report counted 502 gap runs across 501 sessions — one per
+        night — which made a clean dataset look broken and would have hidden
+        a real gap inside the noise.
         """
         step = seconds_for(granularity)
         rows = [r[0] for r in self._conn.execute(
@@ -254,6 +262,8 @@ class CandleStore:
             "ORDER BY ts ASC", (venue, symbol, granularity))]
         out = []
         for previous, current in zip(rows, rows[1:]):
+            if session_of is not None and session_of(previous) != session_of(current):
+                continue
             missing = (current - previous) // step - 1
             if missing > 0:
                 out.append((previous + step, current - step, int(missing)))
@@ -263,14 +273,35 @@ class CandleStore:
         return [dict(r) for r in self._conn.execute(
             "SELECT * FROM conflicts ORDER BY seen_at DESC LIMIT ?", (limit,))]
 
-    def integrity_report(self):
-        """One dict per series: counts, span, gaps. For a health check."""
+    def integrity_report(self, session_of_by_venue=None):
+        """
+        One dict per series: counts, span, gaps. For a health check.
+
+        session_of_by_venue maps a venue name to a session_of callable; see
+        gaps(). For such venues `expected` is summed within sessions rather
+        than across the whole span, for the same reason.
+        """
+        session_of_by_venue = session_of_by_venue or {}
         out = []
         for venue, symbol, granularity in self.symbols():
             first, last = self.span(venue, symbol, granularity)
-            found = self.gaps(venue, symbol, granularity)
+            session_of = session_of_by_venue.get(venue)
+            found = self.gaps(venue, symbol, granularity, session_of)
             step = seconds_for(granularity)
-            expected = ((last - first) // step + 1) if first is not None else 0
+            if first is None:
+                expected = 0
+            elif session_of is None:
+                expected = (last - first) // step + 1
+            else:
+                stamps = [r[0] for r in self._conn.execute(
+                    "SELECT ts FROM candles WHERE venue=? AND symbol=? AND granularity=? "
+                    "ORDER BY ts ASC", (venue, symbol, granularity))]
+                bounds = {}
+                for ts in stamps:
+                    key = session_of(ts)
+                    lo, hi = bounds.get(key, (ts, ts))
+                    bounds[key] = (min(lo, ts), max(hi, ts))
+                expected = sum((hi - lo) // step + 1 for lo, hi in bounds.values())
             out.append({
                 "venue": venue, "symbol": symbol, "granularity": granularity,
                 "stored": self.count(venue, symbol, granularity),

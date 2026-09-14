@@ -79,6 +79,12 @@ def collect(symbol, store, days=730):
     return inserted, skipped, dupes, dropped
 
 
+def session_of(ts):
+    """The ET trading date a bar belongs to. Nights and weekends are not gaps."""
+    import pandas as pd
+    return str(pd.Timestamp(ts, unit="s", tz="UTC").tz_convert("America/New_York").date())
+
+
 def sessions(store, symbol):
     """Distinct trading dates held, and how many have a 09:30 opening bar."""
     from datetime import timedelta
@@ -110,10 +116,22 @@ def main():
         if args.report:
             for symbol in symbols:
                 held, opens = sessions(store, symbol)
-                gaps = store.gaps(VENUE, symbol, GRANULARITY)
+                gaps = store.gaps(VENUE, symbol, GRANULARITY, session_of)
+                missing = sum(g[2] for g in gaps)
                 print(f"  {symbol}: {store.count(VENUE, symbol, GRANULARITY)} bars, "
                       f"{held} sessions, {opens} with a 09:30 ET open, "
-                      f"{len(gaps)} gap runs")
+                      f"{len(gaps)} intra-session gap runs ({missing} bars missing)")
+                # A whole missing weekday is either a market holiday or a day
+                # the collector was down. Telling them apart needs a market
+                # calendar this repo does not have, so it is reported as a
+                # count rather than guessed at.
+                import pandas as pd
+                first, last = store.span(VENUE, symbol, GRANULARITY)
+                if first and last:
+                    et = lambda t: pd.Timestamp(t, unit="s", tz="UTC").tz_convert("America/New_York")
+                    weekdays = len(pd.bdate_range(et(first).date(), et(last).date()))
+                    print(f"      {weekdays - held} weekdays in span with no session "
+                          f"(holidays or missed collection; not distinguishable without a calendar)")
             return 0
 
         days = args.days if args.backfill else 5

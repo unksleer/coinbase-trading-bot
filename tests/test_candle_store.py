@@ -230,3 +230,60 @@ def test_collector_shares_no_code_path_with_the_bots():
         offending = {m for m in imported
                      if m == "market_data" or m.startswith("market_data.")}
         assert not offending, f"{name} imports {offending}; it must not read the store"
+
+
+# ── gaps must respect sessions ───────────────────────────────────────────────
+# The SPY report counted 502 gap runs across 501 sessions: one per night.
+# A clean dataset looked broken, and a real gap would have hidden in the noise.
+
+def _spy_like(store):
+    """Two trading days, 09:30-15:45 ET each, 15-min bars, one bar missing on day 2."""
+    import pandas as pd
+    rows = []
+    for day in ("2026-09-08", "2026-09-09"):
+        start = pd.Timestamp(f"{day} 09:30", tz="America/New_York")
+        for i in range(26):                       # 09:30 .. 15:45 inclusive
+            if day == "2026-09-09" and i == 10:   # drop the 12:00 bar
+                continue
+            rows.append(bar(int((start + pd.Timedelta(minutes=15 * i)).timestamp())))
+    # These bars are dated Sept 2026; NOW is June 2026. Passing NOW would
+    # refuse every one as still forming and leave the store empty, which is
+    # the unfinished-candle guard working, not a gap. Use a `now` after them.
+    store.add("alpaca", "SPY", "Min15", rows, now=NOW + 120 * 86400)
+    return store
+
+
+def _session_of(ts):
+    import pandas as pd
+    return str(pd.Timestamp(ts, unit="s", tz="UTC").tz_convert("America/New_York").date())
+
+
+def test_overnight_is_not_a_gap_when_sessions_are_given(store):
+    _spy_like(store)
+    found = store.gaps("alpaca", "SPY", "Min15", session_of=_session_of)
+    assert len(found) == 1, "only the dropped 12:00 bar is a gap"
+    assert found[0][2] == 1
+
+
+def test_overnight_is_counted_without_session_awareness(store):
+    """Documents the defect: the same data reports the night as a 67-bar hole."""
+    _spy_like(store)
+    naive = store.gaps("alpaca", "SPY", "Min15")
+    assert len(naive) == 2
+    assert max(g[2] for g in naive) > 60
+
+
+def test_expected_count_is_summed_within_sessions(store):
+    _spy_like(store)
+    report = store.integrity_report({"alpaca": _session_of})
+    row = next(r for r in report if r["symbol"] == "SPY")
+    assert row["expected"] == 52          # 26 + 26, not (span // 900) + 1
+    assert row["stored"] == 51
+    assert row["missing"] == 1
+
+
+def test_a_24_7_venue_is_unaffected_by_the_session_parameter(store):
+    store.add("coinbase", "BTC-USDC", "ONE_HOUR",
+              [bar(NOW - i * HOUR) for i in range(2, 30)], now=NOW)
+    assert store.gaps("coinbase", "BTC-USDC", "ONE_HOUR") == []
+    assert store.gaps("coinbase", "BTC-USDC", "ONE_HOUR", session_of=lambda t: 0) == []

@@ -46,3 +46,11 @@ scratch/
 # the point of it is history accumulated on this machine, not in the repo.
 data/*.sqlite
 data/*.sqlite-journal
+
+# Runtime trade ledgers. Written by running bots on every fill; tracking them
+# left the checkout permanently dirty and put trade data one `git add -A` away
+# from a commit. The backup at the time of untracking is in the session
+# scratchpad; the files themselves are untouched on disk.
+completed_trades_*.csv
+trades.csv
+trades_dry.csv

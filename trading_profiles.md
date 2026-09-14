@@ -44,9 +44,10 @@ That is the crypto trap in one line: **the timeframe fast enough to verify
 cannot clear the fee, and the timeframe that clears the fee needs ~12 months to
 verify.**
 
-The fee lever is spent. The bot already sends `post_only` maker orders and
-0.6%/side *is* the maker rate; lower tiers need roughly $10k monthly volume
-against ~$900 actual.
+The fee lever is spent. The bot already sends `post_only` maker orders, and the
+base-tier maker rate is 0.40%/side (0.80% round trip; it was mis-set at the
+0.60% taker rate until 2026-09-02). Lower tiers need roughly $10k monthly
+volume against ~$900 actual.
 
 **The result, from 53 real forward trades:**
 
@@ -110,7 +111,7 @@ longest history available, not over whichever window a backtest happened to use.
 
 Judge on per-trade quality and on whether net turns positive, not on volume.
 This is ~6× slower per coin than hourly by design — frequency traded for moves
-large enough to clear the 1.207% round trip.
+large enough to clear the 0.80% round trip.
 
 > Six-hour buy-and-hold returned +$11.39 over the same window against the
 > strategy's +$4.35. Six-hour is where this strategy stops destroying value, not
@@ -313,9 +314,9 @@ Other settings available per profile and per coin prefix:
 
 ## 7. Why the Fee Floor Drives These Values
 
-At Coinbase's tier-1 maker rate of 0.60% per side, a round trip costs about
-**1.2% of notional**. Measured across 51 sim trades the realised drag was
-**1.207%**. Because the fee is a percentage, trade size does not change it —
+At Coinbase's base-tier maker rate of 0.40% per side, a round trip costs
+**0.80% of notional**. (The simulator charged 0.60%/side — the taker rate —
+until 2026-09-02, so figures recorded before then carry a 1.2% drag.) Because the fee is a percentage, trade size does not change it —
 scaling up multiplies gross and fees equally.
 
 Two parameter choices follow directly:
