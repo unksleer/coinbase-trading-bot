@@ -324,7 +324,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             signal = "BLOCKED"
         elif raw_signal == "BUY":
             signal = "ENTERING"
-        elif strategy == "RSI_MEAN_REVERSION":
+        elif strategy in ("RSI_MEAN_REVERSION", "DONCHIAN_BREAKOUT"):
             signal = "NO SETUP"
         elif direction == "ABOVE":
             signal = "NO CROSS"
@@ -502,7 +502,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                         entry["signal"] = "IN TRADE"
                     elif market_closed:
                         entry["signal"] = "CLOSED"
-                    elif bot_strategy == "RSI_MEAN_REVERSION":
+                    elif bot_strategy in ("RSI_MEAN_REVERSION", "DONCHIAN_BREAKOUT"):
                         # This path cannot see the RSI crossing, only the level,
                         # so it reports no setup rather than guessing.
                         entry["signal"] = "NO SETUP"

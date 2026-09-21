@@ -19,6 +19,73 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-21 — Crypto restarted on a breakout class; stock exits left alone after a sweep
+
+**The stock question first.** Nine live trades since 2026-09-04 read as small
+wins and large losses (avg win +$1.00, avg loss −$3.55), and the earlier entry
+in this file called that a structural defect. `backtest_stock_exits.py` held
+the RSI 35/65 entry fixed and varied only the exits over 400 days of hourly
+bars on the 12-ticker basket:
+
+| Exit structure | Trades | Win | Net | Last 40% |
+| :--- | :---: | :---: | :---: | :---: |
+| Live: 5% stop, 8% target, trail, RSI exit | 261 | 72% | +$64 | +$5 |
+| 3% stop | 339 | 58% | +$9 | −$15 |
+| 2% stop | 416 | 49% | −$2 | −$26 |
+| 1.5% stop | 477 | 43% | −$22 | −$41 |
+| Symmetric 2%/2% | 413 | 53% | +$5 | −$12 |
+| Symmetric 1%/1% | 583 | 50% | −$76 | −$65 |
+| Buy and hold | | | +$157 | −$18 |
+
+Every step toward smaller, more frequent wins made it worse. The asymmetry is
+how mean reversion pays: the wide stop is what lets a dip revert. **The
+"structural defect" claim of 2026-09-21 (earlier today) is withdrawn.** The
+live configuration is the best of the ten tested and the only one positive in
+the down-market tail. Stocks: no change; the v3 registration runs on.
+
+**Crypto: class change, not parameter change.** The SMA crossover won one
+trade in five and could not clear the 1.0% round trip on any timeframe (see
+2026-08-30). `backtest_crypto_classes.py` compared classes on the 517 stored
+days, nine coins, $100 each, same costs, buy-and-hold as the bar (−$79 over
+the window; folds +$281, −$210, −$344, −$61, +$441):
+
+| Class | Trades | Win | Net | vs hold | Folds > hold |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| SMA 10/40 six-hour (was live) | 308 | 28% | −$219 | −$140 | 2/5 |
+| RSI 30/70 six-hour | 214 | 24% | −$24 | +$55 | 3/5 |
+| Donchian 20/10 daily | 99 | 30% | +$19 | +$98 | 2/5 |
+| **Donchian 80/40 six-hour** | 98 | 31% | **+$78** | +$156 | 3/5 |
+| Trend: above 50-day SMA, 2% band | 81 | 25% | +$15 | +$94 | 2/5 |
+| Rotation: top 3 by 60-day, if positive | 31 | 42% | +$40 | +$119 | 2/5 |
+
+Neighbours of 80/40 (60/30 +$62, 100/40 +$31, daily 15/7 to 25/12 all
+positive) make it a plateau, not a tuned point. With the bot's break-even
+invariant applied, 80/40 + 15% stop backtests at +$128, 50% win rate, 28-day
+average hold. **Adding the SIM profile's 8% take-profit raises the win rate
+to 60% and cuts the net to +$20** — the clearest evidence in this file that
+the "consistent small wins" profile is what costs kill here.
+
+**Deployed:** `strategies/donchian_breakout.py`, `BREAKOUT` profile in `.env`
+with every exit knob set explicitly (SL 15, TP 0, trail 0, BE 0, no filters),
+all nine coins switched to it, SMA-era state and trade CSVs moved to
+`crypto_archive_before_breakout_20260921/`, fresh state at $1000 simulated
+cash per coin, sealed as `2026-09-crypto-donchian-breakout` (stop 2027-01-15
+or 20 effective trades, whichever is later). Win rate is explicitly not a
+criterion; any TAKE_PROFIT or TRAILING_STOP exit in the logs means the profile
+was changed and the run stops.
+
+**Pipeline check on day one:** the nine bots' first closed-candle signals
+(five BUY, four HOLD) match the channel computed from the candle store for
+every pair. Five bots are long from the restart.
+
+**Honest weaknesses.** Nothing beat holding in the rally folds, and the
+choppy fold was negative for every class. This is a lose-less-in-crashes
+profile, not a demonstrated edge; ~11 trades per coin per year means a small
+edge cannot be confirmed for a long time. What it can do quickly is rule out
+a disaster and show that live behaviour matches the backtest's trade rate.
+
+---
+
 ## 2026-09-21 — School Run backtested on SPY: cost-dominated, not run as a paper bot
 
 **What:** Tom Hougaard's School Run (buy stop above and sell stop below a

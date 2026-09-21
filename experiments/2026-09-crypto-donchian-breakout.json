@@ -1,0 +1,55 @@
+{
+  "name": "2026-09-crypto-donchian-breakout",
+  "hypothesis": "A Donchian channel breakout on six-hour candles (buy a close above the prior 80-bar high, sell a close below the prior 40-bar low, 15% disaster stop, no target, no trail) holds long enough that the 1.0% round trip stops mattering, and loses LESS than holding the same nine coins across a full window. Backtested on 517 stored days (2025-04-22 to 2026-09-21): +$78 net at $100/coin against -$79 for holding; with the bot's break-even invariant applied, +$128. It beat holding in the two crash folds and lagged in the two rally folds; it lost in the choppy fold. Expected profile: roughly one trade in three wins, average winner ~2.5x average loser, holds of two to four weeks. The SMA crossover it replaces won one in five and could not clear costs on any timeframe.",
+  "market": "crypto",
+  "symbols": [
+    "ADA-USDC",
+    "BTC-USDC",
+    "ETH-USDC",
+    "LINK-USDC",
+    "NEAR-USDC",
+    "RENDER-USDC",
+    "SOL-USDC",
+    "SUI-USDC",
+    "XRP-USDC"
+  ],
+  "config": {
+    "strategy": "DONCHIAN_BREAKOUT",
+    "profile": "BREAKOUT",
+    "granularity": "SIX_HOUR",
+    "entry_bars": 80,
+    "exit_bars": 40,
+    "stop_loss_pct": 15.0,
+    "take_profit_pct": 0.0,
+    "trailing_stop_pct": 0.0,
+    "break_even_trigger_pct": 0.0,
+    "rsi_filter": false,
+    "ema_filter": false,
+    "min_volume_ratio": 0.0,
+    "exit_invariant": "discretionary exits blocked below break-even; stop-loss exempt",
+    "trade_amount_usd": 100.0,
+    "fee_pct_per_side": 0.4,
+    "venue": "coinbase_dry_run",
+    "state": "fresh state files, $1000 simulated cash per coin; prior SMA-era state and trade CSVs archived, not deleted"
+  },
+  "success_criteria": {
+    "primary": "pooled net vs buy-and-hold over the same window > 0 (lose less in a down market, or make more in an up one)",
+    "min_effective_trades": 20,
+    "note": "Nine coins are highly correlated; treat pooled counts as ~2.4x the independent evidence, as for stocks.",
+    "secondary": {
+      "net_pnl_usd": 0.0,
+      "avg_win_over_avg_loss": 2.0,
+      "worst_trade_pct": -16.0
+    },
+    "not_a_criterion": "win rate. The backtest says 30-50%; a HIGH win rate here would mean the exits were tightened.",
+    "watch_for": "(1) any trade closed by TAKE_PROFIT or TRAILING_STOP means the profile was changed \u2014 stop. (2) trades held past 40 bars below the channel low with no stop hit is the invariant holding losers; expected, but if average loss exceeds 10% the stop is too wide for this basket.",
+    "power_caveat": "At ~11 trades per coin per year this run cannot confirm a small edge in months. It can rule out a disaster and check that live behaviour matches the backtest's trade rate (~1 entry per coin per 5 weeks)."
+  },
+  "stopping_rule": "Stop at 2027-01-15 OR 20 effective trades, whichever is later. No configuration change before then except a defect that stops trades executing or makes an exit unable to fire. Any change to channel length, stop, target or trailing restarts the clock and voids this registration.",
+  "started": "2026-09-21",
+  "notes": "Chosen over RSI mean reversion, trend-filter and momentum-rotation classes in backtest_crypto_classes.py. Neighbouring parameters (60/30, 100/40, daily 15/7 to 25/12) were all positive, so this is a plateau, not a tuned point. Operator preference was for consistent small wins; the data says that profile is what costs kill on this venue, and the 8% take-profit test is recorded in the profile comment.",
+  "status": "running",
+  "result": null,
+  "concluded": null,
+  "seal": "b9db8bdef205b14f"
+}

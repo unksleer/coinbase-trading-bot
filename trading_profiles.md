@@ -20,10 +20,34 @@ separation floor and the EMA200 trend filter compound, and neither alone was the
 blocker. Dropping both raises them to 18, 21 and 23 entries — roughly one every
 three days.
 
-### Crypto is parked on six-hour (2026-08-30)
+### Crypto runs the BREAKOUT profile (2026-09-21)
 
-Every coin runs `SIX_HOUR` candles with `SMA 10/40`. **Crypto is a finished
-experiment, not one awaiting more data.**
+All nine crypto bots run `BREAKOUT`: a Donchian channel breakout on `SIX_HOUR`
+candles, buy a close above the prior 80-bar high (20 days), sell a close below
+the prior 40-bar low (10 days), 15% disaster stop, **no take-profit, no
+trailing stop, no break-even trigger, no filters**. Registered as
+`experiments/2026-09-crypto-donchian-breakout.json`; the class comparison that
+chose it is `backtest_crypto_classes.py`.
+
+Why a class change rather than another parameter pass: the section below
+records that no fast rule clears the 1.0% round trip. A breakout rule holds
+for weeks, so the fee is small against its winners, at the price of a low win
+rate (30–50%) and lagging a straight rally. On 517 stored days it made +$78 at
+$100/coin while holding the same coins lost $79; it beat holding in both crash
+folds and lagged in both rally folds.
+
+**Do not add a target or trailing stop to this profile.** With the SIM
+profile's 8% take-profit the same rule's win rate rises to 60% and its net
+falls to +$20. A high win rate on these bots would be evidence the exits were
+tightened, not that the rule is working.
+
+The SMA-era state files and trade CSVs are in
+`crypto_archive_before_breakout_20260921/`, not deleted.
+
+### Crypto was parked on six-hour (2026-08-30, superseded above)
+
+Every coin ran `SIX_HOUR` candles with `SMA 10/40` until 2026-09-21. **The SMA
+crossover on crypto is a finished experiment, not one awaiting more data.**
 
 It was briefly moved to `ONE_HOUR` earlier the same day to raise its evidence
 rate, and moved back once the fee arithmetic was actually measured rather than

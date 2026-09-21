@@ -262,6 +262,18 @@ class Settings:
     except ValueError:
         RSI_OVERBOUGHT = 70.0
 
+    # Donchian breakout channel, in candles of the running GRANULARITY. 80/40 on
+    # six-hour candles is twenty days in, ten days out.
+    try:
+        DONCHIAN_ENTRY_BARS = int(get_env_with_profile("DONCHIAN_ENTRY_BARS", "80"))
+    except ValueError:
+        DONCHIAN_ENTRY_BARS = 80
+
+    try:
+        DONCHIAN_EXIT_BARS = int(get_env_with_profile("DONCHIAN_EXIT_BARS", "40"))
+    except ValueError:
+        DONCHIAN_EXIT_BARS = 40
+
 
     @classmethod
     def validate(cls):

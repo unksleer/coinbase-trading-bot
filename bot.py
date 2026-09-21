@@ -13,7 +13,7 @@ from config.settings import Settings
 from utils.logger import setup_logger
 from utils.state import StateManager, CorruptStateError
 from utils.notifications import send_trade_notification
-from strategies import SMACrossoverStrategy, RSIMeanReversionStrategy
+from strategies import SMACrossoverStrategy, RSIMeanReversionStrategy, DonchianBreakoutStrategy
 from utils.order_journal import (
     OrderJournal,
     quantize_value,
@@ -264,7 +264,12 @@ def main():
         sys.exit(0)
 
     # 6. Initialize Strategy
-    if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
+    if Settings.STRATEGY_TYPE == "DONCHIAN_BREAKOUT":
+        strategy = DonchianBreakoutStrategy(
+            entry_bars=Settings.DONCHIAN_ENTRY_BARS,
+            exit_bars=Settings.DONCHIAN_EXIT_BARS
+        )
+    elif Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
         strategy = RSIMeanReversionStrategy(
             rsi_period=Settings.RSI_PERIOD,
             rsi_oversold=Settings.RSI_OVERSOLD,
