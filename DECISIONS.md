@@ -19,6 +19,43 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-21 — School Run backtested on SPY: cost-dominated, not run as a paper bot
+
+**What:** Tom Hougaard's School Run (buy stop above and sell stop below a
+reference candle, stop on the far side, flat by the close) implemented as
+`strategies/school_run.py` and backtested by `backtest_school_run.py` on the
+501 stored SPY sessions, 2024-09-03 to 2026-09-02. The DAX 09:15–09:30 CET
+candle is the second bar after the open, so the SPY reference is the
+09:45–10:00 ET bar (`--ref-candle 1`); the opening bar was also run.
+
+**What the numbers said (backtested, $100, 0.05% slippage per side):**
+
+| Exit variant | Trades | Win | Net | PF |
+| :--- | :---: | :---: | :---: | :---: |
+| Breakeven at 1R, close at end of day (the rule) | 501 | 28% | −$44.18 | 0.58 |
+| No management, close at end of day | 501 | 34% | −$39.73 | 0.65 |
+| Fixed 1R target | 501 | 42% | −$39.47 | 0.61 |
+| Fixed 2R target | 501 | 34% | −$42.33 | 0.63 |
+| Breakeven at 1R, trail 1R | 501 | 37% | −$42.85 | 0.58 |
+| Buy and hold, same window | | | +$39.91 | |
+
+Every fold of the five-fold walk-forward is negative. Opening bar as reference:
+−$43.14. With slippage set to zero the same variants net +$5.57 to +$10.37
+(gross edge ≈ +0.02% per trade); breakeven sits at roughly 1 basis point per
+side. The reference candle is a median 0.22% wide and breaks in every session,
+so this is a coin flip with a 0.10% toll, not a rule with an edge that costs
+ate. No exit variant changes the sign.
+
+**Decision:** not promoted to a paper bot. A paper run yields one trade per
+session and would take a year to say what the store said in a minute.
+
+**Also today:** the 09:00 daily PnL email cron entry is commented out (not
+deleted) in the user crontab. The dashboard is the record while everything is
+paper; the email added nothing it does not show. `EMAIL_NOTIFICATIONS_ENABLED`
+and per-trade notifications are untouched.
+
+---
+
 ## 2026-09-14 — Operational pass from an outside review
 
 An external review (ChatGPT Astra) of the repo produced seven operational
