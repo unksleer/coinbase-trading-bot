@@ -19,6 +19,67 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — Phase 1 agent: the observer (observe only, never acts)
+
+**Why:** three registered experiments each carry abort rules in their sealed
+terms, and nothing checked them. They were checked when the operator asked.
+`observer.py` now checks every one, hourly, and reports to the dashboard. It
+emails only when a registration's own stopping rule has fired — the one event
+rare and actionable enough to earn an inbox — deduplicated to once per stop
+per 24 hours. Full specification, and the Phase 2 it deliberately is not, in
+[`OBSERVER.md`](OBSERVER.md).
+
+**It cannot act.** No import of `restart_bots`, `auto_learner`, `subprocess`
+or `dotenv`; no path that writes `.env` or a state file. Pinned by a test that
+parses the file rather than trusting it.
+
+### A bug caught on the first dry run, before deployment
+
+The first run graded the stock registration on **20 trades — 15 wins, 5
+losses.** The truth since that registration began on 2026-09-04 is **13: 9
+wins avg +1.68%, 4 losses avg −5.06%.** The extra seven belonged to the voided
+v1 and v2 runs, still in the same CSV files. Every check is now bounded by the
+registration's sealed `started` date and symbol list; a test feeds it trades
+from before the start and asserts they do not count. Written the number down
+before the run and had it corrected by the run — the exact lesson recorded on
+2026-09-14, and worth recording again.
+
+### What it found, once scoped (0 stop · 2 warn · 5 info)
+
+**Stocks v3 — warn.** Average loss (−5.06%) exceeds average win (+1.68%),
+ratio 0.33; all four losses are 5% stop-outs; net **−5.08%** since Sep 4. The
+registration's watch-for names this the loss-aversion trap and says to revert
+the exit invariant. **The rule is correct and its remedy is stale**: the
+2026-09-21 exit sweep, run *after* the rule was sealed, showed every tighter
+exit was worse out of sample and withdrew the "structural defect" claim. The
+observer reports the rule as written. What to do about a rule superseded by
+later evidence is the operator's decision at the **2026-10-04** checkpoint,
+not the observer's — and the −5.08% is real regardless.
+
+**FCR v2 — warn.** Over 18 sessions the rejection mix has drifted from the
+501-session backtest: `volume_below_threshold` 33% live vs 59%, with the
+difference gone to `no_breakout` (+16 pts). The accept rate is **5% live, 5%
+backtest — identical**, and no reason appears live that the backtest never
+produced. That is the signature of a *quieter September*, not a broken
+harness: fewer opening-range breakouts occurred at all, so fewer reached the
+volume test. The registration's rule reads any material drift as "harness
+suspect" and fires a `stop` at 20 sessions; it will do so in two sessions. The
+rule should probably key on accept rate and novel reasons rather than raw
+share drift on a 20-session sample, where one reason shifting five sessions is
+a 25-point swing. Amending a sealed rule is the operator's call.
+
+**Info:** Donchian 0 of 20 effective trades (nine open, none closed); stocks
+13 pooled ≈ 5 effective of 20; fleet clean; no position past 2× its expected
+hold.
+
+### Deployed
+
+pm2 `observer`, cron `12 * * * *`, no autorestart. Dashboard panel shows every
+run with the age of the last one, so "found nothing" and "did not run" cannot
+be confused. 492 tests pass.
+
+---
+
 ## 2026-09-30 — Dashboard labelled Donchian bots as SMA crossover
 
 **Found while answering "why are these holding so long".** The signal table

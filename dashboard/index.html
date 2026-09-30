@@ -571,6 +571,26 @@
             border-radius: 3px;
         }
 
+        .obs-badge {
+            font-family: var(--mono, ui-monospace, monospace); font-size: 10px;
+            letter-spacing: .1em; padding: 2px 7px; margin-left: 10px;
+            border-radius: 2px; vertical-align: 3px;
+            background: rgba(255,255,255,.07); color: var(--text-secondary);
+        }
+        .obs-row { display: grid; grid-template-columns: 62px 1fr; gap: 12px;
+                   padding: 9px 0; border-top: 1px solid var(--border-color, rgba(255,255,255,.08)); }
+        .obs-row:first-child { border-top: none; }
+        .obs-lvl { font-family: var(--mono, ui-monospace, monospace); font-size: 10px;
+                   font-weight: 700; letter-spacing: .08em; padding: 2px 6px; border-radius: 2px;
+                   text-align: center; align-self: start; }
+        .obs-stop { background: var(--accent-glow-red); color: var(--accent-red); }
+        .obs-warn { background: rgba(245,158,11,.15); color: #f59e0b; }
+        .obs-info { background: rgba(255,255,255,.06); color: var(--text-secondary); }
+        .obs-title { font-size: 13px; color: var(--text-primary); }
+        .obs-detail { font-size: 12px; color: var(--text-secondary); margin-top: 2px; line-height: 1.5; }
+        .obs-scope { font-family: var(--mono, ui-monospace, monospace); font-size: 10px;
+                     color: var(--text-secondary); }
+
         .fleet-banner {
             background: var(--accent-glow-red);
             border: 1px solid var(--accent-red);
@@ -622,6 +642,20 @@
           wrong, so its presence always means something.
         -->
         <div id="fleet-banner" class="fleet-banner" style="display:none"></div>
+
+        <!--
+          Observer. An hourly process that checks every registration's own
+          stopping and watch-for rules and reports; it changes nothing. Shown
+          always, with the age of its last run, so "it found nothing" and "it
+          has not run" cannot be confused.
+        -->
+        <div class="scanner-panel" id="observer-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>👁 Observer <span class="obs-badge">OBSERVE ONLY</span></h2>
+                <span class="card-subtext" id="observer-updated">—</span>
+            </div>
+            <div id="observer-body"></div>
+        </div>
 
 
         <!-- --- Edge Analysis: gross vs fees vs net --- -->
@@ -1281,8 +1315,35 @@
             el.style.display = 'block';
         }
 
+        function renderObserver(obs) {
+            const body = document.getElementById('observer-body');
+            const stamp = document.getElementById('observer-updated');
+            if (!body) return;
+            const esc = t => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+            if (!obs || !obs.available) {
+                body.innerHTML = '<div class="obs-detail">Observer has not run yet.</div>';
+                stamp.textContent = 'no run recorded';
+                return;
+            }
+            const age = obs.age_seconds || 0;
+            const ageTxt = age < 90 ? Math.round(age) + 's' : age < 5400 ? Math.round(age/60) + ' min' : (age/3600).toFixed(1) + ' h';
+            stamp.textContent = 'last run ' + ageTxt + ' ago';
+            stamp.classList.toggle('stamp-stale', age > 3 * 3600);
+            const order = {stop: 0, warn: 1, info: 2};
+            const rows = (obs.findings || []).slice().sort((a, b) => order[a.level] - order[b.level]);
+            body.innerHTML = rows.map(f => `
+                <div class="obs-row">
+                  <span class="obs-lvl obs-${f.level}">${f.level}</span>
+                  <div>
+                    <div class="obs-title">${esc(f.title)} <span class="obs-scope">${esc(f.scope)}</span></div>
+                    <div class="obs-detail">${esc(f.detail)}</div>
+                  </div>
+                </div>`).join('') || '<div class="obs-detail">Nothing to report.</div>';
+        }
+
         function updateDashboard(data) {
             renderFleetProblems(data.fleet_problems);
+            renderObserver(data.observer);
             // Update Timestamp
             if (data.timestamp) {
                 const d = new Date(data.timestamp);

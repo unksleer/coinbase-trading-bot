@@ -130,3 +130,33 @@ def send_trade_notification(trade_type: str, pair: str, price: float, amount_usd
         logger.info("Trade notification email sent successfully!")
     except Exception as e:
         logger.error(f"Error sending trade notification email: {e}")
+
+
+def send_email(subject: str, body: str) -> bool:
+    """
+    Plain-text email through the same SMTP settings the trade notifier uses.
+
+    Exists for the observer's hard-stop alerts and nothing else routine — the
+    operator reads the dashboard, not email, and asked for the daily statement
+    to be paused. A registration's own rule firing is the one event rare and
+    actionable enough to earn an inbox. Returns True only on a confirmed send.
+    """
+    if os.getenv("EMAIL_NOTIFICATIONS_ENABLED", "False").lower() not in ("true", "1", "yes"):
+        return False
+    host = os.getenv("SMTP_HOST", ""); port = int(os.getenv("SMTP_PORT", "465"))
+    user = os.getenv("SMTP_USER", ""); password = os.getenv("SMTP_PASS", "")
+    to = os.getenv("NOTIFICATION_EMAIL", user)
+    if not (host and user and password):
+        logger.warning("SMTP settings incomplete; cannot send email.")
+        return False
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject; msg["From"] = f"Trading Observer <{user}>"; msg["To"] = to
+    msg.attach(MIMEText(body, "plain"))
+    try:
+        with smtplib.SMTP_SSL(host, port, context=create_default_context()) as server:
+            server.login(user, password)
+            server.sendmail(user, to, msg.as_string())
+        return True
+    except Exception as e:
+        logger.error(f"send_email failed: {e}")
+        return False

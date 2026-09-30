@@ -787,6 +787,27 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return result
 
     @staticmethod
+    def _observer_findings():
+        """
+        The observer's last run, from logs/observer_findings.json, with age.
+
+        Age travels with the data so a stale run reads as stale: an hourly
+        process that has not written in three hours is itself a finding, and
+        a panel showing yesterday's "all clear" as if current is the failure
+        this dashboard keeps having.
+        """
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "logs", "observer_findings.json")
+        try:
+            with open(path) as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError):
+            return {"available": False, "findings": [], "age_seconds": None}
+        payload["available"] = True
+        payload["age_seconds"] = max(0.0, time.time() - payload.get("generated_at", 0))
+        return payload
+
+    @staticmethod
     def _cached_correlations():
         """
         Correlations from logs/correlations.json, written by
@@ -1050,6 +1071,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "scanner": {},
             "active_positions": [],
             "fleet_problems": fleet_problems,
+            "observer": DashboardHandler._observer_findings(),
             "bots": self.get_pm2_status(),
             "performance": {
                 "live_realized_pnl": 0.0,
