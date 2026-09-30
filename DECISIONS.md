@@ -19,6 +19,32 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — Dashboard labelled Donchian bots as SMA crossover
+
+**Found while answering "why are these holding so long".** The signal table
+reported all nine crypto bots as `SMA_CROSSOVER` nine days after they were
+switched to `DONCHIAN_BREAKOUT`. Cause: the crypto signal log has no
+`strategy` column, so the dashboard read `None` and fell back to a default.
+Invisible while every bot was `IN TRADE`; the moment one went flat it would
+have been described in crossover vocabulary — `NO CROSS`, `BELOW` — for a
+strategy that has no crossover.
+
+**Fix:** one resolver, mirroring how each bot resolves its own strategy —
+crypto through coin → active profile → base on `STRATEGY_TYPE`, stocks through
+`<TICKER>_STRATEGY` then `STOCK_STRATEGY` — used by both dashboard paths so
+they cannot disagree. The log column is a last-resort fallback only. A label a
+bot never wrote is not a fact about the bot; its configuration is.
+
+Verified live: 9 × `DONCHIAN_BREAKOUT`, 12 × `RSI_MEAN_REVERSION`.
+
+**Also recorded:** the assistant initially read the Sep 21 configuration as an
+unrecorded freeze violation before checking `git log`, which held the commit,
+the registration and this file's entry the whole time. Same failure this log
+has criticised in others — asserting before checking. Nothing was changed on
+that basis.
+
+---
+
 ## 2026-09-21 — Crypto restarted on a breakout class; stock exits left alone after a sweep
 
 **The stock question first.** Nine live trades since 2026-09-04 read as small

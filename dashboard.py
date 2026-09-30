@@ -259,6 +259,33 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             return env[profile_key]
         return env.get(key, default)
 
+    @staticmethod
+    def _strategy_for(pair, env, log_value=None):
+        """
+        The strategy a bot is actually running, resolved the way the bot does.
+
+        The crypto signal log has no `strategy` column, so reading it gave
+        None and the fallback labelled all nine Donchian bots SMA_CROSSOVER —
+        harmless while every one was IN TRADE, and wrong the moment one went
+        flat, when a breakout bot would have been described in crossover
+        vocabulary (NO CROSS, BELOW). A label a bot never wrote is not a fact
+        about the bot; its configuration is.
+
+        Two naming schemes, because the two bots use them:
+          crypto  coin -> active profile -> base, on STRATEGY_TYPE
+                  (settings.get_env_with_profile), default SMA_CROSSOVER
+          stocks  <TICKER>_STRATEGY, then STOCK_STRATEGY (stock_bot.py)
+        The log column is consulted last, as a fallback for a synthetic env.
+        """
+        symbol = pair.replace("stock-", "")
+        if pair.startswith("stock-"):
+            found = (env.get(f"{symbol.upper()}_STRATEGY")
+                     or env.get("STOCK_STRATEGY"))
+        else:
+            prefix = symbol.split("-")[0].upper()
+            found = DashboardHandler._resolve_setting(env, prefix, "STRATEGY_TYPE")
+        return (found or log_value or "SMA_CROSSOVER").strip().upper()
+
     def signal_from_log(self, pair, env, held=None):
         """
         Read the bot's own last decision from logs/signal_log_<pair>.csv.
@@ -316,7 +343,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         # SMA geometry is meaningless for a mean-reversion bot, which enters on
         # RSI crossing up through oversold. Deriving it anyway is why the stock
         # bots displayed as ENTERING while sitting at RSI 50.
-        strategy = (last.get("strategy") or "").upper()
+        strategy = self._strategy_for(pair, env, last.get("strategy"))
 
         if position == "LONG":
             signal = "IN TRADE"
@@ -334,7 +361,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return {
             "bot": None,
             "pair": pair.replace("stock-", ""),
-            "strategy": strategy or "SMA_CROSSOVER",
+            "strategy": strategy,
             "position": position,
             "sma_short": short,
             "sma_long": long,
@@ -451,12 +478,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             # oversold level they actually trigger on.
             display_pair = pair.replace("stock-", "")
             prefix = display_pair.split("-")[0].upper()
-            # Mirror stock_bot's own lookup: <TICKER>_STRATEGY, then
-            # STOCK_STRATEGY. The coin -> profile -> base order used elsewhere
-            # does not apply here and silently returned the wrong default.
-            bot_strategy = (env.get(f"{prefix}_STRATEGY")
-                            or env.get("STOCK_STRATEGY")
-                            or "SMA_CROSSOVER").strip().upper()
+            bot_strategy = self._strategy_for(pair, env)
 
             # A stock bot asleep outside market hours is not "waiting for a
             # setup" — it is not evaluating at all, and saying otherwise implies
