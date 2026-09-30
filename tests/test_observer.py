@@ -74,19 +74,105 @@ def test_donchian_average_loss_beyond_ten_percent_warns():
     assert any(f["level"] == observer.WARN and "10%" in f["title"] for f in out)
 
 
-def test_stocks_warn_when_average_loss_exceeds_average_win():
-    out = observer.check_stocks([row(1.0), row(1.0), row(-3.5)], "r")
-    assert any(f["level"] == observer.WARN for f in out)
+def _reg(rules=None, name="r"):
+    return {"name": name, "started": "2026-09-04", "symbols": [], "market": "stocks",
+            "success_criteria": ({"shape_rules": rules} if rules is not None else {})}
 
 
-def test_stocks_do_not_warn_when_wins_dominate():
-    out = observer.check_stocks([row(2.7), row(2.6), row(-0.5)], "r")
-    assert not any(f["level"] == observer.WARN for f in out)
+RULES = {"min_win_rate_pct": 70.0, "min_profit_factor": 1.0, "min_effective_trades": 20}
+
+
+def _backtest_shape(n=30):
+    """The Sep 21 backtest of the live exits: 72% wins of +2.52%, losses of -5.64%."""
+    wins = int(round(n * 0.72))
+    return [row(2.52)] * wins + [row(-5.64)] * (n - wins)
+
+
+def test_the_designed_win_loss_asymmetry_is_not_a_warning(monkeypatch):
+    """
+    Regression for the misspecified rule. The backtest of this exact
+    configuration has win/loss 0.45; the old rule fired on that. The new one
+    must read the backtest's own shape as normal.
+    """
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    out = observer.check_shape_rules(_backtest_shape(), _reg(RULES), "stocks")
+    assert all(f["level"] == observer.INFO for f in out), out
+
+
+def test_win_rate_below_the_sealed_floor_warns(monkeypatch):
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    rows = [row(2.52)] * 13 + [row(-5.64)] * 7            # 65%
+    out = observer.check_shape_rules(rows, _reg(RULES), "stocks")
+    assert any(f["level"] == observer.WARN and "win rate" in f["detail"] for f in out)
+
+
+def test_profit_factor_below_the_sealed_floor_warns(monkeypatch):
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    rows = [row(1.0)] * 15 + [row(-5.0)] * 5              # 75% wins, PF 0.6
+    out = observer.check_shape_rules(rows, _reg(RULES), "stocks")
+    assert any(f["level"] == observer.WARN and "profit factor" in f["detail"] for f in out)
+
+
+def test_rules_do_not_fire_before_the_effective_minimum(monkeypatch):
+    """5 effective trades cannot breach a rule that needs 20."""
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 0.4)
+    rows = [row(1.0)] * 9 + [row(-5.0)] * 4               # the live 13: eff = 5
+    out = observer.check_shape_rules(rows, _reg(RULES), "stocks")
+    assert all(f["level"] == observer.INFO for f in out)
+    assert "rules apply at 20" in out[0]["detail"]
+
+
+def test_a_registration_without_shape_rules_gets_info_only(monkeypatch):
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    out = observer.check_shape_rules([row(1.0)] * 5 + [row(-9.0)] * 15, _reg(), "stocks")
+    assert all(f["level"] == observer.INFO for f in out)
+    assert "no shape rules sealed" in out[0]["detail"]
+
+
+def test_rules_come_from_the_registration_not_the_code():
+    src = open(os.path.join(DIR, "observer.py")).read()
+    assert 'reg.get("success_criteria") or {}).get("shape_rules")' in src
+    assert "ratio < 1.0" not in src, "the hardcoded win/loss rule must be gone"
+
+
+def test_progress_projects_when_the_count_will_be_reached(monkeypatch):
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    reg = {"name": "r", "market": "stocks", "started": "2026-09-04", "symbols": [],
+           "config": {"strategy": "RSI_MEAN_REVERSION"},
+           "stopping_rule": "Stop at 20 effective trades."}
+    out = observer.check_registrations([reg], {"stocks": [row(1.0)] * 5}, {})
+    assert "at this rate 20 effective trades" in out[0]["detail"]
+
+
+def test_a_date_that_is_only_a_review_point_is_not_a_stop(monkeypatch):
+    """v4's rule names a date as a review point; only the count may stop it."""
+    monkeypatch.setattr(observer, "effective_factor", lambda m: 1.0)
+    reg = {"name": "r", "market": "stocks", "started": "2026-09-04", "symbols": [],
+           "config": {"strategy": "RSI_MEAN_REVERSION"},
+           "stopping_rule": "Stop at 20 effective trades. 2000-01-01 is a REVIEW point, not a stop."}
+    out = observer.check_registrations([reg], {"stocks": [row(1.0)] * 5}, {})
+    assert out[0]["level"] == observer.INFO
 
 
 def test_stopping_rule_parsing():
+    """One case per live registration, plus the shape that caused the bug."""
     assert observer.parse_stop("Stop at 2027-01-15 OR 20 effective trades, whichever is later.") == ("2027-01-15", 20, "later")
     assert observer.parse_stop("Stop at 2026-10-31 or 20 logged sessions, whichever is LATER.") == ("2026-10-31", 20, "later")
+    # v4: the date is a review point. It must NOT parse as a stop date.
+    v4 = "Stop at 20 effective trades. 2026-10-04, and the 4th of each month after, are REVIEW points, not stops."
+    assert observer.parse_stop(v4) == (None, 20, "earlier")
+
+
+def test_the_live_registrations_parse_the_way_they_read():
+    """Guards the parser against the actual sealed prose, not just fixtures."""
+    from utils import experiment
+    for reg in experiment.active():
+        date, count, _ = observer.parse_stop(reg["stopping_rule"])
+        assert count == 20, reg["name"]
+        if "REVIEW point" in reg["stopping_rule"]:
+            assert date is None, f"{reg['name']}: a review date parsed as a stop"
+        else:
+            assert date is not None, f"{reg['name']}: stop date missing"
 
 
 def test_later_means_both_conditions_must_be_met(monkeypatch):

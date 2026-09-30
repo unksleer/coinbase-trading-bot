@@ -19,6 +19,61 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — Stock registration v3 → v4: a misspecified rule and a stale date
+
+**Two questions from the operator, both fair.** Is 2026-10-04 arbitrary? Yes:
+it was the 2026-08-30 projection of when 20 *pooled* trades would land at
+~24/month, reset to Oct 1 on Sep 1 and to Oct 4 on Sep 4 by a string replace,
+and never re-derived after effective counting (Aug 31) made the real count
+2.4× slower. What is the benefit of the Sep 21 exit finding? That the v3
+watch-for — "if average loss grows faster than average win, revert the exit
+invariant" — **fires on the backtest of this very configuration**, whose
+win/loss ratio is 0.45. A rule that flags the designed shape as a fault
+cannot tell normal from broken.
+
+**Live is consistent with the backtest.** 13 trades since Sep 4: win rate 69%
+vs 72% backtested; average loss −5.06% vs −5.64%; average win +1.68% vs +2.52%
+on nine wins. Net −5.08% is inside what a profit factor of 1.12 produces on 13
+trades. Nothing here says broken; nothing says proven — 1.12 is thin, and 5
+effective trades cannot distinguish it from 0.9.
+
+### Changed
+
+- **v3 voided, v4 sealed.** Configuration, symbols and **start date carried
+  forward unchanged** — the correction is driven by the Sep 21 backtest, which
+  predates the live trades, not by the live result. That is the line between
+  correcting a rule and moving a goalpost, and the record says which side this
+  is on.
+- **The date is a review point, not a stop.** v4 stops at 20 effective trades.
+  Oct 4 and the 4th of each month are reviews.
+- **Shape rules replace the win/loss rule**, sealed in the registration and
+  derived from the sweep: breakeven win rate = avgLoss/(avgLoss+avgWin) =
+  69.1%; rule fires on **win rate < 70% or profit factor < 1.0, over ≥ 20
+  effective trades**. The secondary 55% remains the generic graduation floor;
+  for this configuration the 70% rule binds first.
+- **The observer reads shape rules from the registration.** Changing a rule
+  is now a registration edit — recorded, voided, re-sealed — never a code
+  edit. The hardcoded ratio check is gone and a test asserts it stays gone.
+- **Progress lines now project** when the count will be reached at the run's
+  own rate, so a stale date is self-evident without a rule for it.
+
+### A bug the new tests caught before it fired
+
+`parse_stop` took *any* date in a stopping rule as a stop date. On Oct 4 it
+would have read v4's review date, fired a `stop`, and sent exactly the false
+email this change exists to prevent. The dry run did not show it only because
+today is Sep 30. A test written for v4's rule shape caught it; a second test
+now parses every live registration's actual prose. Only a date after "Stop
+at" counts.
+
+### Under v4 the observer reports
+
+0 stop · 1 warn · 6 info. The stock finding is **info** — 5 effective of 20,
+rules apply at 20 — and the FCR drift warning is unchanged and expected to
+fire its stop in about two sessions. 499 tests pass.
+
+---
+
 ## 2026-09-30 — Phase 1 agent: the observer (observe only, never acts)
 
 **Why:** three registered experiments each carry abort rules in their sealed

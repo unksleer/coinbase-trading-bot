@@ -1,0 +1,59 @@
+{
+  "name": "2026-09-stocks-mean-reversion-v4",
+  "hypothesis": "RSI mean reversion (35/65) on a 12-ticker equity basket, with discretionary exits gated below break-even, produces a positive per-trade edge that BEATS BUY-AND-HOLD after costs. v1 was voided on 2026-09-01 after the trailing stop was found able to close positions below entry. v3 was voided on 2026-09-30 to correct a misspecified watch-for rule and a stale stopping date; configuration and start date carried forward unchanged.",
+  "market": "stocks",
+  "symbols": [
+    "DIS",
+    "JNJ",
+    "LPL",
+    "META",
+    "PG",
+    "QQQ",
+    "SLV",
+    "SPY",
+    "TSLA",
+    "WMT",
+    "XLP",
+    "XLU"
+  ],
+  "config": {
+    "strategy": "RSI_MEAN_REVERSION",
+    "rsi_period": 14,
+    "oversold": 35,
+    "overbought": 65,
+    "stop_loss_pct": 5.0,
+    "take_profit_pct": 8.0,
+    "trailing_stop_pct": 1.5,
+    "trailing_activation_pct": 1.0,
+    "exit_invariant": "discretionary exits blocked below break-even; stop-loss exempt",
+    "trade_amount_usd": 100.0,
+    "timeframe": "Hour",
+    "venue": "alpaca_paper"
+  },
+  "success_criteria": {
+    "primary": "pooled excess vs buy-and-hold > 0",
+    "min_effective_trades": 20,
+    "note": "EFFECTIVE trades. 12 tickers measure as 4.9 independent symbols, so pooled counts overstate evidence ~2.4x.",
+    "secondary": {
+      "win_rate_pct": 55.0,
+      "net_pnl_usd": 0.0,
+      "per_trade_sharpe": 0.35,
+      "worst_trade_pct": -2.5
+    },
+    "power_caveat": "At the measured per-trade Sharpe of 0.074 a conclusive test needs ~700 independent trades. This run cannot confirm a small edge; it can detect a large one or rule out a disaster.",
+    "watch_for": "The exit invariant holds losers to the stop by design, so losses cluster near -5% and wins near +2%; that asymmetry is expected and is NOT a signal. The signal is the shape_rules above, applied by the observer from this record. The secondary win_rate_pct of 55 is the generic graduation floor; for this configuration the 70% shape rule binds first.",
+    "shape_rules": {
+      "min_win_rate_pct": 70.0,
+      "min_profit_factor": 1.0,
+      "min_effective_trades": 20,
+      "derivation": "Breakeven win rate for this configuration is avgLoss/(avgLoss+avgWin). Sep 21 backtest of the live exits over 260 trades: avg win +2.52%, avg loss -5.64%, breakeven 69.1%, achieved 72%, profit factor 1.12. A win rate under 70% or a profit factor under 1.0, sustained over 20 effective trades, means the edge is gone; a win/loss ratio under 1 means nothing here, because the strategy is built that way."
+    }
+  },
+  "stopping_rule": "Stop at 20 effective trades. 2026-10-04, and the 4th of each month after, are REVIEW points, not stops. No configuration change before the stop except a defect that stops trades executing or makes an exit unable to fire; any change to entry, exits or thresholds voids this registration.",
+  "started": "2026-09-04",
+  "notes": "Position size raised $10 -> $100 on 2026-09-04 at the operator's request, to see dollar figures at the intended scale. Percentage returns are scale-invariant, so the evidence is unchanged; the registration is re-sealed because trade_amount_usd is a sealed field. Exit invariant added 2026-09-01 to both markets: a discretionary exit (trailing stop, strategy signal) may not close a position at a net loss. Stop-loss exempt. Crypto stays parked; the same invariant was applied there and walk-forward over 500 days cut its loss from -$2.64 to -$1.13 without beating buy-and-hold in any variant (17/45 folds). v4 (2026-09-30): start date preserved because the configuration is unchanged and the correction is driven by the Sep 21 backtest, not by the live result. The observer reads shape_rules from this record; changing a rule is a registration edit, never a code edit.",
+  "status": "running",
+  "result": null,
+  "concluded": null,
+  "seal": "a790229c83124095"
+}

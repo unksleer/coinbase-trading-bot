@@ -122,8 +122,15 @@ def effective_factor(market):
 
 
 def parse_stop(rule):
-    """(date or None, trade count or None, 'later'|'earlier') from prose."""
-    date = re.search(r"(\d{4}-\d{2}-\d{2})", rule or "")
+    """
+    (date or None, trade count or None, 'later'|'earlier') from prose.
+
+    Only a date that follows "Stop at" is a stop date. The first version took
+    ANY date in the rule, so a registration saying "2026-10-04 is a REVIEW
+    point, not a stop" would have fired a stop — and an email — on 2026-10-04.
+    A test written for that rule shape caught it four days early.
+    """
+    date = re.search(r"\bStop at\s+(\d{4}-\d{2}-\d{2})", rule or "", re.I)
     count = re.search(r"(\d+)\s+(?:effective|logged)\s+(?:trades|sessions)", rule or "", re.I)
     mode = "later" if re.search(r"whichever is later", rule or "", re.I) else "earlier"
     return (date.group(1) if date else None,
@@ -151,6 +158,20 @@ def check_registrations(active, trades_by_market, fcr_sessions):
         detail = (f"{eff} {unit}" + (f" of {stop_n}" if stop_n else "")
                   + (f" · stops {stop_date}" if stop_date else "")
                   + f" · {pooled} pooled")
+        # Projection at the run's own observed rate. Oct 4 was a projection
+        # made before effective counting existed and never re-derived; showing
+        # the live projection next to the sealed date makes a stale date
+        # self-evident without a rule for it.
+        try:
+            start = datetime.fromisoformat(reg["started"]).date()
+            days = max(1, (datetime.now(timezone.utc).date() - start).days)
+            if stop_n and eff and eff < stop_n:
+                need_days = int((stop_n - eff) * days / eff)
+                from datetime import timedelta
+                eta = (datetime.now(timezone.utc).date() + timedelta(days=need_days)).isoformat()
+                detail += f" · at this rate {stop_n} {unit} ≈ {eta}"
+        except (KeyError, ValueError, TypeError):
+            pass
         if done:
             out.append(finding(STOP, name, "Registration stopping rule reached",
                                detail + " — the run is over on its own terms; review before anything changes."))
@@ -184,21 +205,60 @@ def check_donchian(rows, reg_name):
     return out
 
 
-def check_stocks(rows, reg_name):
+def check_shape_rules(rows, reg, market):
+    """
+    Win/loss shape, judged by the rules the registration seals — not by rules
+    written into this file.
+
+    The first version hardcoded "average loss exceeds average win -> warn". The
+    Sep 21 exit sweep showed that ratio is 0.45 on the backtest of this very
+    configuration: the rule flagged the strategy's designed shape as a fault
+    and would have fired on day one of any run. A rule that cannot tell normal
+    from broken is worse than none. So the thresholds live in
+    success_criteria.shape_rules and this code only applies them:
+
+        min_win_rate_pct     fire when win rate falls below this ...
+        min_profit_factor    ... or profit factor falls below this ...
+        min_effective_trades ... but only once this many effective trades exist;
+                             before that, report the shape as info.
+
+    Changing a rule is then a registration edit — recorded, sealed, voided and
+    re-sealed like any other change to the terms — never a code edit.
+    """
     out = []
     wins = [r["_net_pct"] for r in rows if r["_net_pct"] > 0]
     losses = [r["_net_pct"] for r in rows if r["_net_pct"] < 0]
-    if wins and losses:
-        aw, al = st.mean(wins), abs(st.mean(losses))
-        ratio = aw / al if al else float("inf")
-        detail = (f"{len(wins)} wins avg {aw:+.2f}% · {len(losses)} losses avg {-al:+.2f}% "
-                  f"· win/loss ratio {ratio:.2f} · win rate {100*len(wins)/len(rows):.0f}%")
-        if ratio < 1.0:
-            out.append(finding(WARN, reg_name, "Average loss now exceeds average win",
-                               detail + " — the registration names this as the loss-aversion trap "
-                               "and says to revert the exit invariant"))
-        else:
-            out.append(finding(INFO, reg_name, "Win/loss shape", detail))
+    if not rows or not (wins or losses):
+        return out
+    n = len(rows)
+    eff = int(round(n * effective_factor(market)))
+    wr = 100.0 * len(wins) / n
+    gw, gl = sum(wins), abs(sum(losses))
+    pf = (gw / gl) if gl else float("inf")
+    aw = st.mean(wins) if wins else 0.0
+    al = st.mean(losses) if losses else 0.0
+    detail = (f"{len(wins)} wins avg {aw:+.2f}% · {len(losses)} losses avg {al:+.2f}% · "
+              f"win rate {wr:.0f}% · profit factor {pf:.2f} · {n} pooled ≈ {eff} effective")
+
+    rules = (reg.get("success_criteria") or {}).get("shape_rules") or {}
+    if not rules:
+        out.append(finding(INFO, reg["name"], "Win/loss shape", detail + " · no shape rules sealed"))
+        return out
+
+    need = int(rules.get("min_effective_trades", 20))
+    if eff < need:
+        out.append(finding(INFO, reg["name"], "Win/loss shape",
+                           detail + f" · rules apply at {need} effective"))
+        return out
+    problems = []
+    if "min_win_rate_pct" in rules and wr < float(rules["min_win_rate_pct"]):
+        problems.append(f"win rate {wr:.0f}% below the sealed {float(rules['min_win_rate_pct']):.0f}% floor")
+    if "min_profit_factor" in rules and pf < float(rules["min_profit_factor"]):
+        problems.append(f"profit factor {pf:.2f} below the sealed {float(rules['min_profit_factor']):.2f} floor")
+    if problems:
+        out.append(finding(WARN, reg["name"], "Shape rule breached", detail + " — " + "; ".join(problems)))
+    else:
+        out.append(finding(INFO, reg["name"], "Win/loss shape", detail + " · within sealed rules"))
     return out
 
 
@@ -295,7 +355,7 @@ def run():
         if s == "DONCHIAN_BREAKOUT":
             findings += check_donchian(mine, reg["name"])
         elif s == "RSI_MEAN_REVERSION":
-            findings += check_stocks(mine, reg["name"])
+            findings += check_shape_rules(mine, reg, "stocks")
         elif s == "FIRST_CANDLE_RULE":
             started = reg.get("started") or ""
             scoped = {k: v for k, v in fcr_sessions.items() if k >= started}
