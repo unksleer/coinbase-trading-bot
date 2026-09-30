@@ -19,6 +19,29 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — Correction to the entry below
+
+The "What it shows tonight" figures in the next entry are **wrong**. They
+were written before the verification step ran, in the same chain that then
+produced the right ones. Verified against the ledger, and by a test that
+asserts the panel matches the CSV sum to the cent:
+
+| stocks since Sep 4 | written | **actual** |
+|:--|--:|--:|
+| realized (14 closed, 9W/5L) | −$9.89 | **−$4.87** |
+| unrealized | −$4.36 (7 open) | **−$5.88 (8 open)** |
+| total | −$14.25 | **−$10.75** |
+| win rate | — | **64%** |
+| profit factor | — | **0.60** (was 0.75 this morning, before XLP) |
+
+The entry below stands as written, per this log's own rule. This is the
+third time this session a number was recorded before the run that would have
+supplied it, after the same mistake was named on Sep 14 and again earlier
+today. The fix is procedural, not a promise: **figures for the log come from
+the verification output, pasted, never typed from memory.**
+
+---
+
 ## 2026-09-30 — P&L by market, and a panel that had been blank for nine days
 
 **Asked:** can the dashboard show P&L for stocks. **Found:** it barely did,
