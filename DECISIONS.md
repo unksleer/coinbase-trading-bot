@@ -19,6 +19,53 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — The cumulative P&L curve, per market
+
+**Asked:** "so, cumlative PnL has nothing though." Right after the P&L by
+Market panel went up, the Cumulative Net P&L chart under it was blank.
+
+**Why it was blank.** The curve was built inside `build_analytics`, which
+filters to crypto trades only and returns early when there are none. Crypto
+has had zero closed trades since the 2026-09-21 Donchian reset, so the
+curve — along with exit reasons, entry quality and the waterfall — has
+been empty for nine days. Stocks, the market that actually has closed
+trades, never had a curve at all. Same shape as the pooled-graduation
+blank fixed earlier today: a general view attached to a crypto-only block.
+
+**Change.** Each market in `build_pnl_by_market` now carries its own
+`equity_curve` — the running sum of net P&L over the closed trades in that
+market's active registration window, oldest first. The page draws one chart
+per market from that, not from the analytics block. The two are not
+overlaid: the x-axis is trade sequence, not time, so overlaying series with
+different counts and dates would put unrelated trades at the same x.
+
+**Verification (pasted from the served API and a ledger sum):**
+
+```
+stocks: curve_points=14 closed=14 realized=-4.87 curve_end=-4.87 span=2026-09-08..2026-09-30
+crypto: curve_points=0 closed=0 realized=0.00 curve_end=n/a span=n/a..n/a
+old crypto-only analytics.equity_curve points: 0
+ledger: closed=14 sum_net=-4.87
+```
+
+The curve ends where the realized figure is and the ledger agrees. Crypto
+reads "No closed trades in this registration yet", which is true — the
+Donchian bots hold nine positions and have exited none.
+
+**What the stock curve shows.** Fourteen closed trades over 22 days,
+finishing at −$4.87. That is the same run the P&L panel and the Sep 21
+backtest describe (64% win, avg loss three times avg win): a line that
+drifts up on wins and drops on each stop. Nothing new; now it is visible.
+
+**Tests:** 3 added (`tests/test_equity_curve_by_market.py`): each market
+carries a curve; it is chronological, has one point per closed trade and
+ends at realized P&L; the page has one chart per market and no longer
+renders from the crypto-only block. Suite: 509 passed, 1 skipped.
+
+**Still crypto-only** and therefore blank until a Donchian trade closes:
+exit reasons, entry quality, waterfall. Those are not lying — they say
+"not enough trades" — so they are left as they are.
+
 ## 2026-09-30 — Correction to the entry below
 
 The "What it shows tonight" figures in the next entry are **wrong**. They

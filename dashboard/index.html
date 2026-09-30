@@ -571,6 +571,10 @@
             border-radius: 3px;
         }
 
+        .curve-row { margin-top: 10px; }
+        .curve-label { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-primary); margin-bottom: 4px; display: flex; gap: 12px; align-items: baseline; }
+        .curve-label .card-subtext { text-transform: none; letter-spacing: 0; }
+
         .pnl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
         .pnl-card { border: 1px solid var(--border-color, rgba(255,255,255,.10)); border-radius: 8px; padding: 16px 18px; }
         .pnl-card h4 { margin: 0 0 4px; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-primary); }
@@ -694,12 +698,25 @@
         </div>
 
         <!-- --- Equity curve --- -->
+        <!--
+          One chart per market, each scoped to that market's active
+          registration. Not overlaid: the two series have different trade
+          counts and dates, and the x-axis is trade sequence, so overlaying
+          them would put unrelated trades at the same x.
+        -->
         <div class="scanner-panel" id="curve-panel" style="margin-bottom: 30px;">
             <div class="panel-header">
                 <h2>📈 Cumulative Net P&amp;L</h2>
-                <span class="card-subtext" id="curve-subtext">—</span>
+                <span class="card-subtext">by market · registration window · x = trade sequence</span>
             </div>
-            <div id="curve-wrap"><svg id="equity-curve" viewBox="0 0 900 200" preserveAspectRatio="none" style="width:100%;height:200px;"></svg></div>
+            <div class="curve-row">
+                <div class="curve-label">stocks <span class="card-subtext" id="curve-subtext-stocks">—</span></div>
+                <svg id="equity-curve-stocks" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
+            </div>
+            <div class="curve-row">
+                <div class="curve-label">crypto <span class="card-subtext" id="curve-subtext-crypto">—</span></div>
+                <svg id="equity-curve-crypto" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
+            </div>
         </div>
 
         <!-- --- Go-live readiness --- -->
@@ -1025,7 +1042,6 @@
             renderGraduation(a.graduation);
             renderExitReasons(a.exit_reasons, a.trade_count);
             renderEntryQuality(a.entry_quality, floor);
-            renderEquityCurve(a.equity_curve);
         }
 
 
@@ -1247,15 +1263,23 @@
                 </div>`;
         }
 
-        function renderEquityCurve(points) {
-            const svg = document.getElementById('equity-curve');
-            const sub = document.getElementById('curve-subtext');
+        // One chart per market, fed from pnl_by_market so it is scoped to the
+        // registration window like every other number on that panel. It used
+        // to read analytics.equity_curve, which is built inside the
+        // crypto-only block — empty since the 2026-09-21 reset, and never
+        // populated for stocks.
+        function renderEquityCurve(points, market) {
+            const svg = document.getElementById('equity-curve-' + market);
+            const sub = document.getElementById('curve-subtext-' + market);
+            if (!svg || !sub) return;
             if (!points || points.length < 2) {
                 svg.innerHTML = '';
-                sub.textContent = "Not enough completed trades yet";
+                sub.textContent = (points && points.length === 1)
+                    ? "1 closed trade — a curve needs two"
+                    : "No closed trades in this registration yet";
                 return;
             }
-            const W = 900, H = 200, PAD = 12;
+            const W = 900, H = 160, PAD = 12;
             const vals = points.map(p => p.cumulative_pnl);
             const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
             const span = (hi - lo) || 1;
@@ -1272,7 +1296,7 @@
                       stroke="rgba(255,255,255,0.18)" stroke-width="1" stroke-dasharray="4 4"/>
                 <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="2.5"
                           vector-effect="non-scaling-stroke"/>`;
-            sub.textContent = `${points.length} trades · finishing at ${formatPnL(last)}`;
+            sub.textContent = `${points.length} closed · finishing at ${formatPnL(last)}`;
         }
 
         function formatAge(seconds) {
@@ -1391,6 +1415,9 @@
             renderFleetProblems(data.fleet_problems);
             renderObserver(data.observer);
             renderMarketPnl(data.pnl_by_market);
+            for (const m of ["stocks", "crypto"]) {
+                renderEquityCurve((data.pnl_by_market[m] || {}).equity_curve, m);
+            }
             // Update Timestamp
             if (data.timestamp) {
                 const d = new Date(data.timestamp);

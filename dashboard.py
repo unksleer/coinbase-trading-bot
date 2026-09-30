@@ -877,6 +877,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 except OSError:
                     continue
             since = [r for r in rows if r["t"] >= started and (not symbols or r["s"] in symbols)]
+            # Cumulative net over the registration window, oldest first. The
+            # only view with a time axis — how you see whether a change
+            # helped — and until now it existed only for crypto, inside the
+            # crypto-only analytics block, so it had been empty since the
+            # Donchian reset and stocks had never had one at all.
+            curve, running = [], 0.0
+            for r in sorted(since, key=lambda r: r["t"]):
+                running += r["usd"]
+                curve.append({"exit_time": r["t"], "cumulative_pnl": running, "symbol": r["s"]})
             wins = [r["pct"] for r in since if r["pct"] > 0]
             losses = [r["pct"] for r in since if r["pct"] < 0]
             unreal = sum(p.get("unrealized_pnl", 0.0) for p in active_positions
@@ -896,6 +905,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "avg_loss_pct": (sum(losses) / len(losses)) if losses else None,
                 "lifetime_realized_usd": sum(r["usd"] for r in rows),
                 "lifetime_closed": len(rows),
+                "equity_curve": curve,
             }
         return out
 
