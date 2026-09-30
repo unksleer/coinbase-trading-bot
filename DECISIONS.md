@@ -19,6 +19,47 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — Two long holds, and a trailing stop that cannot fire
+
+**The observer flagged JNJ (22 days) and XLP (33 days)** as held past 2× the
+mean-reversion expected window. The run's own closed trades average 9.4 days
+for winners and 7.2 for losers, longest 17 — so both are genuine outliers.
+XRP was not flagged; at 8 days against a 56-day Donchian window it is normal.
+
+**XLP:** entered Aug 27, now **−4.73%**, peak only +0.87%. It never reached
+the 1.0% trailing activation and RSI is 38, nowhere near the 65 exit. The
+invariant has held it underwater for a month; it is 0.27% from the −5% stop.
+Working exactly as designed, and this is the design's cost made visible.
+
+**JNJ:** peaked **+2.31%**, trail armed at $271.08 — **and could never fire.**
+The bot re-checks activation every bar against current price: the trail is
+tested only while `chg ≥ 1.0%`, but the trail price is peak − 1.5% =
+**+0.77%, below the +1.0% activation floor.** The fireable band is empty. A
+trailing stop here is unreachable unless peak exceeds **+2.52%**. JNJ's did
+not, so +2.31% became −0.67% with no exit but RSI 65 (it is at 41) or the
+stop. `bot.py` has the same re-check pattern; dormant under BREAKOUT's 0/0.
+
+### Sized on the backtest (live exits, 12 tickers, OOS 40%, invariant on)
+
+| trail arming | trades | net | trail | rsi | stop | dead-zone stops |
+|:--|--:|--:|--:|--:|--:|--:|
+| re-check (live) | 109 | **+$0.48** | 15 | 54 | 34 | **9 of 34** |
+| latch once armed | 115 | −$0.86 | 28 | 48 | 33 | 6 of 33 |
+
+**26% of stop-outs are dead-zone trades** — JNJ is a pattern. But latching
+the trail, the obvious fix, turns the net negative: the 13 extra trail exits
+are mostly winners cut at +0.8% that would have reached the RSI exit. Same
+lesson as the Sep 21 sweep, from the other side — every step toward
+protecting a small gain costs more than it saves.
+
+**No change.** The registration forbids one, and the evidence does not
+support one. For the Oct 4 review: the dead zone is real and quantified; the
+tested cure is worse; the observer's 5-day expected hold for stocks flags
+things the run does routinely (winners average 9.4 days) and could be set
+from the run's own distribution.
+
+---
+
 ## 2026-09-30 — Stock registration v3 → v4: a misspecified rule and a stale date
 
 **Two questions from the operator, both fair.** Is 2026-10-04 arbitrary? Yes:
