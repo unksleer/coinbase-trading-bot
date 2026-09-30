@@ -19,6 +19,39 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-09-30 — P&L by market, and a panel that had been blank for nine days
+
+**Asked:** can the dashboard show P&L for stocks. **Found:** it barely did,
+and the one panel that had was gone.
+
+**The regression.** `build_analytics` returns early when crypto has no closed
+trades — correct for the fee analysis, which must not average commission-free
+equities into a 0.8% round trip. But the pooled-graduation panel was attached
+*after* that return. The day the crypto ledgers were archived for the Donchian
+reset (2026-09-21), `sim` went empty and the panel the operator was told to
+watch silently vanished. Nine days. Nobody noticed because the observer had
+taken over the same job three days ago. Now attached before the return, with
+a test that calls `build_analytics([])` and asserts the key survives.
+
+**The mixed number.** "Simulated Realized PnL" summed `_dry` and `_paper`
+ledgers — different venues, different costs, and until Sep 4 different sizes
+— into one figure that described neither. Relabelled "all markets, lifetime"
+so it says what it is.
+
+**The new panel.** P&L by Market: realized, unrealized, total, closed/open
+counts, win rate, and average win / average loss — the shape the operator
+judges by — **scoped to each market's active registration** so it matches
+what the gate and the observer grade on, with lifetime shown small beneath.
+Unrealized comes from the already-priced positions list, unpriced positions
+excluded.
+
+**What it shows tonight.** Stocks since Sep 4: 14 closed, 9W/5L, realized
+−$9.89, 7 open at −$4.36, total −$14.25 at $100 a trade. XLP stopped out at
+18:15 at −5.02% — the position described this afternoon as 0.27% from the
+stop. That is the invariant's cost, realized on schedule.
+
+---
+
 ## 2026-09-30 — Two long holds, and a trailing stop that cannot fire
 
 **The observer flagged JNJ (22 days) and XLP (33 days)** as held past 2× the

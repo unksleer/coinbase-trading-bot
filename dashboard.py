@@ -832,6 +832,74 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         return markets
 
     @staticmethod
+    def build_pnl_by_market(active_positions):
+        """
+        Realised, unrealised and total P&L per market, with the win/loss shape.
+
+        The headline "Simulated Realized PnL" card sums crypto and stock
+        ledgers into one number. They are different venues with different
+        costs, and until 2026-09-21 they were different position sizes; the
+        sum describes neither. This is the honest split, and it is scoped to
+        each market's ACTIVE REGISTRATION — the same window the gate and the
+        observer grade on — with lifetime shown separately so the two cannot
+        be confused.
+
+        Unrealised comes from the already-priced active_positions list, so
+        no second price fetch.
+        """
+        try:
+            from utils import experiment
+            regs = {r["market"]: r for r in experiment.active()}
+        except Exception:
+            regs = {}
+        root = os.path.dirname(os.path.abspath(__file__))
+        patterns = {"stocks": "completed_trades_stock_*_paper.csv",
+                    "crypto": "completed_trades_*-usdc_dry.csv"}
+        out = {}
+        for market, pattern in patterns.items():
+            reg = regs.get(market, {})
+            started = reg.get("started") or ""
+            symbols = {x.upper() for x in reg.get("symbols", [])}
+            rows = []
+            for path in glob.glob(os.path.join(root, pattern)):
+                try:
+                    with open(path, newline="") as fh:
+                        for r in csv.DictReader(fh):
+                            if not r.get("exit_time") or r.get("exit_time") == "exit_time":
+                                continue
+                            try:
+                                rows.append({"t": r["exit_time"],
+                                             "s": (r.get("ticker") or r.get("pair") or "").upper(),
+                                             "usd": float(r.get("pnl_usd") or 0.0),
+                                             "pct": float(r.get("net_pct") or 0.0)})
+                            except (TypeError, ValueError):
+                                continue
+                except OSError:
+                    continue
+            since = [r for r in rows if r["t"] >= started and (not symbols or r["s"] in symbols)]
+            wins = [r["pct"] for r in since if r["pct"] > 0]
+            losses = [r["pct"] for r in since if r["pct"] < 0]
+            unreal = sum(p.get("unrealized_pnl", 0.0) for p in active_positions
+                         if p.get("market") == market and p.get("unrealized_known", True))
+            realized = sum(r["usd"] for r in since)
+            out[market] = {
+                "registration": reg.get("name"),
+                "since": started or None,
+                "realized_usd": realized,
+                "unrealized_usd": unreal,
+                "total_usd": realized + unreal,
+                "closed": len(since),
+                "open": sum(1 for p in active_positions if p.get("market") == market),
+                "wins": len(wins), "losses": len(losses),
+                "win_rate_pct": (100.0 * len(wins) / len(since)) if since else None,
+                "avg_win_pct": (sum(wins) / len(wins)) if wins else None,
+                "avg_loss_pct": (sum(losses) / len(losses)) if losses else None,
+                "lifetime_realized_usd": sum(r["usd"] for r in rows),
+                "lifetime_closed": len(rows),
+            }
+        return out
+
+    @staticmethod
     def build_pooled_graduation():
         """
         Progress toward live, pooled across every symbol in a market.
@@ -980,6 +1048,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             "entry_quality": None,
             "equity_curve": [],
             "graduation": [],
+            # Attached BEFORE the crypto-only early return below. It used to
+            # be set after it, so the day the crypto ledgers were archived
+            # (2026-09-21) this panel — the one the operator was told to
+            # watch — silently vanished for nine days. The early return is
+            # correct for the fee analysis; it must not take the pooled view
+            # with it.
+            "pooled_graduation": DashboardHandler.build_pooled_graduation(),
         }
         if not sim:
             return analytics
@@ -1034,7 +1109,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             }
 
         analytics["graduation"] = DashboardHandler.build_graduation(sim)
-        analytics["pooled_graduation"] = DashboardHandler.build_pooled_graduation()
 
         # Oldest-first cumulative net, for the only view with a time axis.
         chronological = sorted(
@@ -1170,6 +1244,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         data["performance"]["live_fees"] = live_fees
         data["performance"]["sim_realized_pnl"] = sim_pnl
         data["performance"]["sim_fees"] = sim_fees
+        data["pnl_by_market"] = self.build_pnl_by_market(data["active_positions"])
 
         # 4. Read completed trades history to populate a dashboard table showing "what and why"
         completed_list = []

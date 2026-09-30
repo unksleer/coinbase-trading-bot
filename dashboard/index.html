@@ -571,6 +571,16 @@
             border-radius: 3px;
         }
 
+        .pnl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+        .pnl-card { border: 1px solid var(--border-color, rgba(255,255,255,.10)); border-radius: 8px; padding: 16px 18px; }
+        .pnl-card h4 { margin: 0 0 4px; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-primary); }
+        .pnl-card .reg { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; color: var(--text-secondary); margin-bottom: 12px; }
+        .pnl-total { font-family: var(--mono, ui-monospace, monospace); font-size: 26px; font-weight: 700; margin-bottom: 10px; }
+        .pnl-rows { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
+        .pnl-rows .k { color: var(--text-secondary); }
+        .pnl-rows .v { font-family: var(--mono, ui-monospace, monospace); text-align: right; }
+        .pnl-life { margin-top: 10px; font-size: 11px; color: var(--text-secondary); }
+
         .obs-badge {
             font-family: var(--mono, ui-monospace, monospace); font-size: 10px;
             letter-spacing: .1em; padding: 2px 7px; margin-left: 10px;
@@ -805,7 +815,7 @@
                 <div class="card-subtext" id="live-fees-paid">Fees paid: $0.00</div>
             </div>
             <div class="performance-card card-sim">
-                <div class="card-label">Simulated Realized PnL</div>
+                <div class="card-label">Simulated Realized PnL <span class="obs-scope">all markets, lifetime</span></div>
                 <div class="card-value" id="sim-realized-pnl">$0.00 USD</div>
                 <div class="card-subtext" id="sim-fees-paid">Fees paid: $0.00</div>
             </div>
@@ -815,10 +825,23 @@
                 <div class="card-subtext">Active market exposure</div>
             </div>
             <div class="performance-card card-sim" id="sim-unrealized-card">
-                <div class="card-label">Simulated Unrealized PnL</div>
+                <div class="card-label">Simulated Unrealized PnL <span class="obs-scope">all markets</span></div>
                 <div class="card-value" id="sim-unrealized-pnl">$0.00 USD</div>
                 <div class="card-subtext">Active simulated exposure</div>
             </div>
+        </div>
+
+        <!--
+          P&L by market. The cards above sum crypto and stocks into one
+          number; this is the split, scoped to each market's active
+          registration so it matches what the gate and the observer grade on.
+        -->
+        <div class="scanner-panel" id="pnl-market-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>💵 P&amp;L by Market</h2>
+                <span class="card-subtext">scoped to the active registration · lifetime shown small</span>
+            </div>
+            <div class="pnl-grid" id="pnl-market-body"></div>
         </div>
 
         <!-- --- Split Panels --- -->
@@ -1341,9 +1364,33 @@
                 </div>`).join('') || '<div class="obs-detail">Nothing to report.</div>';
         }
 
+        function renderMarketPnl(pnl) {
+            const body = document.getElementById('pnl-market-body');
+            if (!body || !pnl) return;
+            const money = v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
+            const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+            const cls = v => v >= 0 ? 'val-up' : 'val-down';
+            body.innerHTML = ['stocks', 'crypto'].filter(m => pnl[m]).map(m => {
+                const p = pnl[m];
+                return `<div class="pnl-card">
+                  <h4>${m}</h4>
+                  <div class="reg">${p.registration || 'no active registration'}${p.since ? ' · since ' + p.since : ''}</div>
+                  <div class="pnl-total ${cls(p.total_usd)}">${money(p.total_usd)}</div>
+                  <div class="pnl-rows">
+                    <span class="k">realized (${p.closed} closed)</span><span class="v ${cls(p.realized_usd)}">${money(p.realized_usd)}</span>
+                    <span class="k">unrealized (${p.open} open)</span><span class="v ${cls(p.unrealized_usd)}">${money(p.unrealized_usd)}</span>
+                    <span class="k">win rate</span><span class="v">${p.win_rate_pct == null ? '—' : p.win_rate_pct.toFixed(0) + '%'} (${p.wins}W / ${p.losses}L)</span>
+                    <span class="k">avg win / avg loss</span><span class="v">${pct(p.avg_win_pct)} / ${pct(p.avg_loss_pct)}</span>
+                  </div>
+                  <div class="pnl-life">lifetime: ${money(p.lifetime_realized_usd)} realized over ${p.lifetime_closed} closed</div>
+                </div>`;
+            }).join('');
+        }
+
         function updateDashboard(data) {
             renderFleetProblems(data.fleet_problems);
             renderObserver(data.observer);
+            renderMarketPnl(data.pnl_by_market);
             // Update Timestamp
             if (data.timestamp) {
                 const d = new Date(data.timestamp);
