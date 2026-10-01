@@ -665,91 +665,12 @@
         -->
         <div class="scanner-panel" id="observer-panel" style="margin-bottom: 30px;">
             <div class="panel-header">
-                <h2>👁 Observer <span class="obs-badge">OBSERVE ONLY</span></h2>
+                <h2>👁 Observer Agent <span class="obs-badge">OBSERVE ONLY</span></h2>
                 <span class="card-subtext" id="observer-updated">—</span>
             </div>
             <div id="observer-body"></div>
         </div>
 
-
-        <!-- --- Edge Analysis: gross vs fees vs net --- -->
-        <div class="scanner-panel" id="edge-panel" style="margin-bottom: 30px;">
-            <div class="panel-header">
-                <h2>💵 Where the Money Goes</h2>
-                <span class="card-subtext" id="edge-subtext">Simulated crypto trades</span>
-            </div>
-            <div class="waterfall">
-                <div class="wf-cell">
-                    <div class="wf-val" id="wf-gross">—</div>
-                    <div class="wf-sub">gross edge</div>
-                </div>
-                <div class="wf-op">−</div>
-                <div class="wf-cell">
-                    <div class="wf-val val-down" id="wf-fees">—</div>
-                    <div class="wf-sub" id="wf-fee-floor">fees</div>
-                </div>
-                <div class="wf-op">=</div>
-                <div class="wf-cell">
-                    <div class="wf-val" id="wf-net">—</div>
-                    <div class="wf-sub" id="wf-net-sub">net</div>
-                </div>
-            </div>
-            <div class="wf-note" id="wf-note"></div>
-        </div>
-
-        <!-- --- Equity curve --- -->
-        <!--
-          One chart per market, each scoped to that market's active
-          registration. Not overlaid: the two series have different trade
-          counts and dates, and the x-axis is trade sequence, so overlaying
-          them would put unrelated trades at the same x.
-        -->
-        <div class="scanner-panel" id="curve-panel" style="margin-bottom: 30px;">
-            <div class="panel-header">
-                <h2>📈 Cumulative Net P&amp;L</h2>
-                <span class="card-subtext">by market · registration window · x = trade sequence</span>
-            </div>
-            <div class="curve-row">
-                <div class="curve-label">stocks <span class="card-subtext" id="curve-subtext-stocks">—</span></div>
-                <svg id="equity-curve-stocks" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
-            </div>
-            <div class="curve-row">
-                <div class="curve-label">crypto <span class="card-subtext" id="curve-subtext-crypto">—</span></div>
-                <svg id="equity-curve-crypto" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
-            </div>
-        </div>
-
-        <!-- --- Go-live readiness --- -->
-        <div class="scanner-panel" id="grad-panel" style="margin-bottom: 30px;">
-            <div class="panel-header">
-                <h2>🚀 Go-Live Readiness</h2>
-                <span class="card-subtext" id="grad-subtext">—</span>
-            </div>
-            <!--
-              Pooled first. The per-symbol cards below answer "is WMT ready",
-              which needs 20 trades on WMT alone and takes months; the strategy
-              is what is being tested, so the pooled row is the number that
-              actually moves and the one to watch.
-            -->
-            <div id="pooled-grad"></div>
-            <div class="scanner-grid" id="grad-cards"></div>
-        </div>
-
-        <!-- --- Exit reasons + entry quality --- -->
-        <div class="two-col" style="margin-bottom: 30px;">
-            <div class="scanner-panel">
-                <div class="panel-header">
-                    <h2>🚪 Exits by Reason</h2>
-                </div>
-                <div id="exit-reasons"></div>
-            </div>
-            <div class="scanner-panel">
-                <div class="panel-header">
-                    <h2>🎯 Entry Follow-Through</h2>
-                </div>
-                <div id="entry-quality"></div>
-            </div>
-        </div>
 
         <!-- --- Bot Signal Status Panel --- -->
         <div class="scanner-panel" id="bot-signal-panel" style="margin-bottom: 30px;">
@@ -845,6 +766,85 @@
                 <div class="card-label">Simulated Unrealized PnL <span class="obs-scope">all markets</span></div>
                 <div class="card-value" id="sim-unrealized-pnl">$0.00 USD</div>
                 <div class="card-subtext">Active simulated exposure</div>
+            </div>
+        </div>
+
+        <!-- --- Edge Analysis: gross vs fees vs net --- -->
+        <div class="scanner-panel" id="edge-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>💵 Where the Money Goes</h2>
+                <span class="card-subtext" id="edge-subtext">Simulated crypto trades</span>
+            </div>
+            <div class="waterfall">
+                <div class="wf-cell">
+                    <div class="wf-val" id="wf-gross">—</div>
+                    <div class="wf-sub">gross edge</div>
+                </div>
+                <div class="wf-op">−</div>
+                <div class="wf-cell">
+                    <div class="wf-val val-down" id="wf-fees">—</div>
+                    <div class="wf-sub" id="wf-fee-floor">fees</div>
+                </div>
+                <div class="wf-op">=</div>
+                <div class="wf-cell">
+                    <div class="wf-val" id="wf-net">—</div>
+                    <div class="wf-sub" id="wf-net-sub">net</div>
+                </div>
+            </div>
+            <div class="wf-note" id="wf-note"></div>
+        </div>
+
+        <!-- --- Equity curve --- -->
+        <!--
+          One chart per market, each scoped to that market's active
+          registration. Not overlaid: the two series have different trade
+          counts and dates, and the x-axis is trade sequence, so overlaying
+          them would put unrelated trades at the same x.
+        -->
+        <div class="scanner-panel" id="curve-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>📈 Cumulative Net P&amp;L</h2>
+                <span class="card-subtext">by market · registration window · x = trade sequence</span>
+            </div>
+            <div class="curve-row">
+                <div class="curve-label">stocks <span class="card-subtext" id="curve-subtext-stocks">—</span></div>
+                <svg id="equity-curve-stocks" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
+            </div>
+            <div class="curve-row">
+                <div class="curve-label">crypto <span class="card-subtext" id="curve-subtext-crypto">—</span></div>
+                <svg id="equity-curve-crypto" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
+            </div>
+        </div>
+
+        <!-- --- Go-live readiness --- -->
+        <div class="scanner-panel" id="grad-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>🚀 Go-Live Readiness</h2>
+                <span class="card-subtext" id="grad-subtext">—</span>
+            </div>
+            <!--
+              Pooled first. The per-symbol cards below answer "is WMT ready",
+              which needs 20 trades on WMT alone and takes months; the strategy
+              is what is being tested, so the pooled row is the number that
+              actually moves and the one to watch.
+            -->
+            <div id="pooled-grad"></div>
+            <div class="scanner-grid" id="grad-cards"></div>
+        </div>
+
+        <!-- --- Exit reasons + entry quality --- -->
+        <div class="two-col" style="margin-bottom: 30px;">
+            <div class="scanner-panel">
+                <div class="panel-header">
+                    <h2>🚪 Exits by Reason</h2>
+                </div>
+                <div id="exit-reasons"></div>
+            </div>
+            <div class="scanner-panel">
+                <div class="panel-header">
+                    <h2>🎯 Entry Follow-Through</h2>
+                </div>
+                <div id="entry-quality"></div>
             </div>
         </div>
 
