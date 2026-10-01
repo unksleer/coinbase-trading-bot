@@ -19,6 +19,110 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-01 — Stop-outs: wick hits or real reversals? (a study, not a change)
+
+**Asked:** whether watching wicks is worth anything for learning. Answer
+given: not as named patterns, yes as a measurement. The one measurement
+worth taking now: of the stop-outs so far, how many were wick hits — the
+price touched the stop and the bar closed back above it — and did the
+price recover afterwards. Nothing in the bots, settings or registrations
+was changed by this entry.
+
+**Method.** Both bots check the live price every 60 seconds, so a stop
+fires on the first tick that reaches it, not on a close. "Wick hit" here
+means the bar the exit fell in closed back above the stop level. Stocks:
+Alpaca hourly bars, 5 stop-outs at the 5% stop. Crypto: the stored six-hour
+candles, 8 exits at −5% from the pre-Sep-21 ledger (153 round trips,
+Aug 3 – Sep 20, the parked SMA/RSI era, not Donchian). Scripts were
+one-offs in the session scratchpad; the output below is pasted.
+
+**Stocks: none of the five were wick hits.**
+
+```
+=== STOP-OUTS (stop = entry x 0.95; bot checks live price every 60s) ===
+LPL  exit 2026-09-14T14:54  entry 3.290 stop 3.125 exit 3.125
+      exit-hour bar: low 3.125 close 3.125 -> closed above stop: False
+      exit-day close 3.125 -> above stop: False
+      next 5d: max high 3.160  (above stop: True, above entry: False)  bars=35
+      next 10d: max high 3.160  (above stop: True, above entry: False)  bars=70
+LPL  exit 2026-09-18T14:00  entry 3.075 stop 2.921 exit 2.920
+      exit-hour bar: low 2.900 close 2.915 -> closed above stop: False
+      exit-day close 2.900 -> above stop: False
+      next 5d: max high 3.055  (above stop: True, above entry: False)  bars=35
+      next 10d: max high 3.070  (above stop: True, above entry: False)  bars=65
+SLV  exit 2026-09-30T14:35  entry 57.675 stop 54.791 exit 54.750
+      exit-hour bar: low 54.530 close 54.530 -> closed above stop: False
+      exit-day close 54.515 -> above stop: False
+      next 5d: max high 55.350  (above stop: True, above entry: False)  bars=10
+      next 10d: max high 55.350  (above stop: True, above entry: False)  bars=10
+XLP  exit 2026-09-30T18:15  entry 85.375 stop 81.106 exit 81.090
+      exit-hour bar: low 80.810 close 80.945 -> closed above stop: False
+      exit-day close 80.580 -> above stop: False
+      next 5d: max high 80.995  (above stop: False, above entry: False)  bars=5
+      next 10d: max high 80.995  (above stop: False, above entry: False)  bars=5
+XLU  exit 2026-09-21T13:42  entry 42.880 stop 40.736 exit 40.690
+      exit-hour bar: low 40.575 close 40.655 -> closed above stop: False
+      exit-day close 40.640 -> above stop: False
+      next 5d: max high 40.930  (above stop: True, above entry: False)  bars=35
+      next 10d: max high 40.930  (above stop: True, above entry: False)  bars=61
+
+=== SURVIVORS: closest the low came to the stop during the hold ===
+DIS  2026-08-28->2026-09-14 net  +1.06%  worst low  -3.98%  room above stop +1.02pts  RSI fell back through 65
+DIS  2026-09-21->2026-09-28 net  +1.36%  worst low  -0.78%  room above stop +4.22pts  Trailing Stop (peak=$106.560
+PG   2026-08-28->2026-09-01 net  +2.63%  worst low  -0.43%  room above stop +4.57pts  RSI fell back through 65
+PG   2026-09-08->2026-09-14 net  +0.88%  worst low  -2.14%  room above stop +2.86pts  RSI fell back through 65
+QQQ  2026-08-07->2026-08-11 net  -0.50%  worst low  -0.78%  room above stop +4.22pts  SMA Bearish Cross
+QQQ  2026-09-01->2026-09-03 net  +1.31%  worst low  -0.56%  room above stop +4.44pts  RSI fell back through 65
+QQQ  2026-09-10->2026-09-18 net  +1.28%  worst low  -1.48%  room above stop +3.52pts  RSI fell back through 65
+SLV  2026-08-28->2026-09-09 net  +1.56%  worst low  -3.83%  room above stop +1.17pts  RSI fell back through 65
+SLV  2026-09-10->2026-09-18 net  +3.41%  worst low  -3.44%  room above stop +1.56pts  RSI fell back through 65
+SPY  2026-08-07->2026-08-12 net  +0.15%  worst low  -0.57%  room above stop +4.43pts  SMA Bearish Cross
+SPY  2026-08-13->2026-08-17 net  +0.07%  worst low  -0.37%  room above stop +4.63pts  SMA Bearish Cross
+SPY  2026-09-01->2026-09-03 net  +0.82%  worst low  -0.65%  room above stop +4.35pts  RSI fell back through 65
+SPY  2026-09-09->2026-09-23 net  +1.14%  worst low  -2.10%  room above stop +2.90pts  RSI fell back through 65
+WMT  2026-08-27->2026-09-01 net  +2.69%  worst low  -0.18%  room above stop +4.82pts  RSI fell back through 65
+WMT  2026-09-17->2026-09-23 net  +2.86%  worst low  -0.39%  room above stop +4.61pts  RSI fell back through 65
+XLU  2026-08-28->2026-09-08 net  +1.60%  worst low  -2.76%  room above stop +2.24pts  RSI fell back through 65
+```
+
+Every exit-hour bar and every exit-day closed below the stop, and no
+ticker got back to its entry price within ten trading days. The stops
+caught real moves. The other finding is the survivors column: three of the
+winners (DIS −3.98%, SLV −3.83%, SLV −3.44%) dipped to within about one
+point of the stop before recovering. A 4% stop would have turned three
+winners into losers; a 3% stop, more. On this sample the 5% stop is not
+too tight. It may be about as tight as it can go.
+
+**Crypto: half of the eight were wick hits.**
+
+```
+closed round trips: 153 | pairs: ['ADA-USDC', 'BTC-USDC', 'LINK-USDC', 'NEAR-USDC', 'RENDER-USDC', 'SOL-USDC', 'SUI-USDC', 'XRP-USDC']
+exits at or near -5% (treated as stop-outs): 8
+RENDER-USDC  exit 2026-08-10T23:06 entry 1.3280 stop 1.2616 exit 1.2600 (-5.12%) | exit-bar low 1.2560 close 1.2580 closed above stop: False | next 5d max high 1.2820 above stop: True above entry: False
+ADA-USDC     exit 2026-08-15T23:31 entry 0.1857 stop 0.1764 exit 0.1760 (-5.20%) | exit-bar low 0.1756 close 0.1762 closed above stop: False | next 5d max high 0.2034 above stop: True above entry: True
+ADA-USDC     exit 2026-08-24T03:37 entry 0.2292 stop 0.2178 exit 0.2177 (-5.03%) | exit-bar low 0.2171 close 0.2200 closed above stop: True | next 5d max high 0.2289 above stop: True above entry: False
+ADA-USDC     exit 2026-09-04T14:48 entry 0.2219 stop 0.2108 exit 0.2103 (-5.23%) | exit-bar low 0.2093 close 0.2115 closed above stop: True | next 5d max high 0.2321 above stop: True above entry: True
+SOL-USDC     exit 2026-09-10T12:37 entry 105.6200 stop 100.3390 exit 100.3200 (-5.02%) | exit-bar low 98.3800 close 99.9300 closed above stop: False | next 5d max high 105.7900 above stop: True above entry: True
+NEAR-USDC    exit 2026-09-15T06:49 entry 2.5224 stop 2.3963 exit 2.3927 (-5.14%) | exit-bar low 2.3362 close 2.3710 closed above stop: False | next 5d max high 3.9148 above stop: True above entry: True
+BTC-USDC     exit 2026-09-15T18:46 entry 79359.7600 stop 75391.7720 exit 75336.9900 (-5.07%) | exit-bar low 74887.5000 close 75584.1700 closed above stop: True | next 5d max high 81925.0000 above stop: True above entry: True
+SOL-USDC     exit 2026-09-20T02:54 entry 113.7500 stop 108.0625 exit 107.9000 (-5.14%) | exit-bar low 107.3400 close 108.7200 closed above stop: True | next 5d max high 119.9900 above stop: True above entry: True
+```
+
+Four of eight exit bars closed back above the stop, and six of eight were
+back above the entry price within five days. The 5% stop on six-hour
+crypto bars was getting picked off by noise about half the time — the
+opposite of the stock result, and consistent with the Donchian
+registration's choice of a 15% stop. (The NEAR five-day high of 3.91 from
+a 2.39 exit is from the candle store as collected; not independently
+verified.)
+
+**What this does not say.** Five and eight are small counts. It does not
+say the stock stop is optimal, and it does not say a wider crypto stop
+would have made the parked strategy profitable — those six recoveries
+would have been held through the exit invariant and may have exited
+elsewhere. It says the wick question has a different answer in each
+market, which is one more reason not to share parameters across them.
+
 ## 2026-09-30 — The cumulative P&L curve, per market
 
 **Asked:** "so, cumlative PnL has nothing though." Right after the P&L by
