@@ -19,6 +19,46 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-01 — System Process Monitor: mode read from the process, bots picked by script
+
+**Asked:** what the panel is for and whether it is accurate. It was accurate
+for "is the process alive" and wrong in three ways: the Mode badge came from
+pm2's startup environment snapshot (the same stale snapshot behind the
+August identity incident) and never looked at `ALPACA_PAPER`, so every
+stock bot's "Simulated" was the code's default rather than a check; the
+filter took names ending in `-bot`, so `fcr-spy` — a running trading bot —
+was missing while the dashboard itself was counted as a bot; and the
+header said 22 bots when there were 21.
+
+**Change.** `utils/process_mode.py`. Bots are picked by the script they run
+(`bot.py`, `stock_bot.py`, `fcr_bot.py`), not by name. Mode is read from the
+process's own environment under `/proc/<pid>/environ` — what the bot
+actually read at startup — using the variable that governs that script, with
+the crypto coin/profile override order mirrored from `config/settings.py`.
+Absent or unreadable is reported as **Unknown**, in its own colour, never
+defaulted to paper. Restart counts (lifetime and unstable) are in the row's
+hover text, since the lifetime figure alone misleads (sol-bot 11,244, from a
+crash loop months ago; zero unstable, up for hours).
+
+**Verification (pasted):**
+
+```
+22 rows; names: ['fcr-spy'] | dashboard listed: False
+modes: Counter({'Simulated': 22})
+status: Counter({'ONLINE': 22})
+```
+
+Twenty-two rows is right: 21 "-bot" processes plus fcr-spy, and no
+dashboard. All read paper from their own environment.
+
+**Tests:** 6 added (`tests/test_process_monitor.py`), including one where
+pm2's snapshot says live and the process says paper — the row must say
+paper. Suite: 515 passed, 1 skipped.
+
+**Still true.** Online is not the same as working. The fleet banner and the
+observer's fleet check, which look at whether each bot's signal log is still
+being written, remain the health signal; this panel is process liveness.
+
 ## 2026-10-01 — Stop-outs: wick hits or real reversals? (a study, not a change)
 
 **Asked:** whether watching wicks is worth anything for learning. Answer

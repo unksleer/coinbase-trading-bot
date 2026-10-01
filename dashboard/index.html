@@ -227,6 +227,7 @@
 
         .badge-live { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); }
         .badge-sim { background: rgba(96, 165, 250, 0.15); color: var(--accent-blue); }
+        .badge-unknown { background: rgba(251, 191, 36, 0.15); color: var(--accent-yellow, #fbbf24); }
 
         /* --- Market Breadth Radial Gauge --- */
 
@@ -1493,13 +1494,16 @@
             } else {
                 let html = "";
                 bots.forEach(b => {
-                    const modeClass = b.mode === "Live" ? "badge-live" : "badge-sim";
+                    // Mode comes from the process's own environment; "Unknown"
+                    // means it could not be read, and is shown as such rather
+                    // than defaulted to paper.
+                    const modeClass = b.mode === "Live" ? "badge-live" : (b.mode === "Simulated" ? "badge-sim" : "badge-unknown");
                     const statusClass = b.status === "ONLINE" ? "val-up" : "val-down";
                     const dotGlow = b.status === "ONLINE" ? "var(--accent-green)" : "var(--accent-red)";
                     
                     html += `
                     <tr>
-                        <td style="font-weight: 700; color: #ffffff;">${b.name.replace("-bot", "")}</td>
+                        <td style="font-weight: 700; color: #ffffff;" title="${b.script} · ${b.restarts} restarts lifetime, ${b.unstable_restarts} unstable">${b.name.replace("-bot", "")}</td>
                         <td><span class="badge-mode ${modeClass}">${b.mode}</span></td>
                         <td>
                             <span class="${statusClass}" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
