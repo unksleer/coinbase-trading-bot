@@ -208,11 +208,11 @@ def register(symbol, amount, granularity):
     # DRY_RUN is hardcoded True. Live trading goes through trade.sh, which
     # demands an explicit typed confirmation; permitting it here would make
     # starting a real-money bot a flag away from a routine action.
-    cmd = (f'TRADING_PAIR={pair} TRADE_AMOUNT_USD={amount} DRY_RUN=True '
-           f'{symbol.upper()}_GRANULARITY={granularity} '
-           f'pm2 start {os.path.join(DIR, "bot.py")} --name {name} '
-           f'--interpreter {os.path.join(DIR, ".venv/bin/python")} --update-env')
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=DIR)
+    run_env = {**os.environ, "TRADING_PAIR": str(pair), "TRADE_AMOUNT_USD": str(amount),
+               "DRY_RUN": "True", f"{symbol.upper()}_GRANULARITY": str(granularity)}
+    cmd = ["pm2", "start", os.path.join(DIR, "bot.py"), "--name", name,
+           "--interpreter", os.path.join(DIR, ".venv/bin/python"), "--update-env"]
+    result = subprocess.run(cmd, env=run_env, capture_output=True, text=True, cwd=DIR)
     if result.returncode != 0:
         print(f"  pm2 start failed:\n{result.stderr.strip()[:400]}")
         return False

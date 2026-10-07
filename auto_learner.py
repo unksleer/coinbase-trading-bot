@@ -1103,9 +1103,9 @@ def restart_bot(bot_name: str, pair: str, amount: int, dry_run: bool = True):
     failure leaves no trace other than trades that stop appearing.
     """
     dr = "True" if dry_run else "False"
-    cmd = (f"TRADING_PAIR={pair} TRADE_AMOUNT_USD={amount} DRY_RUN={dr} "
-           f"pm2 restart {bot_name} --update-env")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    run_env = {**os.environ, "TRADING_PAIR": str(pair), "TRADE_AMOUNT_USD": str(amount), "DRY_RUN": dr}
+    result = subprocess.run(["pm2", "restart", bot_name, "--update-env"],
+                            env=run_env, capture_output=True, text=True)
     if result.returncode != 0:
         log.warning(f"  ⚠ Restart failed for {bot_name}: {result.stderr.strip()}")
         return

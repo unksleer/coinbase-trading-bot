@@ -144,11 +144,11 @@ def register(ticker, amount, values):
         print(f"  {name} already exists in pm2. Remove it first, or use --remove.")
         return False
 
-    cmd = (f'STOCK_TICKER={ticker} TRADE_AMOUNT_USD={amount} '
-           f'ALPACA_PAPER={values.get("ALPACA_PAPER", "True")} '
-           f'pm2 start {os.path.join(DIR, "stock_bot.py")} --name {name} '
-           f'--interpreter {os.path.join(DIR, ".venv/bin/python")} --update-env')
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=DIR)
+    run_env = {**os.environ, "STOCK_TICKER": str(ticker), "TRADE_AMOUNT_USD": str(amount),
+               "ALPACA_PAPER": str(values.get("ALPACA_PAPER", "True"))}
+    cmd = ["pm2", "start", os.path.join(DIR, "stock_bot.py"), "--name", name,
+           "--interpreter", os.path.join(DIR, ".venv/bin/python"), "--update-env"]
+    result = subprocess.run(cmd, env=run_env, capture_output=True, text=True, cwd=DIR)
     if result.returncode != 0:
         print(f"  pm2 start failed:\n{result.stderr.strip()[:400]}")
         return False

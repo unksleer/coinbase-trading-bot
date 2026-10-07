@@ -19,6 +19,69 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-07 — Housekeeping: log rotation, the 04:00 overlap, shell strings, a backup
+
+Four items deferred from the Astra review and the roadmap, done in the quiet
+stretch. None touches a strategy, a registration or a trading parameter.
+
+**1. pm2 log rotation.** `~/.pm2/logs` had reached 1.1 GB with no rotation
+(sol-bot alone 85 MB). `pm2-logrotate` installed and configured:
+
+```
+$ pm2 set pm2-logrotate:max_size 20M
+$ pm2 set pm2-logrotate:retain 14
+$ pm2 set pm2-logrotate:compress true
+$ pm2 set pm2-logrotate:workerInterval 300
+$ pm2 set pm2-logrotate:rotateInterval 0 3 * * *
+```
+
+**2. The 04:00 overlap.** Five crypto bots (render, link, sui, sol, xrp)
+carry a legacy `0 4 * * *` cron restart that the other four do not, and
+the learner ran at the same minute — reading live bot settings from
+processes that were mid-restart. The intended fix was to drop the bots'
+restart; pm2 7.0.3 did not honour `--cron-restart 0` on restart (the five
+restarted, identity verified clean, cron unchanged). So the learner moved
+to `30 4 * * *` instead, which removes the overlap without touching a
+trading process again. The bots' daily restart remains, harmless and noted.
+
+```
+render-bot   0 4 * * *      online
+  link-bot     0 4 * * *      online
+  learner      30 4 * * *     stopped
+  sui-bot      0 4 * * *      online
+  sol-bot      0 4 * * *      online
+  xrp-bot      0 4 * * *      online
+All bots match their names.
+```
+
+**3. `shell=True` removed** from the four places that built a
+`KEY=VALUE pm2 ...` shell string (`restart_bots.py`, `add_crypto.py`,
+`add_stock.py`, `auto_learner.py`). Each now passes an argument list with
+the identity in an explicit `env=`. Same semantics — the assignments still
+override the caller's environment, which is what prevents the August
+BTC incident — with no shell in between. A test parses every project
+script and fails on any `shell=True`.
+
+**4. A nightly backup.** GitHub was the only off-machine copy of the code
+and refused writes all day; the evidence (ledgers, state, candle store,
+registrations, observer records) is gitignored and existed in exactly one
+place. `backup.py` writes a verified git bundle of every branch plus a
+tarball of the evidence to `~/backups/coinbase-trading-bot/<date>/`, keeps
+14 days, and runs under pm2 at 03:30. `.env` is deliberately excluded.
+This is same-disk, so it covers deletion and corruption, not hardware loss;
+an off-box copy is the next step.
+
+```
+backup /home/leeunks/backups/coinbase-trading-bot/2026-10-07: bundle 0.7 MB, 62 evidence files 2.3 MB, pruned none
+backup: stopped 30 3 * * *
+```
+
+**Tests:** 4 added (`tests/test_housekeeping.py`). Suite: 524 passed in 7.97s.
+
+**Not done:** the two early-close-day after-hours bars in the SPY store
+(needs a market calendar); the GitHub push, still failing on GitHub's side
+— this entry's commit is local until it clears.
+
 ## 2026-10-07 — Oct 4 review; First Candle Rule concluded and parked; observer hold threshold measured from the run
 
 Three follow-ups from the Oct 4 review point, done together.

@@ -85,9 +85,11 @@ def drift():
 
 def restart(name, env):
     """Restart with identity restated explicitly, and without --update-env."""
-    assignments = " ".join(f"{k}={v}" for k, v in sorted(env.items()) if v is not None)
-    cmd = f"{assignments} pm2 restart {name} --update-env".strip()
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=DIR)
+    # Argument list, not a shell string: a bot name or value with shell
+    # characters in it can neither break the command nor be reinterpreted.
+    run_env = {**os.environ, **{k: str(v) for k, v in env.items() if v is not None}}
+    result = subprocess.run(["pm2", "restart", name, "--update-env"],
+                            env=run_env, capture_output=True, text=True, cwd=DIR)
     return result.returncode == 0, result.stderr.strip()[:300]
 
 
