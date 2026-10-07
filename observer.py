@@ -305,7 +305,35 @@ def check_fcr(sessions, reasons, reg_name):
     return out
 
 
-def check_positions():
+MIN_TRADES_FOR_OWN_HOLD = 10
+
+
+def expected_hold_days(strategy, rows=None):
+    """
+    What a long hold is, for this strategy, measured from its own run.
+
+    With at least MIN_TRADES_FOR_OWN_HOLD closed trades, the 90th percentile
+    of their hold lengths; otherwise the constant. The constants were set
+    before any run existed (5 days for mean reversion) and turned out tighter
+    than the run's own winners (max 17 days), so the check kept flagging
+    normal holds as worth a look. A threshold the run cannot move is a guess
+    that never gets corrected.
+    """
+    holds = []
+    for r in rows or []:
+        try:
+            t0 = datetime.fromisoformat(r["entry_time"].replace("Z", "+00:00"))
+            t1 = datetime.fromisoformat(r["exit_time"].replace("Z", "+00:00"))
+            holds.append((t1 - t0).total_seconds() / 86400.0)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    if len(holds) >= MIN_TRADES_FOR_OWN_HOLD:
+        holds.sort()
+        return max(1.0, holds[int(round(0.9 * (len(holds) - 1)))]), "measured"
+    return float(EXPECTED_HOLD_DAYS.get(strategy, 7)), "assumed"
+
+
+def check_positions(trades=None):
     out = []
     try:
         from utils import positions
@@ -313,17 +341,19 @@ def check_positions():
     except Exception as e:
         return [finding(WARN, "fleet", "Could not read positions", str(e))]
     now = datetime.now(timezone.utc)
+    trades = trades or {}
     for p in held:
         try:
             age = (now - datetime.fromisoformat(p["entry_time"].replace("Z", "+00:00"))).days
         except Exception:
             continue
         strategy = "DONCHIAN_BREAKOUT" if p["market"] == "crypto" else "RSI_MEAN_REVERSION"
-        limit = EXPECTED_HOLD_DAYS.get(strategy, 7) * LONG_HOLD_MULTIPLE
+        expected, basis = expected_hold_days(strategy, trades.get(p["market"]))
+        limit = expected * LONG_HOLD_MULTIPLE
         if age > limit:
             out.append(finding(INFO, "positions", f"{p['symbol']} held {age} days",
-                               f"more than {LONG_HOLD_MULTIPLE:.0f}x the {strategy} expected hold; "
-                               f"not a fault, but worth a look"))
+                               f"more than {LONG_HOLD_MULTIPLE:.0f}x the {strategy} expected hold "
+                               f"of {expected:.0f} days ({basis}); not a fault, but worth a look"))
     return out
 
 
@@ -361,7 +391,7 @@ def run():
             scoped = {k: v for k, v in fcr_sessions.items() if k >= started}
             reasons = Counter(d.get("reason") or "accepted" for d in scoped.values())
             findings += check_fcr(scoped, reasons, reg["name"])
-    findings += check_positions()
+    findings += check_positions(trades)
     findings += check_fleet()
     return findings
 

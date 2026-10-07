@@ -267,3 +267,35 @@ def test_an_empty_symbol_list_means_the_whole_market():
     reg = {"market": "crypto", "started": "2026-09-21", "symbols": []}
     all_trades = {"crypto": [row(1.0, symbol="ADA-USDC", exit_time="2026-09-25T00:00:00Z")]}
     assert len(observer.trades_for(reg, all_trades)) == 1
+
+
+# ── expected hold measured from the run ──────────────────────────────────────
+
+def _trade(days):
+    return {"entry_time": "2026-09-01T14:00:00+00:00",
+            "exit_time": f"2026-09-{1 + days:02d}T14:00:00+00:00"}
+
+
+def test_expected_hold_is_assumed_until_ten_closed_trades():
+    days, basis = observer.expected_hold_days("RSI_MEAN_REVERSION", [_trade(d) for d in range(1, 10)])
+    assert basis == "assumed" and days == observer.EXPECTED_HOLD_DAYS["RSI_MEAN_REVERSION"]
+
+
+def test_expected_hold_is_the_runs_own_90th_percentile_once_it_can_be():
+    rows = [_trade(d) for d in (2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20)]
+    days, basis = observer.expected_hold_days("RSI_MEAN_REVERSION", rows)
+    assert basis == "measured" and days == 15.0   # p90 of eleven holds, not the max
+
+
+def test_unparseable_rows_are_skipped_not_fatal():
+    rows = [{"entry_time": "garbage", "exit_time": None}] + [_trade(d) for d in range(1, 12)]
+    days, basis = observer.expected_hold_days("RSI_MEAN_REVERSION", rows)
+    assert basis == "measured"
+
+
+def test_run_passes_the_trades_into_the_positions_check():
+    import ast, inspect
+    tree = ast.parse(inspect.getsource(observer.run))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") == "check_positions"]
+    assert calls and calls[0].args, "check_positions() must receive the trades, or it falls back to the assumed constant"

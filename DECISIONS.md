@@ -19,6 +19,64 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-07 — Oct 4 review; First Candle Rule concluded and parked; observer hold threshold measured from the run
+
+Three follow-ups from the Oct 4 review point, done together.
+
+**1. The Oct 4 review of stocks v4: no rule fired, nothing changed.**
+Status at review, scoped to the registration (since 2026-09-04): 23 closed,
+17 wins avg +1.95%, 6 losses avg −5.05%, win rate 74%, profit factor 1.10,
+realized +$8.17, 9 effective trades of the 20 the shape rules apply at. The
+run was −$4.87 on 2026-09-30 and +$8.17 a week later on nine more closed
+trades; that swing is the sample size, not the strategy. The trailing-stop
+dead-zone finding (2026-09-29) stands: real, 26% of backtest stop-outs,
+latching makes net worse, exits left alone. Next review point 2026-11-04;
+the observer projects 20 effective trades around 2026-11-16.
+
+**2. First Candle Rule v2 stopped by its own rule, concluded, bot parked.**
+The observer emailed a stop on 2026-10-07 14:12Z: over 23 sessions the
+rejection mix drifted (volume_below_threshold 39% live vs 59% backtest),
+which the registration pre-committed to treat as "harness suspect, stop".
+On inspection the pipeline reproduced the backtest — every session logged a
+decision with a named reason, accept rate 1/23 = 4.3% against ~5% backtest,
+one trade (2026-09-28, stop loss, net −$0.21), zero orders, zero production
+files touched — and the drift is a quieter September than the two-year
+average, absorbed by the no-breakout and EMA rejections. The registration
+is concluded with that verdict (terms intact) and `fcr-spy` is removed from
+pm2 and the saved process list. The strategy was always expected to fail
+(backtest PF 0.30); the run existed to validate the harness, and did.
+Correction to what was said in conversation the same day: the run placed
+one trade, not zero.
+
+```
+status: concluded | concluded: 2026-10-07 | terms_intact: True
+fcr-spy removed from pm2 and saved
+fcr-spy still in pm2: False
+active registrations: ['2026-09-crypto-donchian-breakout', '2026-09-stocks-mean-reversion-v4']
+```
+
+**3. Observer: the "held too long" threshold is now measured from the run.**
+`EXPECTED_HOLD_DAYS["RSI_MEAN_REVERSION"]` was set to 5 before any run
+existed. The run's winners go to 17 days, so the check kept flagging normal
+holds (JNJ, WMT) as worth a look. `observer.expected_hold_days()` now uses
+the 90th percentile of the registration's own closed holds once there are
+ten or more (stocks today: n=23, median 8.2, p90 15.0, max 34.0 days), and
+the constant only until then; the finding names which basis it used. Limit
+is still 2× that. Crypto Donchian has 2 closed trades, so it stays on the
+assumed 28 days. After the change the observer's run shows no held-too-long
+finding; WMT at 12 days is inside 2 × 15.
+
+```
+=== observer findings after the run ===
+  [info] 2026-09-crypto-donchian-breakout: Progress — 0 effective trades of 20 · stops 2027-01-15 · 2 pooled
+  [info] 2026-09-stocks-mean-reversion-v4: Progress — 9 effective trades of 20 · 23 pooled · at this rate 20 effective trades ≈ 2026-11-16
+  [info] 2026-09-stocks-mean-reversion-v4: Win/loss shape — 17 wins avg +1.95% · 6 losses avg -5.05% · win rate 74% · profit factor 1.10 · 23 pooled ≈ 9 effective · rules apply at 20 effective
+```
+
+**Tests:** 4 added to `tests/test_observer.py` (assumed until ten trades;
+measured p90 not max; unparseable rows skipped; `run()` must pass the trades
+in or the measurement is silently never used). Suite: 520 passed in 7.50s.
+
 ## 2026-10-01 — System Process Monitor: mode read from the process, bots picked by script
 
 **Asked:** what the panel is for and whether it is accurate. It was accurate

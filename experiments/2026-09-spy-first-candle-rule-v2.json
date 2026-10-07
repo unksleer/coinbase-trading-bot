@@ -34,8 +34,19 @@
   "stopping_rule": "Stop at 2026-10-31 or 20 logged sessions, whichever is LATER. Stop immediately if it places any order, touches a production file, or the live rejection mix diverges materially. No parameter change during the run; a change voids this registration. Expected outcome is a small loss.",
   "started": "2026-09-04",
   "notes": "Position size raised $10 -> $100 on 2026-09-04 at the operator's request, to see dollar figures at the intended scale. Percentage returns are scale-invariant, so the evidence is unchanged; the registration is re-sealed because trade_amount_usd is a sealed field. Deployed while PR is open, so the working tree must remain on branch experiment/first-candle-rule until it merges. Checking out main would remove fcr_bot.py and stop this process \u2014 production bots are unaffected, their files exist on both branches.",
-  "status": "running",
-  "result": null,
-  "concluded": null,
-  "seal": "400b6e539e046a3d"
+  "status": "concluded",
+  "result": {
+    "sessions_logged": 23,
+    "trades": 1,
+    "trade_detail": "2026-09-28 SPY, stop loss within one minute, net -$0.21",
+    "accept_rate_live": "1/23 = 4.3% (backtest ~5%)",
+    "rejection_drift": "volume_below_threshold 39% live vs 59% backtest over 23 sessions",
+    "orders_placed": 0,
+    "production_files_touched": 0,
+    "stopped_by": "registration divergence rule, observer finding 2026-10-07T14:12Z, emailed"
+  },
+  "concluded": "2026-10-07",
+  "seal": "400b6e539e046a3d",
+  "verdict": "STOPPED BY ITS OWN RULE, as designed. The pipeline check passed: every session produced a logged decision with a named reason, and the accept rate (4.3%) matched the backtest (~5%). The rejection MIX drifted \u2014 fewer sessions were rejected for low volume than the backtest's two-year average \u2014 which the registration pre-committed to treat as 'harness suspect, stop'. On inspection it is the regime, not the harness: September volume was quieter than the two-year average, and the no-breakout and EMA rejections absorbed the difference. The harness reproduced the backtest. The strategy was expected to fail and was never going to produce an edge (backtest PF 0.30). Parked: bot removed from pm2. Re-registering with an accept-rate rule instead of a mix rule is an option if the pipeline is needed again; no reason to run it for its own sake.",
+  "terms_intact": true
 }
