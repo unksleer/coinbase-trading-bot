@@ -280,7 +280,7 @@ class StateManager:
                     self.state["highest_price_since_entry"] = price
                     self.state["lowest_price_since_entry"] = price
                     self.state["max_drawdown_since_entry"] = 0.0
-                    self.state["entry_reason"] = reason or "SMA Bullish Cross"
+                    self.state["entry_reason"] = reason or self.entry_label()
                     self.state["entry_indicators"] = indicators or {}
                 self.state["cash_usd"] -= (amount_usd + fee_usd)
                 self.state["holdings_base"] += amount_base
@@ -291,8 +291,8 @@ class StateManager:
                         entry_time=entry_time_record,
                         entry_price=self.state["entry_price"],
                         exit_price=price,
-                        entry_reason=self.state.get("entry_reason", "SMA Bullish Cross"),
-                        exit_reason=reason or "SMA Bearish Cross",
+                        entry_reason=self.state.get("entry_reason") or self.entry_label(),
+                        exit_reason=reason or self.exit_label(),
                         amount_base=amount_base,
                         buy_fee=allocated_entry_fee,
                         sell_fee=fee_usd,
@@ -438,6 +438,19 @@ class StateManager:
                 return trade.get("timestamp")
         return None
 
+    # The ledger's entry/exit reason used to be the literal strings "SMA
+    # Bullish Cross" / "SMA Bearish Cross" whatever strategy was running, so
+    # every Donchian trade since 2026-09-21 is labelled as an SMA cross. The
+    # bot sets strategy_name after it builds the strategy; the labels follow
+    # it, and fall back to the old strings only when nothing was set.
+    strategy_name = None
+
+    def entry_label(self):
+        return f"{self.strategy_name} entry" if self.strategy_name else "SMA Bullish Cross"
+
+    def exit_label(self):
+        return f"{self.strategy_name} exit" if self.strategy_name else "SMA Bearish Cross"
+
     def log_completed_roundtrip(self, exit_time, entry_time, entry_price, exit_price, entry_reason, exit_reason,
                                 amount_base, buy_fee, sell_fee, pnl_usd, highest_price, lowest_price, entry_indicators):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -494,11 +507,10 @@ class StateManager:
         elif "TRAILING_STOP" in exit_reason:
             exit_reason_friendly = "Trailing Stop Triggered"
         elif exit_reason == "STRATEGY":
-            from config.settings import Settings
-            if Settings.STRATEGY_TYPE == "RSI_MEAN_REVERSION":
-                exit_reason_friendly = "RSI Fell back from Overbought"
-            else:
-                exit_reason_friendly = "SMA Bearish Cross"
+            # Named after the strategy the bot is actually running. The old
+            # mapping fell through to "SMA Bearish Cross" for anything that
+            # was not RSI, which is how Donchian exits were labelled as SMA.
+            exit_reason_friendly = self.exit_label()
             
         headers = [
             "pair", "entry_time", "exit_time", "entry_price", "exit_price",

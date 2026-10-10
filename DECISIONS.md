@@ -19,6 +19,88 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-10 — Why SUI "did so well": it didn't, particularly — and the ledger was mislabelling every crypto trade
+
+**Asked:** the SUI-USDC card shows one trade, net +$7.14, and whether to dig
+into why it did so well and log it.
+
+**First, a check that turned into a finding.** The card's exit reason reads
+"SMA Bearish Cross", on a registration that runs Donchian 80/40. Each bot's
+`/proc` environment still carries `*_ACTIVE_PROFILE=SIM` from pm2's startup
+snapshot, which looked for a moment like the August incident again. It is
+not: `env_loader` loads `.env` over the snapshot at startup, every bot
+resolves `BREAKOUT → DONCHIAN_BREAKOUT 80/40, SL 15, no trail`, each one's
+startup log says `Strategy initialized: Donchian_Breakout_80_40`, the
+signal log has no SMA values since the switch, and the SUI entry bar
+(2026-09-21 18:00 close 1.0425) was a genuine 80-bar close-high breakout
+(prior 80-bar close-high 1.0156) at which SMA 10/40 showed no cross at all.
+The bots are running what is registered.
+
+The label was the defect: `bot.py` recorded every entry as the literal
+string "SMA Bullish Cross" and `utils/state.py` mapped every non-RSI
+strategy exit to "SMA Bearish Cross", whatever strategy was running. All
+four Donchian trades in the ledger carry SMA labels. **Fixed:** the state
+manager now names entries and exits after the running strategy
+(`Donchian_Breakout_80_40 entry` / `exit`), falling back to the old strings
+only if no strategy was set. Existing ledger rows are not rewritten. Crypto
+bots restarted through `restart_bots.py --crypto`; identity verified; the
+five open positions survived the restart. 3 tests added. Suite: 527 passed in 7.69s.
+
+```
+All bots match their names.
+sui: Donchian_Breakout_80_40
+  near: Donchian_Breakout_80_40
+  btc: Donchian_Breakout_80_40
+  crypto open positions: 5 ['ADA-USDC', 'BTC-USDC', 'ETH-USDC', 'SOL-USDC', 'XRP-USDC']
+```
+
+**Now the actual question. All four closed Donchian trades, same window:**
+
+```
+pair         entry            exit             net%    mfe%    mae%   hold_d
+  LINK-USDC    2026-09-25T06:00 2026-10-07T06:00  +1.08  +17.26   -0.96   12.0
+  NEAR-USDC    2026-09-22T06:00 2026-10-08T18:22  +0.27  +25.66   -8.40   16.5
+  RENDER-USDC  2026-09-21T20:40 2026-10-08T19:18  +0.06  +19.70   -7.42   16.9
+  SUI-USDC     2026-09-22T00:00 2026-10-07T12:00  +7.14  +24.35   -9.83   15.5
+```
+
+SUI was not the one that worked. All four coins ran 17–26% above entry
+after their breakouts — the whole market rallied in the last week of
+September — and all four then gave most of it back waiting for a close
+below the 40-bar low, which is what a Donchian exit does by design. SUI kept
+7.1 points of its 24.4 because its exit bar came on 2026-10-07 06:00, before
+the 2026-10-08 drop (SUI low 0.997 that day); NEAR and RENDER exited on the
+8th, after the drop had eaten theirs. Same strategy, same rally, one day's
+difference in when the channel broke. There is no "why SUI" to learn.
+
+**What there is to learn, and it is about the exit, not the coin.** The
+run's give-back from peak to realised is 71% (SUI), 94% (LINK), 99% (NEAR)
+and 100% (RENDER). That is the cost of the rule that let the trade reach
++24% in the first place; a tighter exit would have kept more of these four
+and cut off the trend the strategy exists to catch. The backtest that
+registered 80/40 showed the same shape. This is recorded for the January
+review, not acted on: the registration is sealed, and four trades say
+nothing about whether the trade-off is right.
+
+**SUI's own path, for the record** (entry 1.0389):
+
+```
+2026-09-22 00:00 o=1.0418 h=1.0821 l=0.9981 c=1.0201  low vs entry  -3.93%
+  2026-09-23 12:00 o=1.0143 h=1.0181 l=0.9330 c=0.9686  low vs entry -10.19%
+  2026-09-24 06:00 o=0.9623 h=0.9720 l=0.9356 c=0.9522  low vs entry  -9.94%
+  2026-09-25 06:00 o=1.0169 h=1.1522 l=1.0059 c=1.1395  low vs entry  -3.18%
+  2026-09-27 18:00 o=1.2512 h=1.2949 l=1.2461 c=1.2638  low vs entry +19.94%
+```
+
+The −10.2% low on 2026-09-23 is inside the 15% stop with room; a 10% stop
+would have been hit at the exact low, two days before the +24% run. Same
+lesson as the 2026-10-01 wick study: on six-hour crypto bars, stops near
+5–10% get picked off.
+
+**Against holding.** Over the registration window (2026-09-21 to today)
+SUI went 1.0389 → 1.1149, +7.3%; the strategy realised +7.1% and is flat
+now. No excess over simply holding, on one trade.
+
 ## 2026-10-07 — Housekeeping: log rotation, the 04:00 overlap, shell strings, a backup
 
 Four items deferred from the Astra review and the roadmap, done in the quiet

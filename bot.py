@@ -290,6 +290,8 @@ def main():
             ema_period=Settings.EMA_TREND_PERIOD
         )
     logger.info(f"Strategy initialized: {strategy.name}")
+    # Ledger reasons are named after the running strategy, not a fixed string.
+    state_manager.strategy_name = strategy.name
     signal_logger = SignalLogger(Settings.TRADING_PAIR)
     logger.info(f"Signal decisions logged to {signal_logger.path}")
     required_candles = strategy.get_required_candles_count()
@@ -584,7 +586,7 @@ def main():
                                 state_manager.record_trade(
                                     trade_type="BUY", price=latest_price,
                                     amount_usd=net_spend, amount_base=acquired_base,
-                                    fee_usd=mock_fee, reason="SMA Bullish Cross", indicators=indicators_dict
+                                    fee_usd=mock_fee, reason=state_manager.entry_label(), indicators=indicators_dict
                                 )
                                 logger.info(f"[DRY RUN] BUY: {acquired_base:.8f} base acquired.")
                                 # Paper entries notify too. Previously only the
@@ -643,7 +645,7 @@ def main():
                                     order_journal.log_intent(
                                         client_order_id, Settings.TRADING_PAIR, "BUY",
                                         d_base_size, d_limit_price,
-                                        reason="SMA Bullish Cross", indicators=indicators_dict
+                                        reason=state_manager.entry_label(), indicators=indicators_dict
                                     )
                                     
                                     try:
