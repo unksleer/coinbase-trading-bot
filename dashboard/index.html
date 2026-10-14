@@ -952,6 +952,8 @@
                 ? `updated ${formatAge(Math.min(...ages))} ago`
                 : '';
 
+            // One market now, so the grid collapses to a single column.
+            body.className = markets.length > 1 ? 'two-col' : '';
             body.innerHTML = markets.map(market => {
                 const s = screens[market];
                 const stale = s.age_seconds > 7 * 86400;

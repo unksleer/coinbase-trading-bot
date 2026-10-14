@@ -19,6 +19,15 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-14 — Candidate Screens: stocks only
+
+**Asked:** remove crypto from the Candidate Screens panel, the one piece
+left out of the morning's cleanup. `load_screens` now reads
+`screen_stocks.json` only; a leftover `screen_crypto.json` is ignored (and
+the one on disk is archived). The panel renders a single column when one
+market is present. 1 test added. Served: `screens markets served: ['stocks']`.
+Suite: 511 passed in 7.89s.
+
 ## 2026-10-14 — Dashboard: every crypto reference removed
 
 **Asked:** "clean up all the crypto references on the dashboard." Done the

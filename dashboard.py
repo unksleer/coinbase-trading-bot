@@ -558,19 +558,17 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     @staticmethod
     def load_screens(log_dir=None):
         """
-        Candidate screens written by screen_candidates.py, one per market.
+        Candidate screens written by screen_candidates.py. Stocks only since
+        2026-10-14; a stale screen_crypto.json on disk is ignored.
 
         Ranked on whether a symbol suits the strategy — does it reach oversold,
-        and does it then recover — rather than on recent returns. The two
-        markets are screened under their own cost model and are never merged:
-        equities are commission-free while Coinbase costs ~1.2% a round trip,
-        which alone decides whether a strategy is viable.
+        and does it then recover — rather than on recent returns.
         """
         if log_dir is None:
             log_dir = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)), "logs")
         screens = {}
-        for market in ("stocks", "crypto"):
+        for market in ("stocks",):
             path = os.path.join(log_dir, f"screen_{market}.json")
             try:
                 with open(path) as handle:
