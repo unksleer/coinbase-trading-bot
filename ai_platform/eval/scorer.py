@@ -46,6 +46,8 @@ def computed_metric(metric: str, scope: str = "stocks", since: str | None = None
         return max(t.net_pct for t in rows) if rows else 0.0
     if metric == "recent3_tickers":
         return [t.ticker for t in sorted(rows, key=lambda t: t.exit_time)[-3:]]
+    if metric == "exit_dates":
+        return [t.exit_time[:10] for t in rows]
     if metric == "above_or_below_70":
         return "above" if s["win_rate_pct"] > 70 else "below"
     raise KeyError(metric)

@@ -20,6 +20,10 @@ def test_deterministic_checks_and_three_point_scoring(ledger_root):  # noqa: F81
     assert not run_check({"type": "tool_not_called", "values": ["read_ledger"]}, "", ctx)[0]
     assert run_check({"type": "no_live_write"}, "", ctx)[0]
     assert run_check({"type": "contains_computed", "metric": "worst_ticker", "scope": "stocks", "since": None}, "JNJ lost most", ctx)[0]
+    ok, detail = run_check({"type": "contains_computed", "metric": "exit_dates", "scope": "SPY", "since": None},
+                           "exited 2026-09-03 and 2026-09-23", ctx)
+    assert ok, detail
+    assert not run_check({"type": "contains_computed", "metric": "exit_dates", "scope": "SPY", "since": None}, "exited 2026-09-03", ctx)[0]
     score, res = deterministic_score([{"type": "contains_any", "values": ["yes"]}, {"type": "contains_any", "values": ["no"]}], "yes", ctx)
     assert score == 1 and [r["ok"] for r in res] == [True, False]
     assert deterministic_score([], "x", ctx) == (None, [])
@@ -54,3 +58,15 @@ def test_whole_eval_runs_offline_and_reports_a_score(ledger_root, monkeypatch): 
     assert by_id["a01"]["score"] == 2, by_id["a01"]["checks"]      # numbers match the ledger
     assert "judge" in rep["cost_by_task"] and rep["cost_by_task"]["judge"]["calls"] >= 1
     json.dumps(rep)  # serialisable
+
+
+def test_offline_eval_writes_its_index_under_the_test_data_dir(ledger_root, data_dir):  # noqa: F811
+    # Regression: the fixture redirects INDEX_DIR, and the index must resolve it at call time,
+    # otherwise a test run overwrites the real index with a hash-embedder, two-ledger one.
+    import time
+    from ai_platform.retrieval.index import Index
+    t0 = time.time()
+    idx = Index.load_or_build()
+    assert (data_dir / "index" / "meta.json").is_file() and idx.meta["embedder"].startswith("hash")
+    real = paths.PACKAGE_DIR / "data" / "index" / "meta.json"
+    assert not real.exists() or real.stat().st_mtime < t0

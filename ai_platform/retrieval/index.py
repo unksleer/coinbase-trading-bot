@@ -16,7 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
-from ..paths import INDEX_DIR, ensure_dirs
+from .. import paths
+from ..paths import ensure_dirs
 from .chunker import Chunk, chunk_corpus
 from .corpus import load_corpus
 from .embed import get_embedder
@@ -71,14 +72,16 @@ class Index:
         self.bm25 = BM25([tokenize(c.text) for c in chunks])
 
     # -- persistence ------------------------------------------------------ #
-    def save(self, directory: Path = INDEX_DIR) -> None:
+    def save(self, directory: Path | None = None) -> None:
+        directory = directory or paths.INDEX_DIR   # resolved at call time so tests can redirect it
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "chunks.json").write_text(json.dumps([c.__dict__ for c in self.chunks], ensure_ascii=False))
         np.save(directory / "embeddings.npy", self.embeddings)
         (directory / "meta.json").write_text(json.dumps(self.meta, indent=2))
 
     @classmethod
-    def load(cls, directory: Path = INDEX_DIR, embedder=None) -> "Index":
+    def load(cls, directory: Path | None = None, embedder=None) -> "Index":
+        directory = directory or paths.INDEX_DIR
         meta = json.loads((directory / "meta.json").read_text())
         chunks = [Chunk(**c) for c in json.loads((directory / "chunks.json").read_text())]
         emb = np.load(directory / "embeddings.npy")
@@ -88,7 +91,9 @@ class Index:
         return cls(chunks, emb, meta, embedder)
 
     @classmethod
-    def build(cls, embedder=None, code_root=None, repo_root=None, save_to: Path | None = INDEX_DIR) -> "Index":
+    def build(cls, embedder=None, code_root=None, repo_root=None, save_to: Path | None | str = "default") -> "Index":
+        if save_to == "default":
+            save_to = paths.INDEX_DIR
         embedder = embedder or get_embedder()
         docs = load_corpus(code_root, repo_root)
         chunks = chunk_corpus(docs)
@@ -107,7 +112,8 @@ class Index:
         return idx
 
     @classmethod
-    def load_or_build(cls, directory: Path = INDEX_DIR) -> "Index":
+    def load_or_build(cls, directory: Path | None = None) -> "Index":
+        directory = directory or paths.INDEX_DIR
         if (directory / "meta.json").is_file():
             try:
                 return cls.load(directory)
@@ -123,8 +129,8 @@ def main(argv=None):
     ap.add_argument("--embedder", default=None, choices=[None, "model2vec", "hash"])
     a = ap.parse_args(argv)
     ensure_dirs()
-    if a.stats and (INDEX_DIR / "meta.json").is_file():
-        print(json.dumps(json.loads((INDEX_DIR / "meta.json").read_text()), indent=2))
+    if a.stats and (paths.INDEX_DIR / "meta.json").is_file():
+        print(json.dumps(json.loads((paths.INDEX_DIR / "meta.json").read_text()), indent=2))
         return
     idx = Index.build(get_embedder(a.embedder))
     print(json.dumps(idx.meta, indent=2))
