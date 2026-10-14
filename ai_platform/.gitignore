@@ -1,0 +1,4 @@
+# Runtime artefacts: gateway log, retrieval index, proposal queue, embedding cache.
+data/*
+!data/.gitkeep
+__pycache__/
