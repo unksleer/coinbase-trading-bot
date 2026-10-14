@@ -141,7 +141,7 @@ def deterministic_score(checks: list[dict], answer: str, ctx: dict) -> tuple[int
 def judge_score(gateway, question: str, expected: str, answer: str, interaction_id: str) -> tuple[int, str, float]:
     prompt = f"QUESTION: {question}\nEXPECTED: {expected}\nANSWER: {answer}\nSCORE:"
     r = gateway.complete("judge", [{"role": "user", "content": prompt}], system=JUDGE_SYSTEM,
-                         max_tokens=200, interaction_id=interaction_id)
+                         max_tokens=1024, interaction_id=interaction_id)
     m = re.search(r'"score"\s*:\s*([012])', r.text)
     if not m:
         m = re.search(r"\b([012])\b", r.text)

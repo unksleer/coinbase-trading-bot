@@ -161,14 +161,29 @@ class ToolSpec:
     def __init__(self, name: str, description: str, input_model: type[Strict], output_model: type[Strict], fn: Callable):
         self.name, self.description, self.input_model, self.output_model, self.fn = name, description, input_model, output_model, fn
 
+    # Strict tool mode rejects value constraints (integer minimum/maximum, string
+    # minLength, ...). They stay on the pydantic models, which validate every
+    # input before a tool runs; the schema the API sees carries only shape.
+    UNSUPPORTED_IN_STRICT = ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                             "minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "title")
+
     def schema(self) -> dict:
         s = self.input_model.model_json_schema()
-        s.pop("title", None)
         s["additionalProperties"] = False
         s["required"] = sorted(s.get("properties", {}))      # strict mode: every property required
-        for p in s.get("properties", {}).values():
-            p.pop("title", None)
+        self._strip(s)
         return {"name": self.name, "description": self.description, "input_schema": s, "strict": True}
+
+    @classmethod
+    def _strip(cls, node):
+        if isinstance(node, dict):
+            for k in cls.UNSUPPORTED_IN_STRICT:
+                node.pop(k, None)
+            for v in node.values():
+                cls._strip(v)
+        elif isinstance(node, list):
+            for v in node:
+                cls._strip(v)
 
 
 TOOLS: dict[str, ToolSpec] = {

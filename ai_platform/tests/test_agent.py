@@ -125,3 +125,12 @@ def test_step_budget_stops_runaway_loop(ledger_root):
     assert r.steps == 10 and r.stopped_reason == "step_budget" and len(r.tool_calls) == 10
     assert len(g.store.tool_calls_for(r.interaction_id)) == 10
     assert "step budget" in r.answer.lower()
+
+
+def test_strict_schemas_carry_no_value_constraints_but_validation_still_enforces_them(ledger_root):
+    import json as _json
+    blob = _json.dumps(tool_definitions())
+    for kw in ("minimum", "maximum", "minLength", "title"):
+        assert f'"{kw}"' not in blob
+    out, err, _ = run_tool("read_ledger", {"ticker": None, "limit": 0, "since": None})
+    assert out is None and "invalid input" in err

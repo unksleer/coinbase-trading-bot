@@ -40,7 +40,7 @@ def answer_rag(gateway: ModelGateway, question: str, k: int, interaction_id: str
     hits = search(Index.load_or_build(), question, k=k)
     prompt = f"{format_context(hits)}\n\nQuestion: {question}"
     r = gateway.complete("answer", [{"role": "user", "content": prompt}], system=RAG_SYSTEM,
-                         max_tokens=600, interaction_id=interaction_id)
+                         max_tokens=2000, interaction_id=interaction_id)
     return r.text.strip(), [h.citation() for h in hits], r.cost_usd
 
 
