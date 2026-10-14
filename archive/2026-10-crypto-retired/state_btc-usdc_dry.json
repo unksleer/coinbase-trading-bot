@@ -1,0 +1,36 @@
+{
+    "version": 2,
+    "dry_run": true,
+    "position": "LONG",
+    "entry_price": 86930.32,
+    "entry_time": "2026-09-21T20:40:08.143460Z",
+    "highest_price_since_entry": 87260.27,
+    "lowest_price_since_entry": 80366.44,
+    "max_drawdown_since_entry": -7.900307894990472,
+    "cash_usd": 900.0,
+    "holdings_base": 0.0011457452359544976,
+    "trades": [
+        {
+            "timestamp": "2026-09-21T20:40:08.143460Z",
+            "type": "BUY",
+            "price": 86930.32,
+            "amount_usd": 99.6,
+            "amount_base": 0.0011457452359544976,
+            "fee_usd": 0.4,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 999.6,
+            "entry_time": "2026-09-21T20:40:08.143460Z"
+        }
+    ],
+    "orders": {},
+    "entry_fee_usd": 0.4,
+    "entry_reason": "SMA Bullish Cross",
+    "entry_indicators": {
+        "sma_short": null,
+        "sma_long": null,
+        "ema": null,
+        "rsi": null,
+        "spread": null,
+        "atr": 1348.4407142857142
+    }
+}

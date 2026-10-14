@@ -19,6 +19,68 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-14 — Automated crypto trading retired; the project is stocks-only
+
+**Decision (owner's):** "automated crypto trading is not worth the effort
+based on the last 4 months work with this … scrap that part of this project
+and focus more on the stock." Raised once against it on 2026-10-10 (let the
+sealed Donchian registration run to its 2027-01-15 stop, since paper costs
+nothing); the owner reaffirmed. Done as decided.
+
+**What the four months established**, so it does not get re-covered:
+- Short-hold crypto strategies (SMA cross, RSI mean reversion, hourly and
+  six-hour) cannot clear the 0.8% round trip. Many trades, settled.
+- The Donchian 80/40 trend design cleared fees but gave back 71–100% of
+  peak on every closed trade, and at the stop carried −$66.00 unrealised on
+  six open positions after the 2026-10-08 drop, against +$8.53 realised.
+- Nine coins behaved as about 1.3 independent instruments, so 20 effective
+  trades was most of a year away. Crypto was one bet on market direction
+  taken nine times.
+- On this venue, at these fees, with these instruments, no automated
+  design produced evidence of an edge. The Donchian registration's own
+  verdict is unknown (0 effective trades) and is recorded as unknown, not
+  as a failure.
+
+**Positions at the stop, marked to market, never closed** (closing paper
+positions would record trades nobody took; the state files hold them):
+
+```
+ADA-USDC     entry 0.2448    now 0.2280    since 2026-09-22  unrealised   -7.22
+  BTC-USDC     entry 86930.3200 now 81944.9200 since 2026-09-21  unrealised   -6.11
+  ETH-USDC     entry 2787.9500 now 2428.0700 since 2026-09-21  unrealised  -13.26
+  NEAR-USDC    entry 5.7072    now 4.9413    since 2026-10-11  unrealised  -13.77
+  SOL-USDC     entry 118.5800  now 104.0900  since 2026-09-21  unrealised  -12.57
+  XRP-USDC     entry 1.5289    now 1.3344    since 2026-09-21  unrealised  -13.07
+  total unrealised on open crypto positions: -66.00
+```
+
+**Done:**
+- `2026-09-crypto-donchian-breakout` concluded: stopped by owner, not a
+  result, terms intact.
+- Removed from pm2 and the saved list: the nine crypto bots, the learner
+  (crypto-only), the crypto screener, the scanner. The Coinbase candle
+  collector and `data/market_data.sqlite` are kept; data costs nothing.
+- Runtime files archived to `archive/2026-10-crypto-retired/` (18 files +
+  9 signal logs) with a README; committed, since the archive is un-ignored
+  on purpose.
+- Dashboard restarted and serving; the crypto column of P&L by Market now
+  reads zero with no registration, which is true. Observer run clean.
+  Fleet audit clean. Suite: 526 passed, 1 skipped in 7.89s (the skip is a test that
+  needs a crypto ledger in the root).
+
+```
+remaining: ['backup', 'candle-collector', 'dashboard', 'dis-bot', 'hgtv-automation', 'jnj-bot', 'lpl-bot', 'meta-bot', 'observer', 'pg-bot', 'pm2-logrotate', 'qqq-bot', 'screen-stocks', 'slv-bot', 'spy-bot', 'tsla-bot', 'wmt-bot', 'xlp-bot', 'xlu-bot']
+API ok; crypto panel: {'closed': 0, 'realized_usd': 0, 'open': 0} | stocks closed 29 | fleet: []
+2026-10-14 14:30Z  0 stop · 0 warn · 2 info
+```
+
+**What remains.** Twelve stock bots on the mean-reversion v4 registration
+(29 closed as of today, 9+ effective of 20, next review 2026-11-04), the
+observer, the backup, log rotation, the stock screener. The roadmap of
+2026-10-07 applies with the crypto track deleted. `bot.py`, the crypto
+strategies and `add_crypto.py` stay in the repository, unused: deleting
+working code to make a point is not a decision anyone needs reversed.
+
 ## 2026-10-10 — Why SUI "did so well": it didn't, particularly — and the ledger was mislabelling every crypto trade
 
 **Asked:** the SUI-USDC card shows one trade, net +$7.14, and whether to dig

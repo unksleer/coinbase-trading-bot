@@ -48,8 +48,19 @@
   "stopping_rule": "Stop at 2027-01-15 OR 20 effective trades, whichever is later. No configuration change before then except a defect that stops trades executing or makes an exit unable to fire. Any change to channel length, stop, target or trailing restarts the clock and voids this registration.",
   "started": "2026-09-21",
   "notes": "Chosen over RSI mean reversion, trend-filter and momentum-rotation classes in backtest_crypto_classes.py. Neighbouring parameters (60/30, 100/40, daily 15/7 to 25/12) were all positive, so this is a plateau, not a tuned point. Operator preference was for consistent small wins; the data says that profile is what costs kill on this venue, and the 8% take-profit test is recorded in the profile comment.",
-  "status": "running",
-  "result": null,
-  "concluded": null,
-  "seal": "b9db8bdef205b14f"
+  "status": "concluded",
+  "result": {
+    "closed_trades": 4,
+    "effective_trades": 0,
+    "realized_usd": 8.53,
+    "unrealized_usd_at_stop": -66.1,
+    "open_positions_at_stop": 6,
+    "stopped": "2026-10-14 by owner decision",
+    "snapshot": "crypto since 2026-09-21: closed=4 realized=+8.53 unrealized=-66.10 open=6",
+    "closed_detail": "LINK +1.08%, NEAR +0.27%, RENDER +0.06%, SUI +7.14%; peak gains 17-26% on all four, give-back 71-100%"
+  },
+  "concluded": "2026-10-14",
+  "seal": "b9db8bdef205b14f",
+  "verdict": "STOPPED BY OWNER DECISION, not by the stopping rule, and NOT A RESULT: 4 closed trades of a 20-effective-trade design, 0 effective. The owner retired automated crypto trading on 2026-10-14 after four months across two strategy classes: short-hold SMA/RSI could not clear the 0.8% round trip (established, many trades); the Donchian trend design cleared fees but gave back 71-100% of peak gains on all four closed trades and, at the stop, carried -$66.10 unrealized on six open positions after the 2026-10-08 drop, against +$8.53 realized. Nine coins behaving as ~1.3 independent instruments meant the registration would have needed most of a year to reach 20 effective trades. The registration's own verdict (beats-hold, Sharpe, etc.) is therefore unknown and is recorded as such. Bots removed from pm2; runtime files archived under archive/2026-10-crypto-retired/.",
+  "terms_intact": true
 }

@@ -1,0 +1,40 @@
+{
+    "version": 2,
+    "dry_run": true,
+    "position": "NONE",
+    "entry_price": 0.0,
+    "entry_time": null,
+    "highest_price_since_entry": 0.0,
+    "lowest_price_since_entry": 0.0,
+    "max_drawdown_since_entry": 0.0,
+    "cash_usd": 1007.1365821542015,
+    "holdings_base": 0.0,
+    "trades": [
+        {
+            "timestamp": "2026-09-22T00:00:44.854781Z",
+            "type": "BUY",
+            "price": 1.0389,
+            "amount_usd": 99.6,
+            "amount_base": 95.87063239965347,
+            "fee_usd": 0.4,
+            "realized_pnl_usd": 0.0,
+            "portfolio_value_usd": 999.6,
+            "entry_time": "2026-09-22T00:00:44.854781Z"
+        },
+        {
+            "timestamp": "2026-10-07T12:00:46.009838Z",
+            "type": "SELL",
+            "price": 1.122,
+            "amount_usd": 107.56684955241121,
+            "amount_base": 95.87063239965347,
+            "fee_usd": 0.4302673982096449,
+            "realized_pnl_usd": 7.136582154201576,
+            "portfolio_value_usd": 1007.1365821542015,
+            "entry_time": "2026-09-22T00:00:44.854781Z"
+        }
+    ],
+    "orders": {},
+    "entry_fee_usd": 0.0,
+    "entry_reason": null,
+    "entry_indicators": {}
+}
