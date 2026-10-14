@@ -37,18 +37,6 @@ def test_pooled_never_reports_ready_with_a_failed_check():
             assert row["passed"] == row["total"]
 
 
-def test_pooled_counts_more_trades_than_any_single_symbol():
-    """
-    The whole point: pooling reaches the sample-size bar faster. If pooled ever
-    counted fewer trades than a single symbol, the pooling is broken.
-    """
-    pooled = {r["market"]: r["trades"]
-              for r in dashboard.DashboardHandler.build_pooled_graduation()}
-    if pooled.get("crypto", 0) == 0:
-        pytest.skip("no crypto trades on disk")
-    assert pooled["crypto"] >= 1
-
-
 def test_repeated_header_rows_are_not_counted_as_trades():
     """
     Some trade files carry a duplicated header line. Parsed naively it becomes
@@ -63,12 +51,10 @@ def test_repeated_header_rows_are_not_counted_as_trades():
 
 def test_markets_are_reported_separately():
     """
-    Crypto pays 1.2% a round trip and stocks pay nothing. Pooling them into one
-    number would average a fee-bound market with a commission-free one and mean
-    nothing.
+    Markets are never pooled together. Since 2026-10-14 only stocks exist.
     """
     markets = {r["market"] for r in dashboard.DashboardHandler.build_pooled_graduation()}
-    assert {"stocks", "crypto"} <= markets
+    assert markets == {"stocks"}
 
 
 def test_ui_renders_the_pooled_row():

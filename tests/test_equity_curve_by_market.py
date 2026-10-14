@@ -19,7 +19,7 @@ import dashboard  # noqa: E402
 
 def test_each_market_carries_a_curve():
     out = dashboard.DashboardHandler.build_pnl_by_market([])
-    for m in ("stocks", "crypto"):
+    for m in ("stocks",):
         assert "equity_curve" in out[m]
         assert isinstance(out[m]["equity_curve"], list)
 
@@ -38,9 +38,8 @@ def test_curve_is_chronological_and_cumulative():
 
 def test_page_draws_one_chart_per_market_and_not_the_old_single_one():
     page = open(os.path.join(DIR, "dashboard", "index.html")).read()
-    for m in ("stocks", "crypto"):
-        assert f'id="equity-curve-{m}"' in page
-        assert f'id="curve-subtext-{m}"' in page
+    assert 'id="equity-curve-stocks"' in page and 'id="curve-subtext-stocks"' in page
+    assert 'equity-curve-crypto' not in page, "crypto was retired on 2026-10-14"
     assert 'id="equity-curve"' not in page, "the crypto-only single chart is gone"
     assert "renderEquityCurve(a.equity_curve)" not in page, "must not render from the crypto-only block"
     assert "equity-curve-' + m" in page or "equity-curve-${m}" in page or "equity-curve-" in page

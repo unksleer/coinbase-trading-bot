@@ -19,6 +19,57 @@ documents (README, trading_profiles) are kept current instead.
 
 ---
 
+## 2026-10-14 — Dashboard: every crypto reference removed
+
+**Asked:** "clean up all the crypto references on the dashboard." Done the
+same day as the retirement.
+
+**Removed from the page.** The fee waterfall ("Where the Money Goes") and
+Entry Follow-Through — both existed to expose crypto's fee drag and needed
+excursion data the stock ledger does not carry. The Signal Funnel (SMA
+crossovers seen vs taken). The Multi-Asset Screener Scoreboard (the scanner,
+deleted from pm2 today). The Auto-Learner panel (the learner, likewise).
+The crypto row of the cumulative P&L chart. The SMA Short / SMA Long /
+Spread columns of the signal table, and the NO CROSS and BELOW states with
+their legend entries — all crossover-bot vocabulary. "all markets" scope
+labels on the headline cards. "Coin"/"Pair" column headers → "Symbol".
+Title: "Coinbase Systematic Trading Dashboard" → "Systematic Trading
+Dashboard". "P&L by Market" → "Registration P&L".
+
+**Removed from the server.** `build_signal_funnel`, the scanner and
+learner report loaders, and the `scanner`, `scanner_age_seconds`,
+`signal_funnel`, `auto_learner_report` keys. `build_analytics` is scoped to
+simulated stock trades and now serves only exits by reason, per-symbol
+readiness and the pooled gate; `waterfall`, `fee_floor_pct`,
+`entry_quality` and `equity_curve` are gone rather than empty, so no
+renderer can draw a blank panel for them. `build_pnl_by_market` and
+`build_pooled_graduation` read stock ledgers only.
+
+**Kept.** The hidden Candidate Screens panel (the stock screener still
+runs). `bot.py`'s own signal states in the server, unused. CSS class names
+with "coin" in them: not user-visible, and renaming them is churn.
+
+**Verification (pasted):**
+
+```
+top-level keys: ['active_positions', 'analytics', 'bots', 'completed_trades', 'fleet_problems', 'observer', 'performance', 'pnl_by_market', 'screens', 'timestamp']
+retired keys absent: True
+analytics keys: ['exit_reasons', 'graduation', 'pooled_graduation', 'trade_count'] | stock trades: 37 | exit reasons: [('RSI fell back through 65', 23), ('Stop Loss Triggered', 8), ('SMA Bearish Cross', 3), ('Trailing Stop (peak=$114.7600, trail=1.5%)', 1), ('Stop Loss', 1), ('Trailing Stop (peak=$106.5600, trail=1.5%)', 1)]
+pnl_by_market markets: ['stocks'] | curve points: 29
+pooled graduation markets: ['stocks']
+states: ['IN TRADE', 'NO SETUP'] | rows: 12
+```
+
+The page's script was checked for parse errors and for calls to removed
+functions after each pass; one pass had spliced a block twice (a cut whose
+end anchor matched before its start) and was redone from the committed
+file rather than patched.
+
+**Tests:** the analytics suite rewritten for stocks (fee-floor, waterfall,
+entry-quality, equity-curve and funnel tests removed; a test now asserts the
+retired keys are absent); P&L, pooled-graduation, equity-curve and legend
+tests updated. Suite: 510 passed in 7.74s.
+
 ## 2026-10-14 — Automated crypto trading retired; the project is stocks-only
 
 **Decision (owner's):** "automated crypto trading is not worth the effort

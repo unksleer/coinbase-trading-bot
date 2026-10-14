@@ -25,12 +25,12 @@ def trade(**kw):
         kw["net_pct"] = kw["pnl_usd"] / 10.0 * 100.0
     """A completed-trade row with the fields build_analytics reads."""
     row = {
-        "pair": "SUI-USDC", "mode": "Simulated", "asset_class": "crypto",
+        "pair": "SPY", "mode": "Simulated", "asset_class": "stock",
         "entry_time": "2026-08-01T00:00:00+00:00",
         "exit_time": "2026-08-02T00:00:00+00:00",
         "entry_price": 1.0, "exit_price": 1.0,
-        "pnl_usd": 0.0, "fees_usd": 0.12,
-        "entry_reason": "SMA Bullish Cross", "exit_reason": "SMA Bearish Cross",
+        "pnl_usd": 0.0, "fees_usd": 0.0,
+        "entry_reason": "RSI crossed up through 30", "exit_reason": "RSI fell back through 65",
         "gross_pct": 0.0, "net_pct": 0.0, "mfe_pct": 0.0, "mae_pct": 0.0,
         "has_excursion": True,
     }
@@ -39,6 +39,7 @@ def trade(**kw):
 
 
 class AnalyticsTests(unittest.TestCase):
+    """Stocks only since 2026-10-14: exits by reason and readiness."""
     def setUp(self):
         self.build = dashboard.DashboardHandler.build_analytics
 
@@ -48,93 +49,36 @@ class AnalyticsTests(unittest.TestCase):
     def test_no_trades_returns_empty_shape_not_a_crash(self):
         result = self.analyse([])
         self.assertEqual(result["trade_count"], 0)
-        self.assertIsNone(result["waterfall"])
         self.assertEqual(result["exit_reasons"], [])
-        self.assertEqual(result["equity_curve"], [])
+        self.assertEqual(result["graduation"], [])
+        self.assertIn("pooled_graduation", result)
 
-    def test_waterfall_reconstructs_gross_from_net_and_fees(self):
-        trades = [
-            trade(pnl_usd=-0.30, fees_usd=0.12),
-            trade(pnl_usd=0.90, fees_usd=0.12),
-        ]
-        w = self.analyse(trades)["waterfall"]
-        self.assertAlmostEqual(w["net"], 0.60)
-        self.assertAlmostEqual(w["fees"], 0.24)
-        self.assertAlmostEqual(w["gross"], 0.84)
-        self.assertAlmostEqual(w["win_rate"], 50.0)
-
-    def test_positive_gross_with_negative_net_is_representable(self):
-        """The whole point of the panel: an edge that fees turn into a loss."""
-        trades = [trade(pnl_usd=-0.10, fees_usd=0.12) for _ in range(10)]
-        w = self.analyse(trades)["waterfall"]
-        self.assertLess(w["net"], 0)
-        self.assertGreater(w["gross"], 0)
-
-    def test_stock_trades_are_excluded_from_crypto_fee_analysis(self):
-        """Commission-free stock fills would understate crypto fee drag."""
-        trades = [
-            trade(pnl_usd=-0.30, fees_usd=0.12),
-            trade(asset_class="stock", pair="SPY", pnl_usd=0.01, fees_usd=0.0,
-                  gross_pct=0.15, net_pct=0.15, has_excursion=False),
-        ]
-        result = self.analyse(trades)
-        self.assertEqual(result["trade_count"], 1)
-        self.assertAlmostEqual(result["waterfall"]["fees"], 0.12)
+    def test_crypto_rows_are_ignored_the_market_is_retired(self):
+        trades = [trade(), trade(asset_class="crypto", pair="SUI-USDC", pnl_usd=7.0)]
+        self.assertEqual(self.analyse(trades)["trade_count"], 1)
 
     def test_live_trades_are_excluded(self):
         trades = [trade(), trade(mode="Live", pnl_usd=99.0)]
         self.assertEqual(self.analyse(trades)["trade_count"], 1)
 
-    def test_fee_floor_is_measured_not_assumed(self):
-        """Derived from realised gross-to-net, so it tracks what was charged."""
-        trades = [
-            trade(gross_pct=2.0, net_pct=0.8),
-            trade(gross_pct=1.0, net_pct=-0.2),
-        ]
-        self.assertAlmostEqual(self.analyse(trades)["fee_floor_pct"], 1.2)
-
-    def test_fee_floor_ignores_rows_without_excursion_data(self):
-        trades = [
-            trade(gross_pct=2.0, net_pct=0.8),
-            trade(gross_pct=0.0, net_pct=0.0, has_excursion=False),
-        ]
-        self.assertAlmostEqual(self.analyse(trades)["fee_floor_pct"], 1.2)
-
     def test_exit_reasons_ranked_by_count_with_averages(self):
         trades = (
-            [trade(exit_reason="SMA Bearish Cross", net_pct=-1.5, pnl_usd=-0.15)] * 3
-            + [trade(exit_reason="Take Profit", net_pct=9.0, pnl_usd=0.90)]
+            [trade(exit_reason="Stop Loss Triggered", net_pct=-5.0, pnl_usd=-5.0)] * 3
+            + [trade(exit_reason="RSI fell back through 65", net_pct=2.0, pnl_usd=2.0)]
         )
         reasons = self.analyse(trades)["exit_reasons"]
-        self.assertEqual(reasons[0]["reason"], "SMA Bearish Cross")
+        self.assertEqual(reasons[0]["reason"], "Stop Loss Triggered")
         self.assertEqual(reasons[0]["count"], 3)
         self.assertAlmostEqual(reasons[0]["share"], 75.0)
-        self.assertAlmostEqual(reasons[0]["avg_net_pct"], -1.5)
-        self.assertAlmostEqual(reasons[1]["avg_net_pct"], 9.0)
+        self.assertAlmostEqual(reasons[0]["avg_net_pct"], -5.0)
+        self.assertAlmostEqual(reasons[1]["avg_net_pct"], 2.0)
 
-    def test_entry_quality_counts_entries_clearing_the_fee_floor(self):
-        trades = [
-            trade(gross_pct=2.0, net_pct=0.8, mfe_pct=3.0),   # clears 1.2
-            trade(gross_pct=2.0, net_pct=0.8, mfe_pct=0.5),   # does not
-        ]
-        q = self.analyse(trades)["entry_quality"]
-        self.assertEqual(q["measured"], 2)
-        self.assertEqual(q["cleared_fee_floor"], 1)
-        self.assertAlmostEqual(q["cleared_pct"], 50.0)
-
-    def test_equity_curve_is_chronological_and_cumulative(self):
-        trades = [
-            trade(exit_time="2026-08-03T00:00:00+00:00", pnl_usd=1.0),
-            trade(exit_time="2026-08-01T00:00:00+00:00", pnl_usd=-0.5),
-            trade(exit_time="2026-08-02T00:00:00+00:00", pnl_usd=0.25),
-        ]
-        curve = self.analyse(trades)["equity_curve"]
-        self.assertEqual([round(p["cumulative_pnl"], 2) for p in curve],
-                         [-0.5, -0.25, 0.75])
-
-    def test_equity_curve_skips_trades_with_no_exit_time(self):
-        trades = [trade(pnl_usd=1.0), trade(exit_time="", pnl_usd=5.0)]
-        self.assertEqual(len(self.analyse(trades)["equity_curve"]), 1)
+    def test_retired_views_are_gone_not_empty(self):
+        """The fee waterfall and entry follow-through were crypto's; an empty
+        key would invite a renderer to draw a blank panel for them."""
+        result = self.analyse([trade()])
+        for gone in ("waterfall", "fee_floor_pct", "entry_quality", "equity_curve"):
+            self.assertNotIn(gone, result)
 
 
 class GraduationTests(unittest.TestCase):
@@ -256,117 +200,6 @@ class GraduationTests(unittest.TestCase):
 
     def test_no_trades_yields_no_coins(self):
         self.assertEqual(self.build([]), [])
-
-
-class SignalFunnelTests(unittest.TestCase):
-    """
-    Crossovers seen vs. taken. This exists to make an over-tight filter visible:
-    in the trade ledger, a filter blocking everything is indistinguishable from
-    a quiet market, because both simply show no new trades.
-    """
-
-    NOW = 1_000_000.0
-
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.tmp)
-
-    def write_log(self, pair, rows):
-        path = os.path.join(self.tmp, f"signal_log_{pair}.csv")
-        headers = ["timestamp", "pair", "candle_time", "close", "position",
-                   "raw_signal", "final_signal", "blocked_by",
-                   "sma_short", "sma_long", "spread_pct", "rsi", "ema"]
-        with open(path, "w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=headers)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow({h: row.get(h, "") for h in headers})
-
-    def row(self, offset_seconds=0, raw="HOLD", final="HOLD", blocked=""):
-        stamp = datetime.fromtimestamp(self.NOW - offset_seconds, timezone.utc)
-        return {"timestamp": stamp.isoformat(), "raw_signal": raw,
-                "final_signal": final, "blocked_by": blocked}
-
-    def funnel(self, **kw):
-        handler = dashboard.DashboardHandler
-        return handler.build_signal_funnel(
-            None, log_dir=self.tmp, now=self.NOW, **kw)
-
-    def test_no_logs_reports_nothing_rather_than_failing(self):
-        f = self.funnel()
-        self.assertEqual(f["candles"], 0)
-        self.assertEqual(f["pairs"], 0)
-        self.assertEqual(f["blocked"], [])
-
-    def test_counts_candles_crossovers_and_entries(self):
-        self.write_log("sui-usdc", [
-            self.row(), self.row(),
-            self.row(raw="BUY", final="BUY"),
-            self.row(raw="BUY", final="HOLD", blocked="RSI"),
-        ])
-        f = self.funnel()
-        self.assertEqual(f["candles"], 4)
-        self.assertEqual(f["crossovers"], 2)
-        self.assertEqual(f["taken"], 1)
-        self.assertEqual(f["blocked_total"], 1)
-
-    def test_blocks_are_grouped_by_reason_and_ranked(self):
-        self.write_log("sui-usdc", [
-            self.row(raw="BUY", blocked="RSI"),
-            self.row(raw="BUY", blocked="RSI"),
-            self.row(raw="BUY", blocked="EMA"),
-        ])
-        blocked = self.funnel()["blocked"]
-        self.assertEqual(blocked[0], {"reason": "RSI", "count": 2})
-        self.assertEqual(blocked[1], {"reason": "EMA", "count": 1})
-
-    def test_every_crossover_blocked_is_representable(self):
-        """The failure mode the panel exists to surface."""
-        self.write_log("sui-usdc", [self.row(raw="BUY", blocked="RSI") for _ in range(5)])
-        f = self.funnel()
-        self.assertEqual(f["crossovers"], 5)
-        self.assertEqual(f["taken"], 0)
-        self.assertEqual(f["blocked_total"], f["crossovers"])
-
-    def test_rows_outside_the_window_are_excluded(self):
-        self.write_log("sui-usdc", [
-            self.row(offset_seconds=2 * 86400, raw="BUY", final="BUY"),
-            self.row(offset_seconds=30 * 86400, raw="BUY", final="BUY"),
-        ])
-        self.assertEqual(self.funnel(window_days=7)["crossovers"], 1)
-        self.assertEqual(self.funnel(window_days=60)["crossovers"], 2)
-
-    def test_aggregates_across_pairs_and_counts_them(self):
-        self.write_log("sui-usdc", [self.row(raw="BUY", final="BUY")])
-        self.write_log("link-usdc", [self.row(raw="BUY", blocked="EMA")])
-        f = self.funnel()
-        self.assertEqual(f["pairs"], 2)
-        self.assertEqual(f["crossovers"], 2)
-        self.assertEqual(f["taken"], 1)
-
-    def test_reports_age_of_last_crossover_and_entry(self):
-        self.write_log("sui-usdc", [
-            self.row(offset_seconds=7200, raw="BUY", final="BUY"),
-            self.row(offset_seconds=3600, raw="BUY", blocked="RSI"),
-        ])
-        f = self.funnel()
-        self.assertAlmostEqual(f["last_crossover_age"], 3600, delta=2)
-        self.assertAlmostEqual(f["last_entry_age"], 7200, delta=2)
-
-    def test_ages_are_none_when_nothing_has_happened(self):
-        self.write_log("sui-usdc", [self.row(), self.row()])
-        f = self.funnel()
-        self.assertIsNone(f["last_crossover_age"])
-        self.assertIsNone(f["last_entry_age"])
-
-    def test_a_blocked_crossover_is_not_counted_as_taken(self):
-        self.write_log("sui-usdc", [self.row(raw="BUY", final="BUY", blocked="RSI")])
-        self.assertEqual(self.funnel()["taken"], 0)
-
-    def test_unreadable_log_does_not_abort_the_other_pairs(self):
-        self.write_log("sui-usdc", [self.row(raw="BUY", final="BUY")])
-        os.mkdir(os.path.join(self.tmp, "signal_log_broken.csv"))
-        self.assertEqual(self.funnel()["crossovers"], 1)
 
 
 class PriceResolverTests(unittest.TestCase):

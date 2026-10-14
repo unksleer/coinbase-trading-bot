@@ -595,86 +595,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             }
         return screens
 
-    def build_signal_funnel(self, window_days=7, log_dir=None, now=None):
-        """
-        Where crossovers go: seen, rejected by which filter, or taken.
-
-        completed_trades only records entries that happened, so a filter that
-        has quietly stopped the bot trading is invisible there — the ledger just
-        shows nothing new, which looks identical to a quiet market. The signal
-        log records every candle decision including blocked_by, so tightening a
-        filter too far becomes visible instead of silent.
-        """
-        if log_dir is None:
-            log_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "logs")
-        now = time.time() if now is None else now
-        cutoff = now - window_days * 86400
-
-        funnel = {
-            "window_days": window_days,
-            "candles": 0,
-            "crossovers": 0,
-            "taken": 0,
-            "blocked": {},
-            "last_crossover": None,
-            "last_entry": None,
-            "pairs": 0,
-        }
-
-        from datetime import datetime, timezone
-
-        def parsed(stamp):
-            try:
-                return datetime.fromisoformat(
-                    (stamp or "").replace("Z", "+00:00")).timestamp()
-            except (ValueError, TypeError):
-                return None
-
-        paths = glob.glob(os.path.join(log_dir, "signal_log_*.csv"))
-        for path in paths:
-            try:
-                with open(path, newline="") as handle:
-                    rows = list(csv.DictReader(handle))
-            except (OSError, csv.Error) as e:
-                logger.error(f"Error reading {os.path.basename(path)}: {e}")
-                continue
-            if rows:
-                funnel["pairs"] += 1
-
-            for row in rows:
-                when = parsed(row.get("timestamp"))
-                if when is not None and when < cutoff:
-                    continue
-                funnel["candles"] += 1
-
-                if row.get("raw_signal") != "BUY":
-                    continue
-                funnel["crossovers"] += 1
-                if when is not None:
-                    funnel["last_crossover"] = max(
-                        funnel["last_crossover"] or 0, when)
-
-                reason = row.get("blocked_by") or ""
-                if reason:
-                    funnel["blocked"][reason] = funnel["blocked"].get(reason, 0) + 1
-                elif row.get("final_signal") == "BUY":
-                    funnel["taken"] += 1
-                    if when is not None:
-                        funnel["last_entry"] = max(funnel["last_entry"] or 0, when)
-
-        for key in ("last_crossover", "last_entry"):
-            funnel[f"{key}_age"] = (
-                now - funnel[key] if funnel[key] else None)
-            funnel.pop(key)
-
-        funnel["blocked_total"] = sum(funnel["blocked"].values())
-        funnel["blocked"] = sorted(
-            ({"reason": r, "count": c} for r, c in funnel["blocked"].items()),
-            key=lambda item: -item["count"],
-        )
-        return funnel
-
     @staticmethod
     def build_graduation(sim_trades):
         """
@@ -831,8 +751,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         except Exception:
             regs = {}
         root = os.path.dirname(os.path.abspath(__file__))
-        patterns = {"stocks": "completed_trades_stock_*_paper.csv",
-                    "crypto": "completed_trades_*-usdc_dry.csv"}
+        # Stocks only since 2026-10-14; the crypto ledgers are archived.
+        patterns = {"stocks": "completed_trades_stock_*_paper.csv"}
         out = {}
         for market, pattern in patterns.items():
             reg = regs.get(market, {})
@@ -915,7 +835,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         root = os.path.dirname(os.path.abspath(__file__))
         markets = {
             "stocks": glob.glob(os.path.join(root, "completed_trades_stock_*_paper.csv")),
-            "crypto": glob.glob(os.path.join(root, "completed_trades_*-usdc_dry.csv")),
         }
 
         from utils import benchmark, evidence
@@ -1017,51 +936,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         Derive the views that answer "is the strategy working", as opposed to
         "what is it doing right now".
 
-        Realized P&L and fees shown side by side hide the fact that matters:
-        whether the strategy has a positive edge *before* costs. A strategy can
-        pick direction well and still lose, if the round-trip fee exceeds the
-        move it captures. These aggregates make that visible.
-
-        Scoped to simulated crypto trades. That is where the sample lives, and
-        the stock bots trade commission-free on another venue — folding them in
-        would dilute exactly the fee drag this is meant to expose.
+        Scoped to simulated stock trades. The crypto side was retired on
+        2026-10-14; the fee waterfall and entry follow-through that lived here
+        existed to expose crypto's fee drag and needed excursion data the
+        stock ledger does not carry, so they went with it. What remains is
+        exits by reason, per-symbol readiness, and the pooled gate.
         """
         sim = [t for t in trades
-               if t["mode"] == "Simulated" and t.get("asset_class") == "crypto"]
+               if t["mode"] == "Simulated" and t.get("asset_class") == "stock"]
         analytics = {
             "trade_count": len(sim),
-            "fee_floor_pct": None,
-            "waterfall": None,
             "exit_reasons": [],
-            "entry_quality": None,
-            "equity_curve": [],
             "graduation": [],
-            # Attached BEFORE the crypto-only early return below. It used to
-            # be set after it, so the day the crypto ledgers were archived
-            # (2026-09-21) this panel — the one the operator was told to
-            # watch — silently vanished for nine days. The early return is
-            # correct for the fee analysis; it must not take the pooled view
-            # with it.
+            # Attached before the early return: the pooled view must never
+            # disappear because a ledger is empty (it did once, for nine days).
             "pooled_graduation": DashboardHandler.build_pooled_graduation(),
         }
         if not sim:
             return analytics
-
-        net = sum(t["pnl_usd"] for t in sim)
-        fees = sum(t["fees_usd"] for t in sim)
-        wins = sum(1 for t in sim if t["pnl_usd"] > 0)
-        analytics["waterfall"] = {
-            "gross": net + fees,
-            "fees": fees,
-            "net": net,
-            "win_rate": 100.0 * wins / len(sim),
-        }
-
-        # The round-trip cost is whatever gross-to-net actually gave up, rather
-        # than a configured rate that may not match what was charged.
-        drags = [t["gross_pct"] - t["net_pct"] for t in sim if t["has_excursion"]]
-        fee_floor = sum(drags) / len(drags) if drags else None
-        analytics["fee_floor_pct"] = fee_floor
 
         by_reason = {}
         for trade in sim:
@@ -1083,34 +975,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             ),
             key=lambda item: -item["count"],
         )
-
-        # How many entries ever travelled far enough to pay for themselves.
-        measured = [t for t in sim if t["has_excursion"]]
-        if measured and fee_floor is not None:
-            cleared = sum(1 for t in measured if t["mfe_pct"] >= fee_floor)
-            analytics["entry_quality"] = {
-                "measured": len(measured),
-                "cleared_fee_floor": cleared,
-                "cleared_pct": 100.0 * cleared / len(measured),
-                "avg_mfe": sum(t["mfe_pct"] for t in measured) / len(measured),
-                "avg_mae": sum(t["mae_pct"] for t in measured) / len(measured),
-            }
-
         analytics["graduation"] = DashboardHandler.build_graduation(sim)
-
-        # Oldest-first cumulative net, for the only view with a time axis.
-        chronological = sorted(
-            (t for t in sim if t["exit_time"]), key=lambda t: t["exit_time"]
-        )
-        running = 0.0
-        for trade in chronological:
-            running += trade["pnl_usd"]
-            analytics["equity_curve"].append({
-                "exit_time": trade["exit_time"],
-                "cumulative_pnl": running,
-                "pair": trade["pair"],
-            })
-
         return analytics
 
     def get_dashboard_data(self):
@@ -1130,7 +995,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         data = {
             "timestamp": datetime_now_iso(),
-            "scanner": {},
             "active_positions": [],
             "fleet_problems": fleet_problems,
             "observer": DashboardHandler._observer_findings(),
@@ -1142,20 +1006,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 "sim_fees": 0.0
             }
         }
-
-        # 1. Read scanner data.
-        # Screener display only — position pricing goes through PriceResolver.
-        # This file is written on the scanner's own schedule and can be weeks
-        # old, so its age is published and the UI labels it rather than
-        # presenting it as current.
-        metrics_path = os.path.join(project_root, 'logs/market_metrics.json')
-        if os.path.exists(metrics_path):
-            try:
-                with open(metrics_path, 'r') as f:
-                    data["scanner"] = json.load(f)
-                data["scanner_age_seconds"] = time.time() - os.path.getmtime(metrics_path)
-            except Exception as e:
-                logger.error(f"Error loading market metrics JSON: {e}")
 
         # 2. Open positions, parsed by utils.positions.
         #
@@ -1301,19 +1151,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         # 5. Derived analytics — the views that answer "is this working?"
         data["analytics"] = self.build_analytics(completed_list)
-        data["signal_funnel"] = self.build_signal_funnel()
         data["screens"] = self.load_screens()
-
-        # 6. Read auto-learner report
-        best_params_path = os.path.join(project_root, "logs", "best_params.json")
-        data["auto_learner_report"] = None
-        if os.path.exists(best_params_path):
-            try:
-                with open(best_params_path, 'r') as f:
-                    data["auto_learner_report"] = json.load(f)
-            except Exception as e:
-                print(f"Error reading auto-learner report: {e}")
-
 
         return data
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coinbase Systematic Trading Dashboard</title>
+    <title>Systematic Trading Dashboard</title>
     <!-- Modern Premium Font -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -686,9 +686,6 @@
                             <th>Bot</th>
                             <th>Pair</th>
                             <th>Position</th>
-                            <th>SMA Short</th>
-                            <th>SMA Long</th>
-                            <th>Spread</th>
                             <th>RSI</th>
                             <th>EMA200</th>
                             <th style="text-align:right;">Signal</th>
@@ -722,27 +719,15 @@
                         filter that rejected it is named in the row.</dd>
 
                     <dt><span class="coin-signal sig-hold">➖ NO SETUP</span></dt>
-                    <dd><strong>Mean-reversion bots (all stocks).</strong> RSI has not
+                    <dd>RSI has not
                         crossed up through oversold, so there is nothing to act on.
                         Nothing is wrong — this is the normal resting state and
                         what you should expect to see most of the time.</dd>
 
-                    <dt><span class="coin-signal sig-hold">➖ NO CROSS</span></dt>
-                    <dd><strong>Crossover bots (all crypto).</strong> The short SMA is
-                        already above the long one, so the crossing has passed.
-                        These bots enter on the crossing itself — a single candle
-                        — so this means the entry was missed, not that one is
-                        approaching.</dd>
-
-                    <dt><span class="coin-signal sig-hold">⏳ BELOW</span></dt>
-                    <dd>Crossover bots: short SMA under long. No setup forming.</dd>
-
                     <dt><span class="coin-signal sig-hold">🌙 MARKET CLOSED</span></dt>
                     <dd>Stock bot outside market hours. Not evaluating at all.</dd>
                 </dl>
-                <p>States describe what the bot is doing, not how likely a trade
-                   is. SMA columns are meaningless for mean-reversion bots and
-                   are not used to label them.</p>
+                <p>States describe what the bot is doing, not how likely a trade is.</p>
             </details>
         </div>
 
@@ -754,7 +739,7 @@
                 <div class="card-subtext" id="live-fees-paid">Fees paid: $0.00</div>
             </div>
             <div class="performance-card card-sim">
-                <div class="card-label">Simulated Realized PnL <span class="obs-scope">all markets, lifetime</span></div>
+                <div class="card-label">Simulated Realized PnL <span class="obs-scope">lifetime</span></div>
                 <div class="card-value" id="sim-realized-pnl">$0.00 USD</div>
                 <div class="card-subtext" id="sim-fees-paid">Fees paid: $0.00</div>
             </div>
@@ -764,56 +749,25 @@
                 <div class="card-subtext">Active market exposure</div>
             </div>
             <div class="performance-card card-sim" id="sim-unrealized-card">
-                <div class="card-label">Simulated Unrealized PnL <span class="obs-scope">all markets</span></div>
+                <div class="card-label">Simulated Unrealized PnL</div>
                 <div class="card-value" id="sim-unrealized-pnl">$0.00 USD</div>
                 <div class="card-subtext">Active simulated exposure</div>
             </div>
         </div>
 
         <!-- --- Edge Analysis: gross vs fees vs net --- -->
-        <div class="scanner-panel" id="edge-panel" style="margin-bottom: 30px;">
-            <div class="panel-header">
-                <h2>💵 Where the Money Goes</h2>
-                <span class="card-subtext" id="edge-subtext">Simulated crypto trades</span>
-            </div>
-            <div class="waterfall">
-                <div class="wf-cell">
-                    <div class="wf-val" id="wf-gross">—</div>
-                    <div class="wf-sub">gross edge</div>
-                </div>
-                <div class="wf-op">−</div>
-                <div class="wf-cell">
-                    <div class="wf-val val-down" id="wf-fees">—</div>
-                    <div class="wf-sub" id="wf-fee-floor">fees</div>
-                </div>
-                <div class="wf-op">=</div>
-                <div class="wf-cell">
-                    <div class="wf-val" id="wf-net">—</div>
-                    <div class="wf-sub" id="wf-net-sub">net</div>
-                </div>
-            </div>
-            <div class="wf-note" id="wf-note"></div>
-        </div>
-
         <!-- --- Equity curve --- -->
         <!--
-          One chart per market, each scoped to that market's active
-          registration. Not overlaid: the two series have different trade
-          counts and dates, and the x-axis is trade sequence, so overlaying
-          them would put unrelated trades at the same x.
+          Scoped to the active stock registration; x is trade sequence.
         -->
         <div class="scanner-panel" id="curve-panel" style="margin-bottom: 30px;">
             <div class="panel-header">
                 <h2>📈 Cumulative Net P&amp;L</h2>
-                <span class="card-subtext">by market · registration window · x = trade sequence</span>
+                <span class="card-subtext">stocks · registration window · x = trade sequence</span>
             </div>
             <div class="curve-row">
                 <div class="curve-label">stocks <span class="card-subtext" id="curve-subtext-stocks">—</span></div>
                 <svg id="equity-curve-stocks" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
-            </div>
-            <div class="curve-row">
-                <div class="curve-label">crypto <span class="card-subtext" id="curve-subtext-crypto">—</span></div>
-                <svg id="equity-curve-crypto" viewBox="0 0 900 160" preserveAspectRatio="none" style="width:100%;height:160px;"></svg>
             </div>
         </div>
 
@@ -834,29 +788,21 @@
         </div>
 
         <!-- --- Exit reasons + entry quality --- -->
-        <div class="two-col" style="margin-bottom: 30px;">
-            <div class="scanner-panel">
-                <div class="panel-header">
-                    <h2>🚪 Exits by Reason</h2>
-                </div>
-                <div id="exit-reasons"></div>
+        <div class="scanner-panel" style="margin-bottom: 30px;">
+            <div class="panel-header">
+                <h2>🚪 Exits by Reason</h2>
+                <span class="card-subtext">simulated stock trades, lifetime</span>
             </div>
-            <div class="scanner-panel">
-                <div class="panel-header">
-                    <h2>🎯 Entry Follow-Through</h2>
-                </div>
-                <div id="entry-quality"></div>
-            </div>
+            <div id="exit-reasons"></div>
         </div>
 
         <!--
-          P&L by market. The cards above sum crypto and stocks into one
-          number; this is the split, scoped to each market's active
-          registration so it matches what the gate and the observer grade on.
+          Stock P&L scoped to the active registration, so it matches what
+          the gate and the observer grade on. The cards above are lifetime.
         -->
         <div class="scanner-panel" id="pnl-market-panel" style="margin-bottom: 30px;">
             <div class="panel-header">
-                <h2>💵 P&amp;L by Market</h2>
+                <h2>💵 Registration P&amp;L</h2>
                 <span class="card-subtext">scoped to the active registration · lifetime shown small</span>
             </div>
             <div class="pnl-grid" id="pnl-market-body"></div>
@@ -874,7 +820,7 @@
                     <table class="ledger-table">
                         <thead>
                             <tr>
-                                <th>Coin</th>
+                                <th>Symbol</th>
                                 <th>Mode</th>
                                 <th>Entry Price</th>
                                 <th>Current Price</th>
@@ -916,15 +862,6 @@
                 </div>
             </div>
 
-            <!-- Signal Funnel Panel -->
-            <div class="panel">
-                <div class="panel-header">
-                    <h2>Signal Funnel</h2>
-                    <span class="card-subtext" id="funnel-window">—</span>
-                </div>
-                <div id="funnel-body"></div>
-            </div>
-
         </div>
 
         <!-- --- Candidate Screens --- -->
@@ -946,7 +883,7 @@
                 <table class="ledger-table">
                     <thead>
                         <tr>
-                            <th>Pair</th>
+                            <th>Symbol</th>
                             <th>Mode</th>
                             <th>Entry Time</th>
                             <th>Exit Time</th>
@@ -967,25 +904,7 @@
             </div>
         </div>
 
-        <!-- --- Scanner Scoreboard --- -->
-        <div class="scanner-panel">
-            <div class="panel-header">
-                <h2>Multi-Asset Screener Scoreboard</h2>
-                <span class="card-subtext">Hourly bars • refreshed hourly<span id="scanner-age"></span></span>
-            </div>
-            <div class="scanner-grid" id="scanner-cards">
-                <!-- Dynamically populated -->
-            </div>
-        </div>
-        <!-- --- Auto-Learner Report --- -->
-        <div class="scanner-panel" id="auto-learner-panel" style="display: none;">
-            <div class="panel-header">
-                <h2>🧠 Auto-Learner Nightly Report</h2>
-                <span class="card-subtext" id="learner-timestamp">Loading...</span>
-            </div>
-            <div class="scanner-grid" id="learner-cards">
-                <!-- Dynamically populated -->
-            </div>
+    </div>
         </div>
     </div>
 
@@ -1009,54 +928,12 @@
         // ---- Edge analysis: the views that answer "is this working" ----
 
         function renderAnalytics(a) {
-            if (!a || !a.waterfall) return;
-            const w = a.waterfall;
-            const floor = a.fee_floor_pct;
-
-            const gross = document.getElementById('wf-gross');
-            gross.textContent = formatPnL(w.gross);
-            gross.className = "wf-val " + (w.gross >= 0 ? "val-up" : "val-down");
-            document.getElementById('wf-fees').textContent = formatCurrency(w.fees);
-            document.getElementById('wf-fee-floor').textContent =
-                floor !== null ? `fees · ${floor.toFixed(2)}% per trade` : "fees";
-
-            const net = document.getElementById('wf-net');
-            net.textContent = formatPnL(w.net);
-            net.className = "wf-val " + (w.net >= 0 ? "val-up" : "val-down");
-            document.getElementById('wf-net-sub').textContent =
-                `net · ${a.trade_count} trades · ${w.win_rate.toFixed(0)}% win`;
-
-            // Say plainly which of the two possible problems this is.
-            const note = document.getElementById('wf-note');
-            if (w.gross > 0 && w.net < 0) {
-                note.innerHTML = `The strategy picks direction well enough to be <strong>${formatPnL(w.gross)} gross</strong>, ` +
-                    `but fees consume ${Math.round(100 * w.fees / w.gross)}% of that. ` +
-                    `This is a cost problem, not a signal problem.`;
-            } else if (w.gross <= 0) {
-                note.innerHTML = `Gross edge is <strong>${formatPnL(w.gross)}</strong> — negative before any fees. ` +
-                    `The entry signal itself needs work; tuning exits or costs will not fix this.`;
-            } else {
-                note.innerHTML = `Positive after costs. Edge survives the ${floor ? floor.toFixed(2) + '%' : ''} round trip.`;
-            }
-
+            if (!a) return;
             renderPooledGraduation(a.pooled_graduation);
             renderGraduation(a.graduation);
             renderExitReasons(a.exit_reasons, a.trade_count);
-            renderEntryQuality(a.entry_quality, floor);
         }
 
-
-        // Human-readable names for the strategy's blocked_by codes.
-        const BLOCK_LABELS = {
-            "RSI": "RSI out of band",
-            "EMA": "below EMA trend",
-            "SPREAD": "separation too small",
-            "SPREAD_MAX": "crossover too extended",
-            "INSUFFICIENT_DATA": "not enough candles",
-        };
-
-        // Crossovers seen vs. taken. A filter tightened too far shows up here as
-        // blocks piling up; in the trade ledger it would look like a quiet market.
 
         // Symbols ranked by whether they suit the strategy, not by recent
         // returns. Only the actionable ends are shown: worth testing, and
@@ -1103,64 +980,6 @@
             }).join('');
         }
 
-        function renderFunnel(f) {
-            const body = document.getElementById('funnel-body');
-            const win = document.getElementById('funnel-window');
-            if (!body) return;
-            if (!f) { body.innerHTML = ""; return; }
-
-            win.textContent = `last ${f.window_days}d · ${f.pairs} pairs`;
-
-            if (!f.candles) {
-                body.innerHTML = `<div class="funnel-empty">No candle decisions logged yet.
-                    Bots write one row per closed candle, so this fills in as they run.</div>`;
-                return;
-            }
-
-            const rows = [];
-            rows.push(`<div class="fn-row fn-head">
-                <span class="fn-label">Candles evaluated</span>
-                <span class="fn-count">${f.candles.toLocaleString()}</span></div>`);
-            rows.push(`<div class="fn-row fn-head">
-                <span class="fn-label">Crossovers seen</span>
-                <span class="fn-count">${f.crossovers}</span></div>`);
-
-            if (f.crossovers === 0) {
-                rows.push(`<div class="funnel-empty">No crossover has fired yet in this
-                    window. Nothing is being filtered — the signal simply has not triggered.</div>`);
-            } else {
-                f.blocked.forEach(b => {
-                    const pct = Math.round(100 * b.count / f.crossovers);
-                    rows.push(`<div class="fn-row fn-sub">
-                        <span class="fn-label">↳ ${BLOCK_LABELS[b.reason] || b.reason}</span>
-                        <span class="fn-count val-down">${b.count}<span class="fn-pct">${pct}%</span></span>
-                    </div>`);
-                });
-                const takenPct = Math.round(100 * f.taken / f.crossovers);
-                rows.push(`<div class="fn-row fn-taken">
-                    <span class="fn-label">Entries taken</span>
-                    <span class="fn-count ${f.taken ? 'val-up' : 'val-down'}">${f.taken}<span class="fn-pct">${takenPct}%</span></span>
-                </div>`);
-
-                // Every crossover rejected is the failure mode this panel exists for.
-                if (f.blocked_total === f.crossovers && f.crossovers >= 3) {
-                    rows.push(`<div class="funnel-warn">⚠ Every crossover in this window was
-                        filtered out. Entry filters may be too tight.</div>`);
-                }
-            }
-
-            const foot = [];
-            if (f.last_crossover_age !== null && f.last_crossover_age !== undefined) {
-                foot.push(`last crossover ${formatAge(f.last_crossover_age)} ago`);
-            }
-            if (f.last_entry_age !== null && f.last_entry_age !== undefined) {
-                foot.push(`last entry ${formatAge(f.last_entry_age)} ago`);
-            }
-            if (foot.length) rows.push(`<div class="fn-foot">${foot.join(' · ')}</div>`);
-
-            body.innerHTML = rows.join('');
-        }
-
         function renderPooledGraduation(rows) {
             const el = document.getElementById('pooled-grad');
             if (!el) return;
@@ -1193,14 +1012,14 @@
             const sub = document.getElementById('grad-subtext');
             if (!el) return;
             if (!coins || !coins.length) {
-                el.innerHTML = '<p class="card-subtext">No simulated coins yet.</p>';
+                el.innerHTML = '<p class="card-subtext">No closed trades yet.</p>';
                 sub.textContent = "";
                 return;
             }
             const ready = coins.filter(c => c.ready).length;
             sub.textContent = ready
-                ? `${ready} coin${ready > 1 ? 's' : ''} meeting all criteria`
-                : `No coins eligible yet — closest is ${coins[0].pair} at ${coins[0].score}/${coins[0].max_score}`;
+                ? `${ready} symbol${ready > 1 ? 's' : ''} meeting all criteria`
+                : `No symbol eligible yet — closest is ${coins[0].pair} at ${coins[0].score}/${coins[0].max_score}`;
 
             el.innerHTML = coins.map(c => {
                 // Score, not criteria count — matches the nightly email exactly.
@@ -1246,29 +1065,8 @@
             el.innerHTML = html;
         }
 
-        function renderEntryQuality(q, floor) {
-            const el = document.getElementById('entry-quality');
-            if (!q) { el.innerHTML = '<p class="card-subtext">No excursion data yet.</p>'; return; }
-            // Scale the bar to 5% MFE so the fee floor sits at a readable position.
-            const SCALE = 5.0;
-            const floorPos = Math.min(100, (floor / SCALE) * 100);
-            el.innerHTML = `
-                <div class="eq-bar">
-                    <div class="eq-fill" style="width:${q.cleared_pct}%"></div>
-                    <div class="eq-floor" style="left:${floorPos}%" title="Fee floor ${floor.toFixed(2)}%"></div>
-                </div>
-                <div class="eq-scale"><span>0%</span><span style="color:var(--accent-red)">↑ ${floor.toFixed(2)}% fee floor</span><span>${SCALE}% MFE</span></div>
-                <div class="eq-stats">
-                    <strong>${q.cleared_fee_floor} of ${q.measured}</strong> entries (${q.cleared_pct.toFixed(0)}%) ever moved far enough to cover the round trip.<br>
-                    Average best case <span class="val-up">+${q.avg_mfe.toFixed(2)}%</span> · average worst case <span class="val-down">${q.avg_mae.toFixed(2)}%</span>
-                </div>`;
-        }
-
-        // One chart per market, fed from pnl_by_market so it is scoped to the
-        // registration window like every other number on that panel. It used
-        // to read analytics.equity_curve, which is built inside the
-        // crypto-only block — empty since the 2026-09-21 reset, and never
-        // populated for stocks.
+        // Fed from pnl_by_market so it is scoped to the registration window
+        // like every other number on that panel.
         function renderEquityCurve(points, market) {
             const svg = document.getElementById('equity-curve-' + market);
             const sub = document.getElementById('curve-subtext-' + market);
@@ -1395,7 +1193,7 @@
             const money = v => (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
             const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
             const cls = v => v >= 0 ? 'val-up' : 'val-down';
-            body.innerHTML = ['stocks', 'crypto'].filter(m => pnl[m]).map(m => {
+            body.innerHTML = ['stocks'].filter(m => pnl[m]).map(m => {
                 const p = pnl[m];
                 return `<div class="pnl-card">
                   <h4>${m}</h4>
@@ -1416,9 +1214,7 @@
             renderFleetProblems(data.fleet_problems);
             renderObserver(data.observer);
             renderMarketPnl(data.pnl_by_market);
-            for (const m of ["stocks", "crypto"]) {
-                renderEquityCurve((data.pnl_by_market[m] || {}).equity_curve, m);
-            }
+            renderEquityCurve((data.pnl_by_market.stocks || {}).equity_curve, "stocks");
             // Update Timestamp
             if (data.timestamp) {
                 const d = new Date(data.timestamp);
@@ -1437,7 +1233,6 @@
 
             // Update Active Positions
             renderAnalytics(data.analytics);
-            renderFunnel(data.signal_funnel);
             renderScreens(data.screens);
 
             const positions = data.active_positions || [];
@@ -1518,72 +1313,6 @@
                 botsBody.innerHTML = html;
             }
 
-            // Screener snapshot freshness
-            const scanner = data.scanner || {};
-
-            // The scanner runs hourly under PM2 cron. Anything much older than
-            // that means the job stopped, which is actionable — so the threshold
-            // tracks the cadence rather than sitting a day out.
-            const SCANNER_STALE_AFTER = 3 * 3600;   // three missed runs
-            const scannerAgeEl = document.getElementById('scanner-age');
-            if (scannerAgeEl) {
-                const age = data.scanner_age_seconds;
-                if (age === null || age === undefined) {
-                    scannerAgeEl.innerHTML = `<span class="stale-note">⚠ no screener data — has scanner ever run?</span>`;
-                } else if (age > SCANNER_STALE_AFTER) {
-                    scannerAgeEl.innerHTML = `<span class="stale-note">⚠ ${formatAge(age)} old — scanner may have stopped (pm2 status scanner)</span>`;
-                } else {
-                    scannerAgeEl.textContent = ` • updated ${formatAge(age)} ago`;
-                }
-            }
-
-
-            // Update Scanner Grid Scoreboard Cards
-            const results = scanner.results || [];
-            const scannerGrid = document.getElementById('scanner-cards');
-            let cardsHtml = "";
-            
-            // Sort: BUY first, then SELL, then HOLD
-            const sortedResults = [...results].sort((a, b) => {
-                const aVal = a.Signal === 'BUY' ? 2 : (a.Signal === 'SELL' ? 0 : 1);
-                const bVal = b.Signal === 'BUY' ? 2 : (b.Signal === 'SELL' ? 0 : 1);
-                return bVal - aVal;
-            });
-
-            sortedResults.forEach(item => {
-                let sigClass = "sig-hold";
-                if (item.Signal === 'BUY') sigClass = "sig-buy";
-                if (item.Signal === 'SELL') sigClass = "sig-sell";
-                
-                const changeValClass = item["24h Change %"] >= 0 ? "val-up" : "val-down";
-                const changeStr = formatPercent(item["24h Change %"]);
-                
-                cardsHtml += `
-                <div class="coin-card">
-                    <div class="coin-header">
-                        <span class="coin-name">${item.Coin}</span>
-                        <span class="coin-signal ${sigClass}">${item.Signal}</span>
-                    </div>
-                    <div class="coin-price">${formatCurrency(item.Price)}</div>
-                    <div class="coin-metrics">
-                        <div class="coin-metric-item">
-                            <span>24h Change</span>
-                            <span class="metric-val ${changeValClass}">${changeStr}</span>
-                        </div>
-                        <div class="coin-metric-item">
-                            <span>RSI (14)</span>
-                            <span class="metric-val">${item.RSI.toFixed(1)}</span>
-                        </div>
-                        <div class="coin-metric-item">
-                            <span>Spread</span>
-                            <span class="metric-val">${formatPercent(item["Spread %"])}</span>
-                        </div>
-                    </div>
-                </div>
-                `;
-            });
-            scannerGrid.innerHTML = cardsHtml;
-
             // Update Completed Trades
             const completed = data.completed_trades || [];
             document.getElementById('completed-trades-count').textContent = completed.length + " trade" + (completed.length !== 1 ? "s" : "") + " recorded (last 30)";
@@ -1615,50 +1344,6 @@
                 });
                 completedBody.innerHTML = html;
             }
-            // Update Auto-Learner Report
-            const learnerReport = data.auto_learner_report;
-            const learnerPanel = document.getElementById('auto-learner-panel');
-            if (learnerReport && learnerReport.best_params) {
-                learnerPanel.style.display = 'block';
-                if (learnerReport.timestamp) {
-                    const dt = new Date(learnerReport.timestamp);
-                    document.getElementById('learner-timestamp').textContent = "Last Run: " + dt.toLocaleDateString() + " at " + dt.toLocaleTimeString();
-                }
-                
-                const cardsContainer = document.getElementById('learner-cards');
-                let learnerHtml = "";
-                
-                for (const [coin, params] of Object.entries(learnerReport.best_params)) {
-                    const profitClass = params.net_profit >= 0 ? "val-up" : "val-down";
-                    const pnlStr = formatPnL(params.net_profit);
-                    
-                    learnerHtml += `
-                    <div class="coin-card">
-                        <div class="coin-header">
-                            <span class="coin-name">${coin}</span>
-                            <span class="coin-signal sig-buy" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-green);">SMA ${params.short}/${params.long}</span>
-                        </div>
-                        <div class="coin-metrics">
-                            <div class="coin-metric-item">
-                                <span>Net Profit</span>
-                                <span class="metric-val ${profitClass}" style="font-weight: 700;">${pnlStr}</span>
-                            </div>
-                            <div class="coin-metric-item">
-                                <span>Win Rate</span>
-                                <span class="metric-val">${params.win_rate.toFixed(1)}%</span>
-                            </div>
-                            <div class="coin-metric-item">
-                                <span>SL / TP</span>
-                                <span class="metric-val">${params.stop_loss}% / ${params.take_profit}%</span>
-                            </div>
-                        </div>
-                    </div>
-                    `;
-                }
-                cardsContainer.innerHTML = learnerHtml;
-            } else {
-                learnerPanel.style.display = 'none';
-            }
         }
 
         function formatDateTime(isoString) {
@@ -1689,38 +1374,40 @@
             }
         }
 
+        // Human-readable names for the strategy's blocked_by codes.
+        const BLOCK_LABELS = {
+            "RSI": "RSI out of band",
+            "EMA": "below EMA trend",
+            "INSUFFICIENT_DATA": "not enough candles",
+        };
+
         function renderBotSignals(signals) {
             const tbody = document.getElementById('bot-signal-body');
             if (!signals || signals.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);padding:30px 0;">No signal data available.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:30px 0;">No signal data available.</td></tr>`;
                 return;
             }
 
-            // Most actionable first. BLOCKED outranks NO CROSS because a
-            // blocked crossover is a filter decision worth reviewing, while
-            // NO CROSS is simply the absence of a setup.
+            // Most actionable first. BLOCKED outranks NO SETUP because a
+            // blocked entry is a filter decision worth reviewing, while
+            // NO SETUP is simply the absence of one.
             const order = { 'IN TRADE': 0, 'ENTERING': 1, 'BLOCKED': 2,
-                            'NO SETUP': 3, 'NO CROSS': 3, 'BELOW': 4,
-                            'CLOSED': 5 };
+                            'NO SETUP': 3, 'CLOSED': 5 };
             signals.sort((a, b) => (order[a.signal] ?? 9) - (order[b.signal] ?? 9));
 
             let html = '';
             signals.forEach(s => {
-                // Labels state what the bot is doing. The strategy enters on the
-                // crossing itself — one candle — so a pair already above its long
-                // SMA has missed the entry, not approached one. The old "CLOSE"
-                // implied the opposite.
+                // Labels state what the bot is doing. The crossover states
+                // (NO CROSS, BELOW) left with the crypto bots on 2026-10-14.
                 const signalConfig = {
                     'IN TRADE': { cls: 'sig-buy',  label: '🟢 IN TRADE',  glow: 'var(--accent-green)' },
                     'ENTERING': { cls: 'sig-buy',  label: '⚡ ENTERING',  glow: 'var(--accent-green)' },
                     'BLOCKED':  { cls: 'sig-hold', label: '🚫 BLOCKED',   glow: 'none' },
-                    'NO CROSS': { cls: 'sig-hold', label: '➖ NO CROSS',  glow: 'none' },
                     'NO SETUP': { cls: 'sig-hold', label: '➖ NO SETUP',  glow: 'none' },
                     'CLOSED':   { cls: 'sig-hold', label: '🌙 MARKET CLOSED', glow: 'none' },
-                    'BELOW':    { cls: 'sig-hold', label: '⏳ BELOW',     glow: 'none' },
                 }[s.signal] || { cls: 'sig-hold', label: s.signal, glow: 'none' };
 
-                // A blocked crossover is only actionable if you can see which
+                // A blocked entry is only actionable if you can see which
                 // filter rejected it, so name it rather than just saying no.
                 if (s.signal === 'BLOCKED' && s.blocked_by) {
                     signalConfig.label += ` · ${BLOCK_LABELS[s.blocked_by] || s.blocked_by}`;
@@ -1763,9 +1450,6 @@
                     <td style="font-weight:700;color:#fff;">${s.bot.replace('-bot','').toUpperCase()}</td>
                     <td style="color:var(--text-secondary);font-size:13px;">${s.pair}</td>
                     <td><span class="${posClass}" style="font-weight:600;">${s.position}</span></td>
-                    <td style="font-family:monospace;font-size:13px;">${smaShort}</td>
-                    <td style="font-family:monospace;font-size:13px;">${smaLong}</td>
-                    <td><span class="${spreadDir}" style="font-weight:600;">${spreadTxt}</span></td>
                     <td><span class="${rsiClass}" style="font-weight:600;">${rsiTxt}</span></td>
                     <td><span class="${emaClass}" style="font-size:13px;">${emaTxt}</span></td>
                     <td style="text-align:right;">

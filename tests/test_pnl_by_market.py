@@ -37,9 +37,9 @@ def test_pooled_graduation_is_served_even_with_no_crypto_trades():
     assert isinstance(analytics["pooled_graduation"], list)
 
 
-def test_both_markets_reported():
+def test_only_stocks_reported_since_crypto_was_retired():
     out = dashboard.DashboardHandler.build_pnl_by_market([])
-    assert set(out) == {"stocks", "crypto"}
+    assert set(out) == {"stocks"}
 
 
 def test_stock_realized_matches_the_ledger_since_registration_start():
@@ -59,11 +59,9 @@ def test_lifetime_is_at_least_the_registration_window():
 def test_unrealized_is_summed_per_market_from_priced_positions():
     positions = [{"market": "stocks", "unrealized_pnl": -1.0, "unrealized_known": True},
                  {"market": "stocks", "unrealized_pnl": -2.0, "unrealized_known": True},
-                 {"market": "crypto", "unrealized_pnl": 5.0, "unrealized_known": True},
                  {"market": "stocks", "unrealized_pnl": 99.0, "unrealized_known": False}]
     out = dashboard.DashboardHandler.build_pnl_by_market(positions)
     assert out["stocks"]["unrealized_usd"] == pytest.approx(-3.0), "unpriced positions must not count"
-    assert out["crypto"]["unrealized_usd"] == pytest.approx(5.0)
     assert out["stocks"]["open"] == 3
 
 
@@ -78,4 +76,5 @@ def test_page_carries_the_panel_and_honest_card_labels():
     page = open(os.path.join(DIR, "dashboard", "index.html")).read()
     assert 'id="pnl-market-panel"' in page
     assert "renderMarketPnl(data.pnl_by_market)" in page
-    assert "all markets, lifetime" in page, "the mixed card must say it is mixed"
+    assert "all markets" not in page, "crypto was retired; no card is mixed any more"
+    assert 'obs-scope">lifetime<' in page, "the headline card still says it is lifetime, not the registration window"
