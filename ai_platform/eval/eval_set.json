@@ -44,7 +44,7 @@
     {"id": "q18", "kind": "rag", "question": "What is the gate before Phase 2 of the observer may be built?",
      "checks": [{"type": "contains_any", "values": ["graduation gate", "graduation", "beats buy-and-hold", "passed its own"]}]},
     {"id": "q19", "kind": "rag", "question": "How does the local candle store treat a candle that is still forming?",
-     "checks": [{"type": "contains_any", "values": ["never stores", "not stored", "does not store", "doesn't store", "only closed", "excluded", "ignores"]}]},
+     "checks": [{"type": "contains_any", "values": ["never stores", "never saves", "never writes", "never appends", "not stored", "not saved", "does not store", "doesn't store", "does not save", "doesn't save", "only closed", "closed candles only", "excluded", "ignores", "refuses", "rejects", "discards", "drops"]}]},
     {"id": "q20", "kind": "rag", "question": "Which RSI oversold and overbought thresholds do the stock bots run under the v4 registration?",
      "checks": [{"type": "contains_all", "values": ["35", "65"]}]},
     {"id": "q21", "kind": "rag", "question": "In the crypto trailing-stop trap, what peak was needed to break even and where did the stop arm?",

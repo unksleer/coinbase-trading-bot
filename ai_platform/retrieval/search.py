@@ -69,8 +69,15 @@ def search(index: Index, query: str, k: int = 5, mode: str = "hybrid") -> list[H
     return hits
 
 
-def format_context(hits: list[Hit], max_chars: int = 9000) -> str:
-    """Numbered context block for a prompt; retrieved text is untrusted input."""
+CHARS_PER_HIT = 1800   # a chunk is at most ~1,400 chars plus its source line
+
+
+def format_context(hits: list[Hit], max_chars: int | None = None) -> str:
+    """Numbered context block for a prompt; retrieved text is untrusted input.
+    The window grows with k (1,800 chars per hit, floor 9,000) so that asking for
+    eight chunks does not silently deliver six."""
+    if max_chars is None:
+        max_chars = max(9000, CHARS_PER_HIT * len(hits))
     parts, used = [], 0
     for h in hits:
         block = f"[{h.rank}] source: {h.citation()}\n{h.body}"

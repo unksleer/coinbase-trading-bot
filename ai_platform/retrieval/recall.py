@@ -1,6 +1,6 @@
 """
 Recall@k on the 20 hand-labelled questions, for keyword, vector and hybrid
-search, k in {1, 3, 5, 10}. Writes ai_platform/reports/recall_report.json.
+search, k in {1, 3, 5, 8, 10}. Writes ai_platform/reports/recall_report.json.
 
     python -m ai_platform.retrieval.recall [--rebuild] [--embedder model2vec|hash]
 """
@@ -16,7 +16,7 @@ from .index import Index
 from .search import search
 
 QUESTIONS_FILE = Path(__file__).with_name("labelled_questions.json")
-KS = (1, 3, 5, 10)
+KS = (1, 3, 5, 8, 10)
 MODES = ("keyword", "vector", "hybrid")
 
 

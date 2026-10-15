@@ -70,3 +70,18 @@ def test_offline_eval_writes_its_index_under_the_test_data_dir(ledger_root, data
     assert (data_dir / "index" / "meta.json").is_file() and idx.meta["embedder"].startswith("hash")
     real = paths.PACKAGE_DIR / "data" / "index" / "meta.json"
     assert not real.exists() or real.stat().st_mtime < t0
+
+
+def test_markdown_emphasis_is_stripped_before_phrase_checks():
+    from ai_platform.eval.scorer import strip_markdown
+    ctx = {}
+    assert strip_markdown("appends only **closed** candles") == "appends only closed candles"
+    assert strip_markdown("it `never saves` a _forming_ candle") == "it never saves a forming candle"
+    assert strip_markdown("use `restart_bots.py`, not pm2") == "use restart_bots.py, not pm2"   # snake_case survives
+    assert run_check({"type": "contains_any", "values": ["only closed"]}, "appends only **closed** candles", ctx)[0]
+    assert run_check({"type": "contains_all", "values": ["never saves", "forming"]}, "It *never saves* a __forming__ candle.", ctx)[0]
+    assert run_check({"type": "contains_any", "values": ["restart_bots.py"]}, "run `restart_bots.py`", ctx)[0]
+    assert not run_check({"type": "not_contains", "values": ["closed"]}, "only **closed** candles", ctx)[0]
+    # the q19 answer that scored 0 on eval_20261014T201342Z_524b now passes its check
+    q19 = "The store never saves a candle that is still forming; it appends only **closed** candles."
+    assert run_check({"type": "contains_any", "values": ["never stores", "never saves", "only closed"]}, q19, ctx)[0]

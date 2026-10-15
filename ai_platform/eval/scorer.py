@@ -16,6 +16,14 @@ from ..agent import proposals
 from ..ledger import load_trades, summarise
 
 NUM_RE = re.compile(r"-?\$?\d+(?:,\d{3})*(?:\.\d+)?")
+# Markdown emphasis the models like to add: **bold**, *italic*, `code`, _italic_ (only when the
+# underscore is an emphasis marker at a word edge, so snake_case names survive).
+MD_RE = re.compile(r"\*{1,3}|`+|(?<!\w)_{1,3}(?=\w)|(?<=\w)_{1,3}(?!\w)")
+
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown emphasis so a phrase check sees the words, not the markup."""
+    return MD_RE.sub("", text)
 
 JUDGE_SYSTEM = """You are a strict JUDGE of answers about a paper-trading research platform. Score the ANSWER against the EXPECTED answer with this RUBRIC:
 2 = states the expected facts correctly (extra correct detail is fine; wording may differ)
@@ -87,7 +95,7 @@ def _numbers(text: str) -> list[float]:
 
 def run_check(check: dict, answer: str, ctx: dict) -> tuple[bool, str]:
     t = check["type"]
-    low = answer.lower()
+    low = strip_markdown(answer).lower()
     if t == "contains_any":
         hit = next((v for v in check["values"] if v.lower() in low), None)
         return hit is not None, f"contains_any -> {hit!r}"

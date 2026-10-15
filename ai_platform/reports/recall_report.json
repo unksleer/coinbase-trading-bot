@@ -7,18 +7,21 @@
       "@1": 0.65,
       "@3": 0.8,
       "@5": 0.9,
+      "@8": 1.0,
       "@10": 1.0
     },
     "vector": {
       "@1": 0.25,
       "@3": 0.45,
       "@5": 0.7,
+      "@8": 0.8,
       "@10": 0.8
     },
     "hybrid": {
       "@1": 0.55,
       "@3": 0.75,
       "@5": 0.8,
+      "@8": 1.0,
       "@10": 1.0
     }
   },
@@ -39,7 +42,7 @@
       "r13": 1,
       "r14": 7,
       "r15": 1,
-      "r16": 3,
+      "r16": 2,
       "r17": 1,
       "r18": 1,
       "r19": 7,
@@ -83,7 +86,7 @@
       "r13": 1,
       "r14": 7,
       "r15": 1,
-      "r16": 2,
+      "r16": 3,
       "r17": 1,
       "r18": 2,
       "r19": 4,
@@ -99,7 +102,7 @@
         "top3": [
           "experiments/2026-09-spy-first-candle-rule.json > 2026-09-spy-first-candle-rule",
           "experiments/2026-09-spy-first-candle-rule-v2.json > 2026-09-spy-first-candle-rule-v2",
-          "ledger/SPY-FIRST_CANDLE_RULE > Paper trade ledger for SPY, strategy FIRST_CANDLE_RULE, venue Alpaca paper. 1 closed trades. Source file completed_trades_spy_fcr_paper.csv."
+          "ledger/SPY-FIRST_CANDLE_RULE > Paper trade ledger for SPY, strategy FIRST_CANDLE_RULE, venue Alpaca paper. 1 closed trades, 0 of them entered before 2026-09-04 and so outside the v4 registration window. Source file completed_trades_spy_fcr_paper.csv."
         ]
       },
       {
@@ -202,8 +205,8 @@
         "first_relevant_rank": 7,
         "top3": [
           "experiments/2026-09-spy-first-candle-rule.json > 2026-09-spy-first-candle-rule",
-          "experiments/2026-09-spy-first-candle-rule.json > 2026-09-spy-first-candle-rule",
-          "strategies/first_candle_rule.py > first_candle_rule"
+          "strategies/first_candle_rule.py > first_candle_rule",
+          "experiments/2026-09-spy-first-candle-rule.json > 2026-09-spy-first-candle-rule"
         ]
       },
       {

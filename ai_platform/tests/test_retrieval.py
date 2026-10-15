@@ -83,3 +83,13 @@ def test_recall_measurement_runs_with_hash_embedder():
     rep = measure(idx, load_questions()[:5], ks=(1, 5), modes=("keyword", "hybrid"))
     assert set(rep["recall_at_k"]) == {"keyword", "hybrid"}
     assert 0.0 <= rep["recall_at_k"]["hybrid"]["@5"] <= 1.0
+
+
+def test_context_window_grows_with_k():
+    from ai_platform.retrieval.search import Hit, format_context
+    hits = [Hit(rank=i + 1, chunk_id=f"c{i}", source="DECISIONS.md", heading=f"h{i}", score=1.0,
+                body="x" * 1400, keyword_rank=None, vector_rank=None) for i in range(8)]
+    assert format_context(hits[:5]).count("] source: ") == 5          # k=5: the old 9,000-char window
+    assert format_context(hits[:5], 9000) == format_context(hits[:5])
+    assert format_context(hits).count("] source: ") == 8              # k=8: all eight fit
+    assert format_context(hits, 9000).count("] source: ") == 6        # the fixed window would have dropped two

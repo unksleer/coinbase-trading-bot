@@ -46,8 +46,10 @@ def answer_rag(gateway: ModelGateway, question: str, k: int, interaction_id: str
     return r.text.strip(), [h.citation() for h in hits], r.cost_usd
 
 
-def run(questions: list[dict], *, gateway: ModelGateway | None = None, k: int = 5, use_judge: bool = True,
-        run_id: str | None = None, verbose: bool = True) -> dict:
+def run(questions: list[dict], *, gateway: ModelGateway | None = None, k: int = 5, rag_k: int = 8,
+        use_judge: bool = True, run_id: str | None = None, verbose: bool = True) -> dict:
+    """`k` is the agent's retrieval depth, `rag_k` the retrieval questions'. Hybrid recall on the
+    labelled set is 0.80@5 and 1.00@8 (reports/recall_report.json), so retrieval answers read eight."""
     gateway = gateway or ModelGateway()
     run_id = run_id or f"eval_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid.uuid4().hex[:4]}"
     t0 = time.perf_counter()
@@ -71,7 +73,7 @@ def run(questions: list[dict], *, gateway: ModelGateway | None = None, k: int = 
                 if r.stopped_reason == "error":
                     error = r.answer
             else:
-                answer, sources, cost = answer_rag(gateway, q["question"], k, ix)
+                answer, sources, cost = answer_rag(gateway, q["question"], rag_k, ix)
         except Exception as e:
             answer, error = "", f"{type(e).__name__}: {e}"
         new_props = [p for p in proposals.load() if p["proposal_id"] not in before_q]
@@ -102,7 +104,8 @@ def run(questions: list[dict], *, gateway: ModelGateway | None = None, k: int = 
                                    "AVG(latency_ms) l FROM calls WHERE interaction_id LIKE ? GROUP BY task_type", (run_id + ":%",))
     report = {
         "run_id": run_id, "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "provider": gateway.provider.name, "questions": len(results), "k": k, "judge_used": use_judge, "index": index_meta,
+        "provider": gateway.provider.name, "questions": len(results), "k": k, "rag_k": rag_k, "judge_used": use_judge,
+        "index": index_meta,
         "score_pct": round(sum(r["score"] for r in results) / (2 * len(results)) * 100, 1) if results else 0.0,
         "by_kind_pct": {kd: round(sum(v) / (2 * len(v)) * 100, 1) for kd, v in by_kind.items()},
         "full_marks": sum(r["score"] == 2 for r in results), "partial": sum(r["score"] == 1 for r in results),
@@ -120,7 +123,8 @@ def run(questions: list[dict], *, gateway: ModelGateway | None = None, k: int = 
 
 def render(rep: dict) -> str:
     ix = rep.get("index") or {}
-    lines = [f"\n=== eval {rep['run_id']}  provider={rep['provider']}  questions={rep['questions']}  judge={'on' if rep['judge_used'] else 'off'}",
+    lines = [f"\n=== eval {rep['run_id']}  provider={rep['provider']}  questions={rep['questions']}  judge={'on' if rep['judge_used'] else 'off'}"
+             f"  k={rep['k']} rag_k={rep.get('rag_k', rep['k'])}",
              f"index: {ix.get('embedder')}  {ix.get('documents')} documents / {ix.get('chunks')} chunks  built {ix.get('built_at')}",
              f"SCORE {rep['score_pct']}%   by kind: " + "  ".join(f"{k} {v}%" for k, v in rep["by_kind_pct"].items())
              + f"   full {rep['full_marks']} / partial {rep['partial']} / zero {rep['zero']} / errors {rep['errors']}",
@@ -135,7 +139,8 @@ def main(argv=None):
     ap.add_argument("--ids", default=None, help="comma-separated question ids")
     ap.add_argument("--kind", default=None, choices=[None, "rag", "agent"])
     ap.add_argument("--no-judge", action="store_true")
-    ap.add_argument("-k", type=int, default=5)
+    ap.add_argument("-k", type=int, default=5, help="retrieval depth for agent questions")
+    ap.add_argument("--rag-k", type=int, default=8, help="retrieval depth for retrieval questions")
     ap.add_argument("--out", default=str(paths.REPORTS_DIR / "eval_report.json"))
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
@@ -146,7 +151,7 @@ def main(argv=None):
         qs = [q for q in qs if q["id"] in want]
     if a.kind:
         qs = [q for q in qs if q["kind"] == a.kind]
-    rep = run(qs, k=a.k, use_judge=not a.no_judge, verbose=not a.quiet)
+    rep = run(qs, k=a.k, rag_k=a.rag_k, use_judge=not a.no_judge, verbose=not a.quiet)
     Path(a.out).write_text(json.dumps(rep, indent=2, ensure_ascii=False))
     print(render(rep))
     print(f"written {a.out}")
