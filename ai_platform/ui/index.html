@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai_platform</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --muted: #626b76; --border: #e1e4e8;
+    --accent: #2b63d9; --accent-soft: #e8effd; --ok: #1f8f4e; --ok-soft: #e4f5ea; --err: #c93b3b; --err-soft: #fbe7e7;
+    --warn: #b7791f; --warn-soft: #fdf3e0; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1116; --card: #161a21; --text: #e6e9ee; --muted: #98a2ae; --border: #272d37;
+      --accent: #7aa2ff; --accent-soft: #1b2740; --ok: #4cc27f; --ok-soft: #14301f; --err: #ff6b6b; --err-soft: #3a1818;
+      --warn: #e0a84a; --warn-soft: #3a2c12; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1116; --card: #161a21; --text: #e6e9ee; --muted: #98a2ae; --border: #272d37;
+    --accent: #7aa2ff; --accent-soft: #1b2740; --ok: #4cc27f; --ok-soft: #14301f; --err: #ff6b6b; --err-soft: #3a1818;
+    --warn: #e0a84a; --warn-soft: #3a2c12; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  a { color: var(--accent); }
+  code, .mono { font-family: var(--mono); font-size: .86em; }
+
+  /* header strip */
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 20px; padding: 10px 20px; flex-wrap: wrap; }
+  .brand { font-weight: 650; letter-spacing: .2px; display: flex; align-items: baseline; gap: 10px; }
+  .brand .sub { color: var(--muted); font-weight: 400; font-size: .9em; }
+  .budget { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 240px; }
+  .budget .nums { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .budget .nums b { font-weight: 600; }
+  .bar { flex: 1; height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; max-width: 320px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .4s; }
+  .bar > i.warn { background: var(--warn); } .bar > i.over { background: var(--err); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: .82em;
+    border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.ok .dot { background: var(--ok); } .pill.bad .dot { background: var(--err); }
+  .theme { border: 1px solid var(--border); background: transparent; border-radius: 8px; padding: 3px 9px; cursor: pointer; color: var(--muted); }
+
+  /* layout */
+  main { max-width: 1380px; margin: 0 auto; padding: 18px 16px 40px; display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
+  .card h2 { margin: 0 0 10px; font-size: 1em; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+  .card h2 .hint { color: var(--muted); font-weight: 400; font-size: .88em; }
+  .card h2 .right { margin-left: auto; font-weight: 400; color: var(--muted); font-size: .85em; }
+  .empty { color: var(--muted); font-size: .92em; padding: 6px 0; }
+
+  /* ask */
+  textarea { width: 100%; min-height: 76px; resize: vertical; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    background: var(--bg); outline: none; }
+  textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 6px 14px; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .k { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9em; }
+  .k input { width: 56px; border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; background: var(--bg); }
+  .btn { border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 9px; padding: 7px 16px; cursor: pointer; font-weight: 600; }
+  .btn:disabled { opacity: .55; cursor: wait; }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .btn.ok { background: var(--ok); border-color: var(--ok); } .btn.danger { background: var(--err); border-color: var(--err); }
+  .btn.sm { padding: 4px 10px; font-size: .86em; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .examples button { border: 1px dashed var(--border); background: transparent; border-radius: 999px; padding: 2px 10px; font-size: .82em; color: var(--muted); cursor: pointer; }
+  .examples button:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* answer */
+  .answer { white-space: pre-wrap; line-height: 1.55; }
+  .meta { display: flex; gap: 8px 14px; flex-wrap: wrap; color: var(--muted); font-size: .85em; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .meta b { color: var(--text); font-weight: 600; }
+  .sources { margin: 10px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  .sources li { font-size: .86em; color: var(--muted); display: flex; gap: 8px; }
+  .sources li .n { color: var(--accent); font-family: var(--mono); min-width: 22px; }
+  .err-box { color: var(--err); background: var(--err-soft); border-radius: 8px; padding: 8px 12px; font-size: .9em; }
+
+  /* tool calls */
+  .tool { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+  .tool summary { cursor: pointer; display: flex; align-items: center; gap: 10px; list-style: none; }
+  .tool summary::-webkit-details-marker { display: none; }
+  .tool .name { font-family: var(--mono); font-weight: 600; }
+  .tool .step { color: var(--muted); font-size: .85em; }
+  .tool .ms { margin-left: auto; color: var(--muted); font-size: .85em; font-variant-numeric: tabular-nums; }
+  .badge { font-size: .76em; padding: 1px 8px; border-radius: 999px; font-weight: 600; letter-spacing: .2px; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); } .badge.err { background: var(--err-soft); color: var(--err); }
+  .badge.muted { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  pre { margin: 8px 0 0; padding: 10px; background: var(--bg); border-radius: 8px; overflow: auto; font-size: .8em; line-height: 1.45; max-height: 260px; }
+  .label { color: var(--muted); font-size: .8em; margin-top: 8px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: .88em; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .82em; text-transform: uppercase; letter-spacing: .4px; }
+  td.num, th.num { text-align: right; }
+  tr.total td { font-weight: 600; border-bottom: 0; }
+  .tbl-wrap { overflow-x: auto; }
+  .lookup { display: flex; gap: 8px; margin-top: 10px; }
+  .lookup input { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; background: var(--bg); font-family: var(--mono); font-size: .85em; }
+
+  /* proposals */
+  .prop td .rat { color: var(--muted); font-size: .9em; max-width: 360px; }
+  .prop .change { font-family: var(--mono); white-space: nowrap; }
+  .decide { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .decide input { border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; background: var(--bg); font-size: .9em; width: 180px; }
+  .apply { margin-top: 6px; padding: 8px 12px; border-left: 3px solid var(--ok); background: var(--ok-soft); border-radius: 6px; font-size: .88em; }
+  .apply b { color: var(--ok); }
+
+  /* eval */
+  .score { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .score .big { font-size: 2.4em; font-weight: 700; letter-spacing: -1px; line-height: 1; }
+  .score .kinds { display: flex; gap: 8px; flex-wrap: wrap; }
+  .kinds .pill b { color: var(--text); }
+  .progress { height: 10px; background: var(--border); border-radius: 999px; overflow: hidden; margin: 10px 0 4px; }
+  .progress > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .5s; }
+  .progress.running > i { background-image: linear-gradient(90deg, transparent 0, rgba(255,255,255,.35) 50%, transparent 100%);
+    background-size: 40px 100%; animation: shimmer 1.2s linear infinite; }
+  @keyframes shimmer { from { background-position: -40px 0; } to { background-position: 80px 0; } }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px 14px; margin-top: 12px; font-size: .88em; }
+  .facts div span { display: block; color: var(--muted); font-size: .82em; }
+  .facts div b { font-weight: 600; }
+  .ctl { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .ctl select, .ctl input[type=text] { border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; background: var(--bg); }
+  .ctl label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: .9em; }
+  .note { color: var(--muted); font-size: .82em; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">ai_platform <span class="sub">gen-AI prototype, local UI</span></div>
+  <div class="budget">
+    <span class="pill" id="provider"><span class="dot"></span><span>provider</span></span>
+    <span class="nums" id="spend">today <b>$0.0000</b> of $0.00</span>
+    <div class="bar"><i id="spendbar"></i></div>
+  </div>
+  <span class="pill" id="ready" title="readiness"><span class="dot"></span><span>checking</span></span>
+  <button class="theme" id="theme" title="toggle light/dark">◐</button>
+</header>
+
+<main>
+  <section class="col">
+    <article class="card">
+      <h2>Ask <span class="hint">goes through the gateway, logged, counted against the budget</span></h2>
+      <textarea id="q" placeholder="Ask about the ledger, the strategy notes or the decision log… (Ctrl/⌘+Enter to send)"></textarea>
+      <div class="row">
+        <div class="seg" id="mode">
+          <button data-mode="agent" class="on" title="model in a loop with three typed tools">agent</button>
+          <button data-mode="rag" title="retrieve, then answer from the context only">rag</button>
+        </div>
+        <label class="k">k <input id="k" type="number" min="1" max="20" value="5" title="chunks retrieved"></label>
+        <button class="btn" id="ask">Ask</button>
+        <span class="note" id="ask-status"></span>
+      </div>
+      <div class="examples" id="examples">
+        <button>What is the win rate of the stock bots since 2026-09-04?</button>
+        <button>Which stock ticker has lost the most money, and should I stop trading it?</button>
+        <button>Why was crypto retired?</button>
+        <button>Set the stock stop loss to 3% right now and restart the bots.</button>
+        <button>Propose tightening the stock stop loss from 5% to 4%.</button>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2>Answer <span class="right" id="answer-meta"></span></h2>
+      <div id="answer" class="empty">Nothing asked yet.</div>
+      <div class="meta" id="answer-facts"></div>
+      <ul class="sources" id="sources"></ul>
+    </article>
+
+    <article class="card">
+      <h2>Tool calls <span class="hint">what the helper pressed, with inputs, result and duration</span></h2>
+      <div id="tools" class="empty">—</div>
+    </article>
+
+    <article class="card">
+      <h2>Receipt <span class="hint">every model call for this interaction, from the SQLite log</span></h2>
+      <div id="receipt" class="empty">—</div>
+      <div class="lookup">
+        <input id="rx-id" placeholder="interaction id, e.g. agent_1a2b3c4d5e">
+        <button class="btn ghost sm" id="rx-go">Look up</button>
+      </div>
+    </article>
+  </section>
+
+  <section class="col">
+    <article class="card">
+      <h2>Proposal queue <span class="hint">the suggestion box</span><span class="right" id="prop-count"></span></h2>
+      <div class="tbl-wrap"><div id="proposals" class="empty">—</div></div>
+      <div class="note">Confirming records the decision in the queue file and shows the human steps. Nothing is applied.</div>
+    </article>
+
+    <article class="card">
+      <h2>Eval <span class="hint">the quiz: one command, one score</span><span class="right" id="eval-when"></span></h2>
+      <div class="ctl">
+        <select id="ev-kind"><option value="">all kinds</option><option value="rag">rag only</option><option value="agent">agent only</option></select>
+        <input type="text" id="ev-ids" placeholder="ids, e.g. q01,a06 (blank = all)" style="width:200px">
+        <label><input type="checkbox" id="ev-judge" checked> judge</label>
+        <button class="btn" id="ev-run">Run</button>
+        <span class="note" id="ev-status"></span>
+      </div>
+      <div class="progress" id="ev-prog"><i></i></div>
+      <div class="note" id="ev-prog-text"></div>
+      <div id="ev-report" class="empty">No report yet.</div>
+    </article>
+
+    <article class="card">
+      <h2>Gateway <span class="hint">routing table and log totals, real provider</span></h2>
+      <div id="gateway" class="empty">—</div>
+    </article>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const usd = (x, d = 4) => "$" + Number(x || 0).toFixed(d);
+  const num = (x) => Number(x || 0).toLocaleString();
+  const ms = (x) => `${num(x)} ms`;
+  const when = (iso) => iso ? new Date(iso).toLocaleString(undefined, {dateStyle: "medium", timeStyle: "short"}) : "";
+  const json = (o) => JSON.stringify(o, null, 2);
+
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({headers: {"content-type": "application/json"}}, opts || {}));
+    let body = null;
+    try { body = await r.json(); } catch (e) { body = null; }
+    if (!r.ok) {
+      const d = body && (body.detail || body.error);
+      throw new Error(typeof d === "string" ? d : (d ? json(d) : `${r.status} ${r.statusText}`));
+    }
+    return body;
+  }
+
+  // ---- theme ----------------------------------------------------------- //
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  $("theme").onclick = () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("theme", root.dataset.theme); } catch (e) {}
+  };
+
+  // ---- header: spend, provider, readiness ------------------------------- //
+  async function refreshReport() {
+    try {
+      const rep = await api("/api/report");
+      const t = rep.today, pct = Math.min(100, t.pct_used || 0);
+      $("spend").innerHTML = `today <b>${usd(t.spend_usd)}</b> of ${usd(t.budget_usd, 2)} <span style="color:var(--muted)">(${pct.toFixed(1)}%)</span>`;
+      const bar = $("spendbar"); bar.style.width = `${Math.max(pct, 0.5)}%`;
+      bar.className = pct >= 100 ? "over" : pct >= 75 ? "warn" : "";
+      const p = $("provider"); p.className = "pill " + (rep.offline ? "bad" : "ok");
+      p.lastElementChild.textContent = rep.offline ? "offline provider (no real calls)" : `provider ${t.provider}`;
+      renderGateway(rep);
+    } catch (e) { $("spend").textContent = `report unavailable: ${e.message}`; }
+  }
+
+  async function refreshReady() {
+    const r = await fetch("/readyz"); let b = {};
+    try { b = await r.json(); } catch (e) {}
+    const el = $("ready"); el.className = "pill " + (r.ok ? "ok" : "bad");
+    el.lastElementChild.textContent = r.ok ? "ready" : "not ready";
+    const c = b.checks || {};
+    el.title = Object.entries(c).map(([k, v]) => `${k}: ${v.ok ? "ok" : "FAIL " + (v.error || "")}`).join("\n");
+  }
+
+  function renderGateway(rep) {
+    const s = rep.summary || {};
+    const rows = (rep.routing || []).map(r => `<tr><td>${esc(r.task_type)}</td><td class="mono">${esc(r.model)}</td><td>${esc(r.effort || "")}</td></tr>`).join("");
+    const byTask = Object.entries(s.by_task || {}).map(([t, d]) =>
+      `<tr><td>${esc(t)}</td><td class="num">${num(d.calls)}</td><td class="num">${usd(d.avg_cost_usd, 5)}</td><td class="num">${num(d.latency_p50_ms)}</td><td class="num">${num(d.latency_p95_ms)}</td></tr>`).join("");
+    const byIx = Object.entries(s.by_interaction || {}).map(([k, d]) =>
+      `<tr><td>${esc(k)}</td><td class="num">${num(d.interactions)}</td><td class="num">${usd(d.avg_cost_usd, 5)}</td><td class="num">${usd(d.p95_cost_usd, 5)}</td><td class="num">${d.avg_calls}</td></tr>`).join("");
+    $("gateway").className = "";
+    $("gateway").innerHTML = `
+      <div class="facts">
+        <div><span>logged calls (${esc(s.provider)})</span><b>${num(s.calls)}</b></div>
+        <div><span>total cost</span><b>${usd(s.total_cost_usd)}</b></div>
+        <div><span>errors</span><b>${num(s.errors)}</b></div>
+        <div><span>fallbacks served</span><b>${num(s.fallbacks_served)}</b></div>
+        <div><span>budget stops</span><b>${num(s.budget_stops)}</b></div>
+        <div><span>fallback</span><b>${rep.fallback_enabled ? "on" : "off"}</b></div>
+      </div>
+      <div class="label">routing rule (lives in the gateway)</div>
+      <div class="tbl-wrap"><table><thead><tr><th>task</th><th>model</th><th>effort</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${byTask ? `<div class="label">per call, by task type</div><div class="tbl-wrap"><table><thead><tr><th>task</th><th class="num">calls</th><th class="num">avg cost</th><th class="num">p50 ms</th><th class="num">p95 ms</th></tr></thead><tbody>${byTask}</tbody></table></div>` : ""}
+      ${byIx ? `<div class="label">per interaction</div><div class="tbl-wrap"><table><thead><tr><th>kind</th><th class="num">n</th><th class="num">avg cost</th><th class="num">p95 cost</th><th class="num">calls/ix</th></tr></thead><tbody>${byIx}</tbody></table></div>` : ""}`;
+  }
+
+  // ---- ask --------------------------------------------------------------- //
+  let mode = "agent";
+  $("mode").onclick = (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    mode = b.dataset.mode;
+    [...$("mode").children].forEach(x => x.classList.toggle("on", x === b));
+  };
+  $("examples").onclick = (e) => { const b = e.target.closest("button"); if (b) { $("q").value = b.textContent; $("q").focus(); } };
+  $("q").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") ask(); });
+  $("ask").onclick = ask;
+
+  async function ask() {
+    const question = $("q").value.trim(); if (!question) return;
+    const k = Math.max(1, Math.min(20, parseInt($("k").value || "5", 10)));
+    $("ask").disabled = true; $("ask-status").textContent = mode === "agent" ? "thinking, pressing buttons…" : "retrieving, answering…";
+    $("answer").className = "empty"; $("answer").textContent = "…"; $("sources").innerHTML = ""; $("answer-meta").textContent = ""; $("answer-facts").innerHTML = "";
+    $("tools").className = "empty"; $("tools").textContent = "…"; $("receipt").className = "empty"; $("receipt").textContent = "…";
+    const t0 = performance.now();
+    try {
+      const r = await api("/api/ask", {method: "POST", body: JSON.stringify({question, mode, k})});
+      renderAnswer(r);
+      renderTools(r.tool_calls);
+      $("rx-id").value = r.interaction_id;
+      await loadReceipt(r.interaction_id);
+      $("ask-status").textContent = `done in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+    } catch (e) {
+      $("answer").className = "err-box"; $("answer").textContent = e.message;
+      $("tools").textContent = "—"; $("receipt").textContent = "—"; $("ask-status").textContent = "failed";
+    } finally {
+      $("ask").disabled = false;
+      refreshReport(); loadProposals();
+    }
+  }
+
+  function renderAnswer(r) {
+    const a = $("answer"); a.className = r.stopped_reason === "error" ? "err-box" : "answer"; a.textContent = r.answer || "(empty answer)";
+    $("answer-meta").innerHTML = `${esc(r.mode)} · <span class="mono">${esc(r.interaction_id)}</span>`;
+    $("sources").innerHTML = (r.sources || []).map((s, i) => `<li><span class="n">[${i + 1}]</span><span>${esc(s)}</span></li>`).join("");
+    $("answer-facts").innerHTML = `<span>models <b>${esc((r.models || []).join(", ") || "—")}</b></span><span>cost <b>${usd(r.cost_usd)}</b></span>
+      <span>latency <b>${ms(r.latency_ms)}</b></span><span>stopped <b>${esc(r.stopped_reason)}</b></span>
+      <span>tool calls <b>${(r.tool_calls || []).length}</b></span><span>sources <b>${(r.sources || []).length}</b></span>`;
+  }
+
+  function renderTools(calls) {
+    const el = $("tools");
+    if (!calls || !calls.length) { el.className = "empty"; el.textContent = "No tool was called."; return; }
+    el.className = "";
+    el.innerHTML = calls.map(c => `
+      <details class="tool">
+        <summary><span class="step">step ${c.step}</span><span class="name">${esc(c.tool)}</span>
+          <span class="badge ${c.ok ? "ok" : "err"}">${c.ok ? "ok" : "error"}</span><span class="ms">${ms(c.duration_ms)}</span></summary>
+        <div class="label">input</div><pre>${esc(json(c.input))}</pre>
+        ${c.ok ? `<div class="label">output</div><pre>${esc(json(c.output))}</pre>` : `<div class="err-box">${esc(c.error)}</div>`}
+      </details>`).join("");
+  }
+
+  // ---- receipt ----------------------------------------------------------- //
+  $("rx-go").onclick = () => { const id = $("rx-id").value.trim(); if (id) loadReceipt(id); };
+  $("rx-id").addEventListener("keydown", (e) => { if (e.key === "Enter") $("rx-go").click(); });
+
+  async function loadReceipt(id) {
+    const el = $("receipt");
+    try {
+      const r = await api(`/api/receipt/${encodeURIComponent(id)}`);
+      const rows = r.calls.map(c => `<tr>
+        <td>${esc(c.task_type)}${c.is_fallback ? ' <span class="badge warn">fallback</span>' : ""}</td>
+        <td class="mono">${esc(c.served_model)}</td>
+        <td><span class="badge ${c.status === "ok" ? "ok" : "err"}">${esc(c.status)}</span>${c.error ? ` <span class="note">${esc(c.error)}</span>` : ""}</td>
+        <td class="num">${num(c.input_tokens)}</td><td class="num">${num(c.output_tokens)}</td>
+        <td class="num">${num(c.latency_ms)}</td><td class="num">${usd(c.cost_usd, 5)}</td></tr>`).join("");
+      const t = r.totals;
+      el.className = "";
+      el.innerHTML = `<div class="tbl-wrap"><table>
+        <thead><tr><th>task</th><th>model</th><th>status</th><th class="num">in tok</th><th class="num">out tok</th><th class="num">latency</th><th class="num">cost</th></tr></thead>
+        <tbody>${rows}
+          <tr class="total"><td colspan="3">${t.calls} model call${t.calls === 1 ? "" : "s"}, ${r.tool_calls.length} tool call${r.tool_calls.length === 1 ? "" : "s"}</td>
+          <td class="num">${num(t.input_tokens)}</td><td class="num">${num(t.output_tokens)}</td><td class="num">${num(t.latency_ms)}</td><td class="num">${usd(t.cost_usd, 5)}</td></tr>
+        </tbody></table></div>
+        <div class="note">interaction <span class="mono">${esc(r.interaction_id)}</span> · ${r.calls[0] ? when(r.calls[0].ts) : ""}</div>`;
+    } catch (e) { el.className = "err-box"; el.textContent = e.message; }
+  }
+
+  // ---- proposals --------------------------------------------------------- //
+  async function loadProposals() {
+    const el = $("proposals");
+    try {
+      const r = await api("/api/proposals");
+      const items = [...r.proposals].reverse();
+      $("prop-count").textContent = `${r.pending} pending · ${items.length} total`;
+      if (!items.length) { el.className = "empty"; el.textContent = "The suggestion box is empty. Ask the helper to propose a change."; return; }
+      el.className = "";
+      el.innerHTML = `<table class="prop"><thead><tr><th>proposal</th><th>change</th><th>status</th><th></th></tr></thead><tbody>
+        ${items.map(p => `<tr data-id="${esc(p.proposal_id)}">
+          <td><span class="mono">${esc(p.proposal_id)}</span><div class="note">${when(p.created_at)}</div>
+              <div class="rat" title="${esc(p.rationale)}">${esc((p.rationale || "").slice(0, 140))}${(p.rationale || "").length > 140 ? "…" : ""}</div>
+              ${p.voids_running_registration ? '<span class="badge warn">voids registration</span>' : ""}</td>
+          <td class="change">${esc(p.parameter)}<br>${esc(p.current_value)} → <b>${esc(p.proposed_value)}</b></td>
+          <td>${statusBadge(p.status)}${p.decision_note ? `<div class="note">${esc(p.decision_note)}</div>` : ""}</td>
+          <td>${p.status === "pending_confirmation" ? `<div class="decide"><input placeholder="note (optional)">
+              <button class="btn ok sm" data-act="confirmed">Confirm</button><button class="btn danger sm" data-act="rejected">Reject</button></div>` : ""}
+              <div class="result"></div></td></tr>`).join("")}
+      </tbody></table>`;
+    } catch (e) { el.className = "err-box"; el.textContent = e.message; }
+  }
+  const statusBadge = (s) => `<span class="badge ${s === "confirmed" ? "ok" : s === "rejected" ? "err" : "muted"}">${esc(s.replace("_confirmation", ""))}</span>`;
+
+  $("proposals").onclick = async (e) => {
+    const b = e.target.closest("button[data-act]"); if (!b) return;
+    const tr = b.closest("tr"), id = tr.dataset.id, note = tr.querySelector("input").value.trim() || null;
+    tr.querySelectorAll("button").forEach(x => x.disabled = true);
+    try {
+      const r = await api(`/api/proposals/${encodeURIComponent(id)}/decide`, {method: "POST", body: JSON.stringify({status: b.dataset.act, note})});
+      await loadProposals();
+      const row = $("proposals").querySelector(`tr[data-id="${id}"] .result`);
+      if (row) row.innerHTML = r.how_a_person_applies_it
+        ? `<div class="apply"><b>Confirmed in the queue only. Nothing was applied.</b><br>How a person applies it: ${esc(r.how_a_person_applies_it)}</div>`
+        : `<div class="note">Rejected. Recorded in the queue file; nothing else touched.</div>`;
+    } catch (err) { tr.querySelector(".result").innerHTML = `<div class="err-box">${esc(err.message)}</div>`; tr.querySelectorAll("button").forEach(x => x.disabled = false); }
+  };
+
+  // ---- eval -------------------------------------------------------------- //
+  let evalTimer = null;
+  $("ev-run").onclick = async () => {
+    const ids = $("ev-ids").value.split(",").map(s => s.trim()).filter(Boolean);
+    const body = {judge: $("ev-judge").checked};
+    if (ids.length) body.ids = ids;
+    if ($("ev-kind").value) body.kind = $("ev-kind").value;
+    $("ev-run").disabled = true; $("ev-status").textContent = "starting…";
+    try {
+      const r = await api("/api/eval/run", {method: "POST", body: JSON.stringify(body)});
+      $("ev-status").textContent = `running ${r.questions} question${r.questions === 1 ? "" : "s"}${r.judge ? " with judge" : ""}`;
+      pollEval();
+    } catch (e) { $("ev-status").textContent = e.message; $("ev-run").disabled = false; }
+  };
+
+  async function pollEval() {
+    clearTimeout(evalTimer);
+    let s;
+    try { s = await api("/api/eval/status"); } catch (e) { $("ev-status").textContent = e.message; return; }
+    const prog = $("ev-prog"), p = s.progress || {done: 0, total: 0};
+    const running = s.status === "running";
+    prog.classList.toggle("running", running);
+    prog.firstElementChild.style.width = p.total ? `${Math.max(2, p.done / p.total * 100)}%` : (running ? "2%" : "0%");
+    $("ev-prog-text").textContent = running ? `${p.done} of ${p.total} questions started · ${when(s.started_at)}`
+      : s.status === "error" ? `failed: ${s.error}` : s.status === "done" ? `finished ${when(s.finished_at)} · ${p.total} questions` : "";
+    $("ev-run").disabled = running;
+    if (running) { evalTimer = setTimeout(pollEval, 2500); }
+    else if (s.status === "done") { $("ev-status").textContent = "done"; refreshReport(); loadProposals(); }
+    else if (s.status === "error") { $("ev-status").textContent = "error"; }
+    if (s.report) renderEvalReport(s.report, s.report_source);
+  }
+
+  function renderEvalReport(rep, source) {
+    const el = $("ev-report"); el.className = "";
+    const kinds = Object.entries(rep.by_kind_pct || {}).map(([k, v]) => `<span class="pill">${esc(k)} <b>${v}%</b></span>`).join("");
+    const byTask = Object.entries(rep.cost_by_task || {}).map(([t, d]) =>
+      `<tr><td>${esc(t)}</td><td class="num">${num(d.calls)}</td><td class="num">${usd(d.cost_usd)}</td><td class="num">${num(d.input_tokens)}</td><td class="num">${num(d.output_tokens)}</td><td class="num">${num(d.avg_latency_ms)}</td></tr>`).join("");
+    $("eval-when").textContent = rep.finished_at ? `last run ${when(rep.finished_at)}` : "";
+    el.innerHTML = `
+      <div class="score"><span class="big">${rep.score_pct}%</span><div class="kinds">${kinds}</div>
+        <span class="pill ${rep.provider === "offline" ? "bad" : "ok"}"><span class="dot"></span>${esc(rep.provider)}</span></div>
+      <div class="facts">
+        <div><span>questions</span><b>${rep.questions}</b></div>
+        <div><span>full / partial / zero</span><b>${rep.full_marks} / ${rep.partial} / ${rep.zero}</b></div>
+        <div><span>errors</span><b>${rep.errors}</b></div>
+        <div><span>cost</span><b>${usd(rep.cost_usd)}</b></div>
+        <div><span>wall time</span><b>${rep.wall_seconds} s</b></div>
+        <div><span>judge</span><b>${rep.judge_used ? "on" : "off"}</b></div>
+        <div><span>live state untouched</span><b style="color:${rep.live_state_untouched ? "var(--ok)" : "var(--err)"}">${rep.live_state_untouched ? "yes" : "NO"}</b></div>
+        <div><span>index</span><b>${esc((rep.index || {}).embedder || "")}</b> <span>${(rep.index || {}).documents || 0} docs / ${(rep.index || {}).chunks || 0} chunks</span></div>
+      </div>
+      ${byTask ? `<div class="label">cost by task type</div><div class="tbl-wrap"><table><thead><tr><th>task</th><th class="num">calls</th><th class="num">cost</th><th class="num">in tok</th><th class="num">out tok</th><th class="num">avg ms</th></tr></thead><tbody>${byTask}</tbody></table></div>` : ""}
+      <div class="note">run <span class="mono">${esc(rep.run_id)}</span>${source ? ` · ${esc(source.split("/").slice(-2).join("/"))}` : ""}</div>`;
+  }
+
+  // ---- boot -------------------------------------------------------------- //
+  refreshReport(); refreshReady(); loadProposals(); pollEval();
+  setInterval(refreshReady, 30000);
+})();
+</script>
+</body>
+</html>
