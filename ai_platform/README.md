@@ -1,6 +1,6 @@
 # ai_platform — a small, finished gen-AI prototype on the trading research platform
 
-Four runnable pieces. A write-up with the measured numbers and C4 diagrams accompanies this code and is published separately; every number in it comes from `reports/` or the gateway log.
+Four runnable pieces and a write-up: [docs/prototype-writeup.md](docs/prototype-writeup.md) (the same text with the C4 and sequence diagrams as a page: [docs/prototype-writeup-page.html](docs/prototype-writeup-page.html)). Every number in it comes from `reports/` or the gateway log.
 Read-only against trading state: the only thing it writes outside `ai_platform/data/` is nothing.
 Proposals go to `ai_platform/data/proposal_queue.jsonl` and a person confirms them by hand.
 

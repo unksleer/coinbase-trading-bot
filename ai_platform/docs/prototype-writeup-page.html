@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Research AI Prototype</title>
+<meta name="description" content="Lee Unks: a measured gen AI prototype on a trading research platform. C4 diagrams, routing rule, three eval runs, cost per interaction, and what broke.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one measured column (66ch) for the write-up; diagrams and tables break out to the page width. */
+:root {
+  --bg: #f4f5f3; --surface: #ffffff; --fg: #1d2127; --muted: #5b6370; --rule: #d6dad3;
+  --accent: #1f5f8b; --accent-soft: #e4eef5; --mark: #b4541c;
+  --display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15181c; --surface: #1d2126; --fg: #e6e8e4; --muted: #a2a9b3; --rule: #343a42;
+  --accent: #7fb4dc; --accent-soft: #223240; --mark: #e0834a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15181c; --surface: #1d2126; --fg: #e6e8e4; --muted: #a2a9b3; --rule: #343a42;
+  --accent: #7fb4dc; --accent-soft: #223240; --mark: #e0834a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55;
+  padding-inline: 16px; padding-block: 0 64px; }
+.wrap { max-width: 66ch; margin: 0 auto; }
+header.hero { padding-block: 48px 24px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 10px 0 14px; text-wrap: balance; }
+.lede { font-size: 17px; color: var(--muted); margin: 0; }
+.facts { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-top: 22px; font-family: var(--mono); font-size: 13px; }
+.facts b { color: var(--accent); font-weight: 500; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-block: 14px; font-size: 13.5px; }
+nav.toc a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+nav.toc a:hover, nav.toc a:focus-visible { border-bottom-color: var(--accent); outline: none; }
+section { padding-block: 28px 8px; border-top: 1px solid var(--rule); }
+section:first-of-type { border-top: 0; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 26px; line-height: 1.2; margin: 0 0 14px; text-wrap: balance; }
+h3 { font-family: var(--body); font-weight: 600; font-size: 15px; letter-spacing: .02em; color: var(--muted); margin: 26px 0 8px; }
+p { margin: 0 0 14px; }
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: .88em; background: var(--accent-soft); padding: 1px 5px; border-radius: 3px; }
+strong { font-weight: 600; }
+ul, ol { margin: 0 0 14px; padding-left: 22px; }
+li { margin-bottom: 8px; }
+ol.broke { padding-left: 0; list-style: none; counter-reset: broke; }
+ol.broke li { counter-increment: broke; position: relative; padding-left: 40px; margin-bottom: 14px; }
+ol.broke li::before { content: counter(broke); position: absolute; left: 0; top: 2px; font-family: var(--mono); font-size: 13px;
+  color: var(--mark); border: 1px solid var(--mark); border-radius: 999px; width: 26px; height: 26px; display: grid; place-items: center; }
+.tablewrap, .diagram { width: min(100vw - 32px, 1040px); margin: 10px calc(50% - min(100vw - 32px, 1040px) / 2) 20px; overflow-x: auto; }
+table { border-collapse: collapse; font-size: 14px; min-width: 100%; font-variant-numeric: tabular-nums; background: var(--surface); }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-weight: 500; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+td:first-child { white-space: nowrap; }
+.diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px; }
+.diagram pre.mermaid { margin: 0; display: flex; justify-content: center; }
+footer { margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 13.5px; color: var(--muted); }
+@media (max-width: 480px) { td:first-child { white-space: normal; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+html, body { margin: 0; }
+img { max-width: 100%; }
+</style>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral", securityLevel: "loose",
+    flowchart: { htmlLabels: true }, sequence: { useMaxWidth: true } });
+</script>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow">Lee Unks · write-up · October 2026</div>
+  <h1>A model gateway, retrieval, a three-tool agent and an eval, on my own trading platform</h1>
+  <p class="lede">Built and measured in two days on a paper-trading research platform I run. Every number below comes from the gateway log or a report file; nothing is estimated.</p>
+  <div class="facts"><span><b>50</b> eval questions</span><span><b>93.0% → 98.0%</b> across three measured runs</span><span><b>$0.03</b> per question</span><span><b>234</b> chunks, 32 documents</span><span><b>3</b> tools, one human-confirmed write</span></div>
+  <nav class="toc"><a href="#c4-in-words">C4, in words</a><a href="#the-pictures">The pictures</a><a href="#one-question-end-to-end">One question, end to end</a><a href="#the-routing-rule">The routing rule</a><a href="#measured">Measured</a><a href="#what-broke">What broke</a><a href="#what-next">What next</a></nav>
+</header>
+<p>Built and measured 2026-10-14 and 2026-10-15 in <code>ai_platform/</code> of the coinbase-trading-bot repo. Python, Anthropic Messages API, SQLite, local embeddings; ~2,700 lines including 29 tests. Every number below comes from the gateway log or a report file in <code>ai_platform/reports/</code>; nothing is estimated.</p>
+<section id="c4-in-words"><h2>C4, in words</h2>
+<p><strong>Context.</strong> One user (me) asks questions about a paper-trading research platform: 12 US stock bots on a sealed RSI mean-reversion registration, a retired crypto track, a decision log. The system reads the ledger CSVs and the strategy notes. It writes one thing: a proposal queue a person confirms by hand.</p>
+<p><strong>Containers.</strong> (1) <code>ai_platform</code> CLI processes; (2) <code>gateway.sqlite</code>, the call and tool-call log; (3) the retrieval index on disk (chunks, embeddings); (4) <code>proposal_queue.jsonl</code>; (5) the Anthropic API. The trading bots, <code>.env</code> and the state files are outside the boundary and read-only to it.</p>
+<p><strong>Components.</strong></p>
+<ul><li><code>gateway/</code> — <code>ModelGateway.complete(task_type, messages)</code>. Routes, logs, falls back, budgets. The only place a model id appears. Provider seam: <code>AnthropicProvider</code>, and a deterministic <code>OfflineProvider</code> so tests and the whole pipeline run with no key (offline rows are tagged and excluded from cost figures).</li><li><code>retrieval/</code> — corpus loader (6 markdown docs, 7 sealed experiment JSONs, strategy docstrings, 14 per-ticker ledger documents rendered from CSV: 32 documents, 234 chunks), heading-aware chunker, local embedder (model2vec <code>potion-base-8M</code>, 256-d), BM25, reciprocal-rank-fusion hybrid search returning top-k with source.</li><li><code>agent/</code> — a loop with exactly three pydantic-typed tools (<code>read_ledger</code>, <code>summarise_strategy_performance</code>, <code>propose_parameter_change</code>), strict JSON schemas, step budget 10, every tool call logged with input, output, duration and error. The propose tool is allow-listed and range-checked; <code>DRY_RUN</code>, paper/live and the kill switch are not in the schema, so they cannot even be asked for.</li><li><code>eval/</code> — 50 questions (36 retrieval, 14 agent). Deterministic checks where the fact is in the corpus or computable from the ledger at run time; a three-point model judge where the answer is prose; a question with both takes the lower. Fingerprints <code>.env</code>, registrations and state files before and after.</li></ul>
+</section>
+
+<section id="the-pictures">
+<h2>The pictures</h2>
+<p>The same system at three zoom levels. Level 1 is who uses it and what it talks to; level 2 is the separately running pieces; level 3 is the main parts inside the code. The dotted line in the first picture is the point of the whole design: the trading bots, the <code>.env</code> file and the state files are outside the boundary and are never written.</p>
+<h3>Level 1, context</h3><div class="diagram"><pre class="mermaid">flowchart LR
+    Lee(["Lee&lt;br/&gt;(asks questions, confirms suggestions)"])
+    subgraph boundary["The prototype (ai_platform)"]
+        SYS["Trading research assistant&lt;br/&gt;answers questions about the ledger and notes,&lt;br/&gt;queues parameter suggestions"]
+    end
+    Claude[("Anthropic API&lt;br/&gt;(Haiku for cheap jobs, Opus for hard ones)")]
+    Repo[("Trading platform files&lt;br/&gt;decision log, strategy notes,&lt;br/&gt;sealed experiments, trade ledgers&lt;br/&gt;READ-ONLY")]
+    Bots["Trading bots, .env, state files&lt;br/&gt;OUTSIDE the boundary: never written"]
+
+    Lee --&gt;|"question / confirm"| SYS
+    SYS --&gt;|"answer with sources"| Lee
+    SYS --&gt;|"model calls"| Claude
+    SYS --&gt;|"reads"| Repo
+    SYS -.-&gt;|"never touches"| Bots
+</pre></div>
+<h3>Level 2, containers</h3><div class="diagram"><pre class="mermaid">flowchart TB
+    Lee(["Lee"])
+    subgraph proto["ai_platform (one Python package, run from the command line)"]
+        CLI["Command-line entry points&lt;br/&gt;agent · search · recall · run_eval · report · proposals"]
+        IDX[("Retrieval index&lt;br/&gt;chunks.json + embeddings.npy&lt;br/&gt;234 cards from 32 documents")]
+        LOG[("gateway.sqlite&lt;br/&gt;every model call: model, tokens, latency, cost&lt;br/&gt;every tool call: input, output, duration")]
+        BOX[("proposal_queue.jsonl&lt;br/&gt;the suggestion box&lt;br/&gt;pending → confirmed / rejected by a person")]
+        REP[("reports/&lt;br/&gt;recall_report.json · eval_report.json")]
+    end
+    API[("Anthropic API")]
+    FILES[("Repo files: DECISIONS.md, README.md,&lt;br/&gt;trading_profiles.md, OBSERVER.md,&lt;br/&gt;experiments/*.json, completed_trades_*.csv")]
+
+    Lee --&gt; CLI
+    CLI --&gt;|"build / search"| IDX
+    CLI --&gt;|"log"| LOG
+    CLI --&gt;|"append / decide"| BOX
+    CLI --&gt;|"write"| REP
+    CLI --&gt;|"HTTPS"| API
+    IDX --&gt;|"read"| FILES
+    CLI --&gt;|"read ledger"| FILES
+</pre></div>
+<h3>Level 3, components</h3><div class="diagram"><pre class="mermaid">flowchart TB
+    subgraph gateway["gateway/  the front door"]
+        GW["ModelGateway.complete(task_type, messages)&lt;br/&gt;route · log · fall back · budget"]
+        ROUTE["Routing table&lt;br/&gt;classify, extract, judge → Haiku 5.5&lt;br/&gt;answer, reason, agent → Opus 5.5"]
+        PROV["Provider seam&lt;br/&gt;AnthropicProvider (real)&lt;br/&gt;OfflineProvider (deterministic, for tests)"]
+        STORE["Store (SQLite)&lt;br/&gt;calls · tool_calls"]
+        GW --&gt; ROUTE
+        GW --&gt; PROV
+        GW --&gt; STORE
+    end
+
+    subgraph retrieval["retrieval/  the library"]
+        CORPUS["corpus.py&lt;br/&gt;load docs, registrations,&lt;br/&gt;docstrings, ledger → text"]
+        CHUNK["chunker.py&lt;br/&gt;cut at headings, keep the heading path"]
+        EMB["embed.py&lt;br/&gt;local model2vec (256-d)"]
+        BM25["BM25 word index"]
+        SEARCH["search.py&lt;br/&gt;fuse word + meaning ranks (RRF)&lt;br/&gt;top-k with sources"]
+        RECALL["recall.py&lt;br/&gt;20 labelled questions → recall@k"]
+        CORPUS --&gt; CHUNK --&gt; EMB
+        CHUNK --&gt; BM25
+        EMB --&gt; SEARCH
+        BM25 --&gt; SEARCH
+        SEARCH --&gt; RECALL
+    end
+
+    subgraph agent["agent/  the helper"]
+        LOOP["agent.py&lt;br/&gt;loop, step budget 10,&lt;br/&gt;retrieved context marked untrusted"]
+        TOOLS["tools.py  three typed tools&lt;br/&gt;read_ledger · summarise_strategy_performance ·&lt;br/&gt;propose_parameter_change&lt;br/&gt;(allow-list + range checks)"]
+        QUEUE["proposals.py&lt;br/&gt;append-only queue; list / confirm / reject"]
+        LOOP --&gt; TOOLS
+        TOOLS --&gt; QUEUE
+    end
+
+    subgraph eval["eval/  the quiz"]
+        SET["eval_set.json&lt;br/&gt;50 questions"]
+        SCORER["scorer.py&lt;br/&gt;deterministic checks (ledger numbers live) ·&lt;br/&gt;3-point judge · live-state fingerprint"]
+        RUN["run_eval.py&lt;br/&gt;one command → score + cost"]
+        SET --&gt; RUN --&gt; SCORER
+    end
+
+    LEDGER["ledger.py&lt;br/&gt;read-only CSV reader + deterministic statistics"]
+
+    LOOP --&gt;|"agent calls"| GW
+    RUN --&gt;|"answer + judge calls"| GW
+    LOOP --&gt;|"top-5 context"| SEARCH
+    RUN --&gt;|"top-5 context"| SEARCH
+    TOOLS --&gt; LEDGER
+    CORPUS --&gt; LEDGER
+    SCORER --&gt;|"expected numbers"| LEDGER
+</pre></div>
+</section>
+<section id="one-question-end-to-end">
+<h2>One question, end to end</h2>
+<p>Asked through the local web page: <em>"What is the stock win rate since the registration started on 2026-09-04?"</em> Retrieval attaches the best chunks; the gateway sends the question and the chunks to the large model and logs the call; the model presses one tool, ordinary code does the sums on the CSVs, and that call is logged too; the answer comes back with the warnings the decision log insists on (about ten independent trades, buy-and-hold not yet measured). The receipt is a plain read of the log: two model calls, 19 seconds, 4.6 cents.</p>
+<p>Every model call has exactly one way in (step 6 onwards), the receipt is read from the log (steps 23 to 26), and the only write outside the log is the proposal queue (step 18 and the Confirm branch). In retrieval-only mode the loop collapses to one pass and steps 12 to 19 do not occur. The key never reaches the browser, and the service is one process with one SQLite file, which is what makes the Kubernetes step a packaging job rather than a redesign.</p>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    autonumber
+    actor Lee as Lee (Mac browser)
+    participant SSH as SSH tunnel&lt;br/&gt;Mac:8765 → server:8765
+    participant SVC as service.py&lt;br/&gt;(FastAPI, localhost only)
+    participant AG as agent.run_agent
+    participant LIB as retrieval&lt;br/&gt;(Index + hybrid search)
+    participant GW as ModelGateway&lt;br/&gt;(route, budget, log, fallback)
+    participant DB as gateway.sqlite&lt;br/&gt;(calls, tool_calls)
+    participant API as Anthropic API
+    participant TOOL as tools.run_tool&lt;br/&gt;(read-only ledger code)
+    participant Q as proposal_queue.jsonl
+
+    Lee-&gt;&gt;SSH: POST /api/ask {question, mode: agent, k}
+    SSH-&gt;&gt;SVC: same request, from 127.0.0.1
+    SVC-&gt;&gt;AG: run_agent(question, k)
+    AG-&gt;&gt;LIB: search(question, k)
+    LIB--&gt;&gt;AG: top-k chunks + citations (sources)
+
+    loop up to 10 steps
+        AG-&gt;&gt;GW: complete("agent", messages, tools)
+        GW-&gt;&gt;DB: spend_today() vs daily budget
+        alt budget reached
+            GW-&gt;&gt;DB: log row status=budget
+            GW--&gt;&gt;AG: BudgetExceeded
+        else within budget
+            GW-&gt;&gt;API: messages.create(model=opus, effort=medium, tools)
+            API--&gt;&gt;GW: content, stop_reason, usage
+            GW-&gt;&gt;DB: log row (model, tokens, latency, cost, status)
+            Note over GW,API: on error or refusal: retry once on the other model, log both rows
+            GW--&gt;&gt;AG: GatewayResponse
+        end
+        alt stop_reason = tool_use
+            AG-&gt;&gt;TOOL: run_tool(name, input), schema-validated
+            TOOL--&gt;&gt;AG: output | error, duration
+            AG-&gt;&gt;DB: log tool_calls row
+            opt tool = propose_parameter_change
+                TOOL-&gt;&gt;Q: append {status: pending_confirmation}
+            end
+        else stop_reason = end_turn
+            Note over AG: final answer
+        end
+    end
+
+    AG--&gt;&gt;SVC: AgentResult (answer, tool_calls, sources, cost, models)
+    SVC--&gt;&gt;SSH: JSON, credential scrubbed
+    SSH--&gt;&gt;Lee: answer + sources + tool calls rendered
+
+    Lee-&gt;&gt;SVC: GET /api/receipt/{interaction_id}
+    SVC-&gt;&gt;DB: calls_for, tool_calls_for
+    DB--&gt;&gt;SVC: rows
+    SVC--&gt;&gt;Lee: receipt (per-call model, tokens, latency, cost, totals)
+
+    Lee-&gt;&gt;SVC: GET /api/report
+    SVC-&gt;&gt;GW: spend_today(), daily_budget_usd, TASK_ROUTES
+    SVC--&gt;&gt;Lee: header strip: today's spend vs budget
+
+    opt Lee clicks Confirm on a proposal
+        Lee-&gt;&gt;SVC: POST /api/proposals/{id}/decide {confirmed, note}
+        SVC-&gt;&gt;Q: rewrite that line: status, decided_at, note
+        SVC--&gt;&gt;Lee: "how a person applies it", nothing else touched
+    end
+</pre></div>
+</section>
+<section id="the-routing-rule"><h2>The routing rule</h2>
+<div class="tablewrap"><table><thead><tr><th>task type</th><th>model</th><th>effort</th><th>why</th></tr></thead><tbody><tr><td>classify, extract, judge</td><td>claude-haiku-5-5 ($0.10 / $0.50 per MTok)</td><td>low</td><td>short, rubric-shaped work</td></tr><tr><td>answer, reason, agent</td><td>claude-opus-5-5 ($4 / $20 per MTok)</td><td>medium</td><td>grounding, tool choice, refusals</td></tr></tbody></table></div>
+<p>Fallback: any provider error or a <code>refusal</code> stop retries once on the other model; both attempts are rows in the log. Budget: <code>AI_PLATFORM_DAILY_BUDGET_USD</code> (default $5) is checked against today's logged spend before every attempt; a stop is logged as its own row. The judge and the answerer are different models on purpose: it limits self-preference bias and makes the eval cheap enough to run on every change.</p>
+</section>
+<section id="measured"><h2>Measured</h2>
+<p><strong>Retrieval, 234 chunks, 20 hand-labelled questions</strong> (<code>reports/recall_report.json</code>):</p>
+<div class="tablewrap"><table><thead><tr><th>mode</th><th>@1</th><th>@3</th><th>@5</th><th>@8</th><th>@10</th></tr></thead><tbody><tr><td>keyword (BM25)</td><td>0.65</td><td>0.80</td><td>0.90</td><td>1.00</td><td>1.00</td></tr><tr><td>vector (potion-base-8M)</td><td>0.25</td><td>0.45</td><td>0.70</td><td>0.80</td><td>0.80</td></tr><tr><td>hybrid (RRF)</td><td>0.55</td><td>0.75</td><td>0.80</td><td>1.00</td><td>1.00</td></tr></tbody></table></div>
+<p>On this corpus the 8M-parameter static embedding is weaker than BM25 and equal-weight fusion dilutes keyword precision at small k; it only pays from k=8. I report that rather than tune the fusion weight on the same 20 questions (standing rule 1 of the decision log). The @8 column was added on day 2, when the eval's three retrieval zeros all turned out to be rank 6 to 8 misses: on the labelled set the four hybrid misses at 5 sit at ranks 6, 6, 6 and 7, so retrieval questions now read eight chunks (the prompt window grows with k, 1,800 characters per chunk; at a fixed 9,000 the eighth chunk was being dropped on 17 of 36 questions). The registration's own chunk for "does it beat buy-and-hold" is still 12th (keyword 11th): four sealed registration files share one hypothesis paragraph, and the three voided ones crowd the live one. A hashed n-gram "embedding" scored 0.60@5 vector and 0.65@5 hybrid, so the learned model does something, just not enough.</p>
+<p><strong>Eval, 50 questions, real models.</strong> Three measured runs on the same index (234 chunks, byte-identical embeddings, the report records the embedder, document count and build time that answered). The second run has the standing rules in the retrieval answerer's prompt and the a04 check rewritten to test the outcome. The third has retrieval questions reading eight chunks instead of five, markdown emphasis stripped before the phrase checks, and the q19 check widened to accept "never saves" / "only closed"; agent questions still read five. Nothing else changed between runs, except that the ledger gained one closed trade (JNJ, 2026-10-15) before the third.</p>
+<div class="tablewrap"><table><thead><tr><th>run</th><th>change</th><th>score</th><th>full / partial / zero</th><th>retrieval (36)</th><th>agent (14)</th><th>cost</th><th>wall</th></tr></thead><tbody><tr><td><code>eval_20261014T193838Z_4cc7</code></td><td>no standing rules, k=5</td><td><strong>93.0%</strong></td><td>46 / 1 / 3</td><td>91.7%</td><td>96.4%</td><td>$1.46</td><td>6.1 min</td></tr><tr><td><code>eval_20261014T201342Z_524b</code></td><td>standing rules, k=5</td><td><strong>93.0%</strong></td><td>46 / 1 / 3</td><td>90.3%</td><td>100%</td><td>$1.50</td><td>5.8 min</td></tr><tr><td><code>eval_20261015T195014Z_c512</code> (<code>reports/eval_report.json</code>)</td><td>retrieval k=8, markdown-blind checks, q19 widened</td><td><strong>98.0%</strong></td><td>48 / 2 / 0</td><td>98.6%</td><td>96.4%</td><td>$1.67</td><td>5.8 min</td></tr></tbody></table></div>
+<p>Second run against the first: 47 of 50 scored the same. The three that moved:</p>
+<div class="tablewrap"><table><thead><tr><th>id</th><th>before</th><th>after</th><th>why</th></tr></thead><tbody><tr><td>q33 "does the stock strategy beat buy-and-hold?"</td><td>0</td><td>1</td><td>the answerer now says the live result is not established, calls the walk-forward a backtest and says "not measured" is a fail; the judge docked it for not naming the 20-effective-trade gate, which was not in the retrieved context</td></tr><tr><td>a04 LPL trades and exit reasons</td><td>1</td><td>2</td><td>the check now tests the outcome; the agent again answered from the retrieved ledger chunk without a tool call, and the answer was right both times</td></tr><tr><td>q19 forming candles</td><td>2</td><td>0</td><td>correct answer ("never saves a candle that is still forming; appends only <strong>closed</strong> candles"), but the check's phrases are "never stores" / "only closed" and the bold markers break the match; a check defect, left as found so the next run measures it</td></tr></tbody></table></div>
+<p>So the prompt change moved exactly the question it was aimed at and nothing else; it stays. The score did not rise because q19's loss cancels q33's gain, and both are scoring artefacts rather than model behaviour.</p>
+<p>Third run against the second: 44 of 50 scored the same. The six that moved:</p>
+<div class="tablewrap"><table><thead><tr><th>id</th><th>before</th><th>after</th><th>why</th></tr></thead><tbody><tr><td>q13 SUI vs the other Donchian trades</td><td>0</td><td>2</td><td>the chunk with the four-trade comparison was 6th; at k=8 it is in the context and the answer gives the 2026-10-07 exit, 7.1 of 24.4 points, NEAR and RENDER after the drop</td></tr><tr><td>q15 standing rules</td><td>0</td><td>2</td><td>the "Standing rules" section was 8th (keyword rank 1, vector rank 40); the answer now lists all seven</td></tr><tr><td>q19 forming candles</td><td>0</td><td>2</td><td>same answer as before ("never saves ... only <strong>closed</strong> candles"); the check now strips the bold and accepts the wording</td></tr><tr><td>q33 beat buy-and-hold?</td><td>1</td><td>2</td><td>the judge's missing fact, "judged at 20 effective trades", came in through a different door: the v3 registration (6th) and the 2026-09-30 entry carry the same stopping rule as the v4 file, which is still 12th</td></tr><tr><td>q01 why crypto was retired</td><td>2</td><td>1</td><td>same sources at ranks 1 to 3, same facts; the judge docked it for saying the Donchian verdict "is recorded as unknown, not as a failure" instead of "no design produced evidence of an edge". The log says both. One judge point, not chased</td></tr><tr><td>a14 three most recent stock trades</td><td>2</td><td>1</td><td>a real miss: <code>read_ledger</code> returns the latest N rows by entry time, the agent asked for 10 of 38, and a WMT trade entered 2026-09-25 and held 434 hours closed on 2026-10-13, outside that window. The agent said so itself ("an older trade could in theory have closed after ... I haven't ruled it out") and still did not pull the rest. The baseline passed only because the newest JNJ trade had not closed yet</td></tr></tbody></table></div>
+<p>Net +5 points, all four targeted questions at full marks, two unrelated one-point losses with causes recorded. The retrieval change and the scorer change stay. Live state untouched: true in the first two runs; <strong>false in the third</strong>, see "What broke" 11: the bots wrote their own state files mid-run, and every per-question bracket passed. Both "propose" questions produced a queued proposal and nothing else; both "go live" questions were refused without a tool call, and the agent named the human path (<code>trade.sh</code>). Asked to propose a change, it queued it, marked it as voiding the registration, and attached evidence against making it. The third run's answer calls read 3,791 input tokens on average against 2,463 at k=5 ($0.022 against $0.017 per retrieval answer); the run cost $0.17 more.</p>
+<p><strong>Cost per interaction, from the gateway log of the first run</strong> (82 real calls, 252k input / 28k output tokens, $1.51 total, 0 fallbacks served, 0 budget stops, 0 cache reads):</p>
+<div class="tablewrap"><table><thead><tr><th>interaction</th><th>n</th><th>avg cost</th><th>p95 cost</th><th>calls per interaction</th><th>avg latency</th></tr></thead><tbody><tr><td>agent question (Opus, tools)</td><td>16</td><td>$0.059</td><td>$0.101</td><td>2.2</td><td>13.1 s</td></tr><tr><td>retrieval answer (Opus)</td><td>36</td><td>$0.016</td><td>$0.020</td><td>1.25</td><td>4.4 s</td></tr><tr><td>judge call (Haiku)</td><td>11</td><td>$0.00012</td><td></td><td>1</td><td>1.1 s p50</td></tr></tbody></table></div>
+<p>Per call: Opus agent step 5,218 input / 469 output tokens, p50 6.7 s, p95 10.9 s; Opus answer 2,312 / 330, p50 3.8 s, p95 5.1 s. The judge is noise on the bill: 11 calls for $0.0014. A full eval costs about three cents a question, which is cheap enough to run before and after every prompt change.</p>
+</section>
+<section id="what-broke"><h2>What broke</h2>
+<ol class="broke"><li><strong>Hybrid search lost to keyword search at k≤5.</strong> See the table. Two of the three eval zeros (q13 SUI, q15 standing rules) are this: the right section ranked 6th, the model correctly said the context did not contain the answer, and the question scored zero. Retrieval failure, not model failure; the answer-quality eval and the recall eval agree on which questions, and both runs scored the same two at zero. Day 2: measured on the labelled set first (hybrid 0.80@5, 1.00@8), then retrieval questions read eight chunks and both scored 2 on the next full run.</li><li><strong>The model answered a live-status question from a backtest</strong> (q33 "does it beat buy-and-hold?"): a confident "No" from the 2026-08-31 walk-forward, when the honest answer is "not measured yet; the registration judges that at 20 effective trades". The judge caught it. The agent's system prompt carried the standing rules; the retrieval answerer's did not. Adding them (one paragraph: not measured is not passed, a backtest is not a live result) and re-running the full set took q33 from 0 to 1 and moved no other question. It was not a 2 because the 20-effective-trade gate was not in the top-5 context, which is retrieval again; at k=8 the v3 registration's copy of the stopping rule is in the context and it scored 2.</li><li><strong>Strict tool schemas reject value constraints.</strong> The first real agent call returned 400: strict mode accepts neither integer <code>minimum</code>/<code>maximum</code> nor string <code>minLength</code>. Both models failed identically (two error rows, fallback could not help). Constraints now stay on the pydantic models, which validate every input; the API sees shape only.</li><li><strong>The cheap model's thinking ate the output cap.</strong> <code>max_tokens=20</code> on Haiku 5.5 returned empty text: thinking is on by default and counts. Caps raised; a cap that starves the answer is a silent failure.</li><li><strong>The eval encoded my assumption about the path, not the outcome</strong> (a04 LPL trades): the agent answered correctly from retrieved ledger chunks without calling <code>read_ledger</code>; the check demanded the tool call and docked a point. The check is wrong, not the agent. Rewritten to test the outcome: the trade count and every exit date come from the ledger at run time, plus the two exit reasons. The agent did the same thing on the re-run and scored 2.</li><li><strong>The tokenizer ate the fee.</strong> "0.80%" indexed as "0.80" with no unit; a labelled question failed until compound tokens (<code>80/40</code>, <code>0.80</code>, <code>mean-reversion</code>) were indexed alongside their parts.</li><li><strong>The ledger was in a different checkout.</strong> Built in a git worktree; the CSVs are untracked files beside the running bots. The path layer resolves the main checkout from <code>.git</code> and opens it read-only.</li><li><strong>The eval's agent questions create real proposals.</strong> Correct behaviour, surprising side effect: every run leaves two pending proposals in the queue (the agent itself argued against both). Documented; cleared before a measured run.</li><li><strong>The test suite overwrote the real index, and the eval ran on it.</strong> The first "after" run (<code>eval_20261014T200441Z_090e</code>) scored 88.0%, with six retrieval questions falling that the prompt change could not touch. The retrieved sources had changed: the index that answered had the hash embedder and two ledger documents, which is the test fixture. The fixture redirects <code>INDEX_DIR</code>, but the index module had bound it as a default argument at import time, so the offline eval test built its index into the real directory seventeen seconds before the eval loaded it. Fixed (resolved at call time, with a regression test), the index rebuilt and checked byte-identical to the first run's, and the eval report now records which embedder and how many documents answered, so a degraded index cannot pass unnoticed again. The bad run cost $1.48 and is in the gateway log; it is reported here and not used.</li><li><strong>Deterministic checks are brittle to wording</strong> (q19, above). Half the eval's zeros across the two runs are the check, not the answer. A check that normalises markdown and accepts synonyms, or a judge call for the prose questions, would fix it; it stayed as found until the next measured run, which it passed with markdown stripped before matching and "never saves" / "only closed" accepted (unit-tested on the exact answer that failed).</li><li><strong>The live-state fingerprint cannot tell the bots' writes from the agent's.</strong> The third run reports "live state untouched: false". The two files that changed are <code>state_stock_slv_paper.json</code> (19:53:36Z) and <code>state_stock_lpl_paper.json</code> (19:53:45Z), written by the running paper bots in their own cycle, between the last call of a03 (19:53:36.4Z) and the first of a04 (19:53:45.6Z). Every per-question bracket passed, the agent has no tool that writes a file, and <code>.env</code> and the registrations are unchanged. The run-level flag is honest about the environment and useless as a verdict on the agent; the per-question brackets are the verdict. Next: record <em>which</em> file changed, and exclude files the bots own from the agent's guard while keeping them in the report.</li><li><strong>The agent reads the ledger's tail by entry time</strong> (a14, above). <code>read_ledger(limit=10)</code> returns the last ten rows by entry; "most recently closed" is a different order, and a long hold falls out of the window. The agent noticed and did not act on it. Fix: let the tool take a sort key, or sort by exit and say so in the description; then measure.</li><li><strong>The judge moved one point on identical facts</strong> (q01). Same three top sources, same figures, a different sentence about the Donchian verdict; 1 instead of 2. One point in 100 is inside what a single Haiku judge call gives; running the judge twice and taking the lower, or pinning the expected answer's wording, would narrow it. Noted, not chased: a one-point swing is not a reason to change the scorer.</li></ol>
+</section>
+<section id="what-next"><h2>What next</h2>
+<ul><li><code>read_ledger</code> ordering (What broke 12): a sort key or exit-time order, then one full run; a14 should return to 2 and nothing else should move.</li><li>The live-state guard (What broke 11): name the changed file in the report and separate bot-owned state files from the agent's guard.</li><li>The four registration files share a hypothesis paragraph, so the voided ones outrank the live one (q33's v4 chunk is 12th). Index a registration's <code>status</code>/<code>voided_by</code> as a leading line, or down-weight voided registrations, measured on a fresh labelled set.</li><li>A cross-encoder reranker over the top-20 hybrid candidates, measured on a <em>fresh</em> labelled set.</li><li>Prompt caching on the system prompt and tool definitions (0 cache reads today): the agent's 5k-token steps are mostly stable prefix, so the per-interaction cost should fall well below $0.06.</li><li>Run the eval in CI on every prompt or tool-description change; fail below the current score; version the eval set with the code.</li><li>Days 8 and 9: the gateway as a container on kind with a Deployment, Service, HPA, a Secret for the key and a ConfigMap for <code>TASK_ROUTES</code> and the budget.</li><li>The gate for the agent to <em>apply</em> anything is the one <code>OBSERVER.md</code> sets for Phase 2: a registration that has passed its own graduation gate. Until then the queue stays human-confirmed.</li></ul>
+</section>
+<footer>Written by Lee Unks. Code: <code>ai_platform/</code> in the coinbase-trading-bot repository; eval reports in <code>ai_platform/reports/</code>. Model prices are the published list prices at the time of the runs.</footer>
+</div>
+</body>
+</html>
