@@ -1,6 +1,6 @@
 # Prototype write-up: a model gateway, retrieval, a three-tool agent and an eval, on my own trading platform
 
-Built and measured 2026-10-14 and 2026-10-15 in `ai_platform/` of the coinbase-trading-bot repo. Python, Anthropic
+Built and measured 2026-10-14 and 2026-10-15 in `ai_platform/` of the trading-research-platform repo. Python, Anthropic
 Messages API, SQLite, local embeddings; ~2,700 lines including 29 tests. Every number below comes from
 the gateway log or a report file in `ai_platform/reports/`; nothing is estimated.
 

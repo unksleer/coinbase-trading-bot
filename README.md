@@ -1,6 +1,12 @@
-# Coinbase Systematic Trading Bot & Market Screener
+<img src="ai_platform/docs/logo/mark.svg" alt="" width="72" align="left">
 
-A modular, secure, and automated cryptocurrency algorithmic trading system designed for Coinbase. The system implements an optimized Simple Moving Average (SMA) Crossover strategy with trend/momentum filters (RSI & EMA), runs multiple live bots simultaneously with isolated state tracking, and includes an automated multi-asset market screener that emails alerts on buy signals.
+# Trading Research Platform
+
+A paper-trading research platform for US stocks. Twelve bots run an RSI mean-reversion strategy on Alpaca paper under a sealed registration: the hypothesis, parameters, success criteria and stopping rule are written down before the run, a change mid-run voids it, and results are judged on effective trades against buy-and-hold. The decision log ([`DECISIONS.md`](DECISIONS.md)) records what was measured and what was not.
+
+A gen AI layer in [`ai_platform/`](ai_platform/) answers questions about the ledgers and the notes and proposes parameter changes a person confirms by hand: a model gateway, hybrid retrieval, a three-tool agent and a 50-question evaluation, with the measured write-up at [`ai_platform/docs/prototype-writeup.md`](ai_platform/docs/prototype-writeup.md).
+
+Automated crypto trading was retired in October 2026 after four months with no evidence of an edge; that history, and the Coinbase tooling it used, stays in the log and in the code. Sections below that describe crypto bots describe the retired track.
 
 ---
 
