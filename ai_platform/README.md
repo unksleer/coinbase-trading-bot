@@ -1,3 +1,5 @@
+<img src="docs/logo/mark.svg" alt="" width="72" align="left">
+
 # ai_platform — a small, finished gen-AI prototype on the trading research platform
 
 Four runnable pieces and a write-up: [docs/prototype-writeup.md](docs/prototype-writeup.md) (the same text with the C4 and sequence diagrams as a page: [docs/prototype-writeup-page.html](docs/prototype-writeup-page.html)). Every number in it comes from `reports/` or the gateway log.
